@@ -8,6 +8,7 @@ código a menos e descrição ou validade divergente.
 """
 
 import csv
+import importlib.util
 from datetime import date
 
 from odoo.tests.common import TransactionCase
@@ -144,6 +145,19 @@ class TestTabelasIncidencia(TransactionCase):
                 if valor and str(int(valor)) not in codigos:
                     invalidos.append((rubrica.codigo, campo, valor))
         self.assertEqual(invalidos, [])
+
+    def test_migracao_conhece_os_mesmos_codigos(self):
+        """A lista da migração 18.0.1.2.0 é a das seleções."""
+        caminho = file_path("l10n_br_esocial/migrations/18.0.1.2.0/post-migration.py")
+        spec = importlib.util.spec_from_file_location("migracao_tg107", caminho)
+        migracao = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migracao)
+        for campo, lista in (
+            ("l10n_br_esocial_cod_inc_cp", ESOCIAL_COD_INC_CP),
+            ("l10n_br_esocial_cod_inc_irrf", ESOCIAL_COD_INC_IRRF),
+            ("l10n_br_esocial_cod_inc_fgts", ESOCIAL_COD_INC_FGTS),
+        ):
+            self.assertEqual(migracao.VALIDOS[campo], {c for c, _ in lista}, campo)
 
     def test_o_teste_acusa_diferenca(self):
         """Código a mais, a menos e descrição divergente são apontados."""
