@@ -63,13 +63,6 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - name: TMP diagnose dns
-        run: |
-          cat /etc/resolv.conf; apt-config dump | grep -i proxy || true
-          getent hosts archive.ubuntu.com || echo NO-RESOLVE-ubuntu
-          getent ahostsv4 archive.ubuntu.com | head -2 || true
-          getent hosts wheelhouse.odoo-community.org || echo NO-RESOLVE-wheelhouse
-          timeout 20 apt-get update -qq 2>&1 | tail -3 || true
       - name: Install addons and dependencies
         run: oca_install_addons
       - name: Check licenses
