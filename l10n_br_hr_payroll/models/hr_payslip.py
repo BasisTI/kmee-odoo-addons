@@ -62,6 +62,23 @@ class HrPayslip(models.Model):
                     )
                 )
 
+    def write(self, vals):
+        # Cancelar (ou reabrir) o holerite muda quem desconta o DSR da semana.
+        if "state" in vals and any(
+            "cancel" in (rec.state, vals["state"]) for rec in self
+        ):
+            pares = self.l10n_br_falta_ids._l10n_br_pares()
+            res = super().write(vals)
+            self.env["l10n_br.hr.payslip.falta"]._l10n_br_reconciliar_semanas(pares)
+            return res
+        return super().write(vals)
+
+    def unlink(self):
+        pares = self.l10n_br_falta_ids._l10n_br_pares()
+        res = super().unlink()
+        self.env["l10n_br.hr.payslip.falta"]._l10n_br_reconciliar_semanas(pares)
+        return res
+
     def _compute_horas_noturnas_computadas(self):
         for rec in self:
             if rec.l10n_br_usar_hora_reduzida:

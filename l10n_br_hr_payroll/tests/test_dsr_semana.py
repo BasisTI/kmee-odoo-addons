@@ -5,7 +5,7 @@
 from datetime import date
 from unittest import mock
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import (
@@ -114,7 +114,7 @@ class TestDsrPorSemana(PayrollCommon):
             date_from=date(2024, 2, 1),
             date_to=date(2024, 2, 29),
         )
-        mar.compute_sheet()
+        # Sem recalcular à mão: lançar a falta de fevereiro reconcilia o março.
         self.assertAlmostEqualMoney(self._get_line_total(fev, "DESC_DSR"), 100.00)
         self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 0.0)
 
@@ -174,5 +174,54 @@ class TestDsrPorSemana(PayrollCommon):
                         (0, 0, {"date": date(2024, 3, 4)}),
                         (0, 0, {"date": date(2024, 3, 12)}),
                     ],
+                }
+            )
+
+    def _dois_meses(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        mar = self._holerite(1, [date(2024, 3, 1)], contract=contract)
+        fev = self._holerite(
+            1,
+            [date(2024, 2, 29)],
+            contract=contract,
+            date_from=date(2024, 2, 1),
+            date_to=date(2024, 2, 29),
+        )
+        return fev, mar
+
+    def test_apagar_a_falta_anterior_devolve_o_repouso_ao_outro_mes(self):
+        fev, mar = self._dois_meses()
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 0.0)
+        fev.l10n_br_falta_ids.unlink()
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 100.00)
+
+    def test_cancelar_o_holerite_anterior_devolve_o_repouso(self):
+        fev, mar = self._dois_meses()
+        fev.write({"state": "cancel"})
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 100.00)
+
+    def test_excluir_o_holerite_anterior_devolve_o_repouso(self):
+        fev, mar = self._dois_meses()
+        fev.write({"state": "draft"})  # o payroll só exclui rascunho
+        fev.unlink()
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 100.00)
+
+    def test_holerite_confirmado_dependente_recusa_a_alteracao(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        mar = self._holerite(1, [date(2024, 3, 1)], contract=contract)
+        mar.write({"state": "done"})
+        fev = self._holerite(
+            0,
+            contract=contract,
+            date_from=date(2024, 2, 1),
+            date_to=date(2024, 2, 29),
+        )
+        with self.assertRaises(UserError):
+            fev.write(
+                {
+                    "l10n_br_faltas_injustificadas": 1,
+                    "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 2, 29)})],
                 }
             )
