@@ -6,7 +6,8 @@ import types
 
 from dateutil.relativedelta import relativedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 from . import salary_rules_br
 
@@ -40,6 +41,26 @@ class HrPayslip(models.Model):
         string="Faltas Injustificadas",
         default=0,
     )
+    l10n_br_falta_ids = fields.One2many(
+        "l10n_br.hr.payslip.falta",
+        "payslip_id",
+        string="Dias de falta",
+        help="Datas das faltas injustificadas. Com a data, o DSR é descontado "
+        "uma vez por semana com falta; falta sem data conta numa semana própria.",
+    )
+
+    @api.constrains("l10n_br_faltas_injustificadas", "l10n_br_falta_ids")
+    def _check_datas_faltas(self):
+        for rec in self:
+            if len(rec.l10n_br_falta_ids) > rec.l10n_br_faltas_injustificadas:
+                raise ValidationError(
+                    _(
+                        "Há %(datas)s datas de falta para %(faltas)s faltas "
+                        "injustificadas no holerite.",
+                        datas=len(rec.l10n_br_falta_ids),
+                        faltas=rec.l10n_br_faltas_injustificadas,
+                    )
+                )
 
     def _compute_horas_noturnas_computadas(self):
         for rec in self:
@@ -231,6 +252,59 @@ class HrPayslip(models.Model):
         """
         return []
 
+    def _l10n_br_semanas_com_falta(self, contract):
+        """Semanas (segunda a domingo) em que este holerite desconta o DSR.
+
+        Cada semana com falta injustificada perde um repouso. Os dias de
+        férias gozadas e de afastamento do INSS não geram falta e ficam de
+        fora. Semana que atravessa a virada do mês é descontada uma vez só,
+        no holerite que traz a primeira falta dela. Falta sem data conta numa
+        semana própria.
+        """
+        self.ensure_one()
+        periodos = list(self._l10n_br_afastamentos_inss(contract)) + list(
+            self._l10n_br_ferias_gozadas(contract)
+        )
+        datas = [
+            f.date
+            for f in self.l10n_br_falta_ids
+            if not any(ini <= f.date <= fim for ini, fim in periodos)
+        ]
+        semanas = {}
+        for dia in datas:
+            semanas.setdefault(salary_rules_br.inicio_semana(dia), []).append(dia)
+        proprias = []
+        for inicio, dias in semanas.items():
+            if not self._l10n_br_falta_anterior_na_semana(inicio, min(dias)):
+                proprias.extend(dias)
+        sem_data = max(
+            self.l10n_br_faltas_injustificadas - len(self.l10n_br_falta_ids), 0
+        )
+        return salary_rules_br.semanas_com_falta(proprias, sem_data)
+
+    def _l10n_br_falta_anterior_na_semana(self, inicio_semana, primeira_falta):
+        """Outro holerite do empregado já traz falta na semana, antes desta?"""
+        self.ensure_one()
+        fim_semana = inicio_semana + relativedelta(days=6)
+        outras = (
+            self.env["l10n_br.hr.payslip.falta"]
+            .sudo()
+            .search(
+                [
+                    ("payslip_id", "!=", self.id),
+                    ("payslip_id.employee_id", "=", self.employee_id.id),
+                    ("payslip_id.state", "!=", "cancel"),
+                    ("date", ">=", inicio_semana),
+                    ("date", "<=", fim_semana),
+                ]
+            )
+        )
+        return any(
+            f.date < primeira_falta
+            or (f.date == primeira_falta and f.payslip_id.id < self.id)
+            for f in outras
+        )
+
     def _l10n_br_inss_ferias_competencia(self, contract):
         """``(base, retido)`` de INSS dos recibos de férias da competência.
 
@@ -333,6 +407,10 @@ class HrPayslip(models.Model):
             """Salário já pago em holerite mensal que se sobrepõe a este período."""
             return self._l10n_br_salario_pago_mensal(contrato)
 
+        def semanas_com_falta(contrato):
+            """Semanas com falta injustificada: repousos a descontar (DSR)."""
+            return self._l10n_br_semanas_com_falta(contrato)
+
         def dias_dsr():
             return salary_rules_br.dias_dsr(competencia.year, competencia.month)
 
@@ -392,6 +470,8 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Repousos perdidos por falta: um por semana com falta (TG-84).
+            semanas_com_falta=semanas_com_falta,
             # Encargos patronais por regime tributário (RF-31/32/33).
             aliquotas_patronais=aliquotas_patronais,
             # Provisões de férias/13º por competência (RF-34).
