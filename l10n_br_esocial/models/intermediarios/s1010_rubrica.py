@@ -46,19 +46,35 @@ class ESocialS1010(models.Model):
         """
         criados = self.browse()
         vistos = set()
+        company = self.env.company
         for regra in regras.filtered("l10n_br_esocial_cod_rubr"):
             chave = regra._esocial_chave_rubrica()
             if chave in vistos:
                 continue
             vistos.add(chave)
-            criados |= self.create(
+            existente = self._buscar_da_rubrica(regra, company, operacao, ini_valid)
+            criados |= existente or self.create(
                 {
                     "salary_rule_id": regra.id,
                     "operacao": operacao,
                     "ini_valid": ini_valid,
+                    "company_id": company.id,
                 }
             )
         return criados
+
+    def _buscar_da_rubrica(self, regra, company, operacao, ini_valid, excluir=()):
+        """S-1010 da mesma rubrica (código e tabela), empresa, operação e validade."""
+        chave = regra._esocial_chave_rubrica()
+        return self.search(
+            [
+                ("id", "not in", list(excluir)),
+                ("company_id", "=", company.id),
+                ("operacao", "=", operacao),
+                ("ini_valid", "=", ini_valid),
+                ("salary_rule_id.l10n_br_esocial_cod_rubr", "=", chave[0]),
+            ]
+        ).filtered(lambda r: r.salary_rule_id._esocial_chave_rubrica() == chave)
 
     @api.constrains("salary_rule_id", "operacao", "ini_valid", "company_id")
     def _check_rubrica_unica(self):
@@ -67,17 +83,8 @@ class ESocialS1010(models.Model):
             if not regra.l10n_br_esocial_cod_rubr:
                 continue
             chave = regra._esocial_chave_rubrica()
-            repetidos = self.search(
-                [
-                    ("id", "!=", rec.id),
-                    ("company_id", "=", rec.company_id.id),
-                    ("operacao", "=", rec.operacao),
-                    ("ini_valid", "=", rec.ini_valid),
-                    ("salary_rule_id.l10n_br_esocial_cod_rubr", "=", chave[0]),
-                ]
-            ).filtered(
-                lambda r, chave=chave: r.salary_rule_id._esocial_chave_rubrica()
-                == chave
+            repetidos = rec._buscar_da_rubrica(
+                regra, rec.company_id, rec.operacao, rec.ini_valid, rec.ids
             )
             if repetidos:
                 raise ValidationError(

@@ -88,6 +88,7 @@ ESOCIAL_COD_INC_FGTS = [
 # e tem natureza própria (4050 mensal, 4051 13º), nunca a 1000 de salário comum.
 COD_INC_CP_MATERNIDADE = ("21", "22", "25", "26")
 NATUREZAS_SALARIO_COMUM = ("1000",)
+NATUREZAS_SALARIO_MATERNIDADE = ("4050", "4051")
 
 # Campos que definem a rubrica no S-1010: regras com o mesmo código eSocial
 # (férias, 13º e rescisão repetem o código da mensal) precisam concordar neles.
@@ -130,6 +131,16 @@ class HrSalaryRule(models.Model):
         help="Tipo da rubrica conforme eSocial.",
     )
 
+    l10n_br_esocial_regra_maternidade_id = fields.Many2one(
+        "hr.salary.rule",
+        string="Rubrica de Salário-Maternidade",
+        domain="[('l10n_br_esocial_nat_rubr_id.codigo', 'in', ('4050', '4051'))]",
+        help="Regra cuja rubrica eSocial (natureza 4050/4051) recebe, no S-1200, "
+        "a parte desta regra referente aos dias de licença-maternidade do "
+        "holerite. A regra de destino só define a rubrica no S-1010; não precisa "
+        "entrar em nenhuma estrutura salarial.",
+    )
+
     # Incidências tributárias
     l10n_br_esocial_cod_inc_cp = fields.Selection(
         ESOCIAL_COD_INC_CP,
@@ -168,22 +179,33 @@ class HrSalaryRule(models.Model):
     @api.constrains(
         "l10n_br_esocial_cod_rubr",
         "l10n_br_esocial_ide_tab_rubr",
+        "active",
+        "company_id",
         *CAMPOS_DEFINICAO_RUBRICA,
     )
     def _check_esocial_rubrica_unica(self):
-        """Um código de rubrica eSocial tem uma só definição.
+        """Um código de rubrica eSocial tem uma só definição por empregador.
 
         O S-1010 declara cada código uma vez; duas regras com o mesmo código e
-        natureza ou incidências diferentes não cabem na mesma rubrica.
+        natureza ou incidências diferentes não cabem na mesma rubrica. Regras
+        de empresas diferentes são independentes; regra sem empresa vale para
+        todas.
         """
-        for rule in self.filtered("l10n_br_esocial_cod_rubr"):
+        for rule in self.filtered(lambda r: r.active and r.l10n_br_esocial_cod_rubr):
             chave = rule._esocial_chave_rubrica()
             outras = self.search(
                 [
                     ("id", "!=", rule.id),
                     ("l10n_br_esocial_cod_rubr", "=", chave[0]),
                 ]
-            ).filtered(lambda r, chave=chave: r._esocial_chave_rubrica() == chave)
+            ).filtered(
+                lambda r, chave=chave, rule=rule: r._esocial_chave_rubrica() == chave
+                and (
+                    not r.company_id
+                    or not rule.company_id
+                    or r.company_id == rule.company_id
+                )
+            )
             for outra in outras:
                 if outra._esocial_definicao_rubrica() != (
                     rule._esocial_definicao_rubrica()
@@ -201,6 +223,26 @@ class HrSalaryRule(models.Model):
                             "regra": rule.display_name,
                         }
                     )
+        # Mudar o código de uma regra com S-1010 pode repetir a chave de outro.
+        self.env["l10n_br.esocial.s1010"].search(
+            [("salary_rule_id", "in", self.ids)]
+        )._check_rubrica_unica()
+
+    @api.constrains("l10n_br_esocial_regra_maternidade_id")
+    def _check_esocial_regra_maternidade(self):
+        for rule in self.filtered("l10n_br_esocial_regra_maternidade_id"):
+            destino = rule.l10n_br_esocial_regra_maternidade_id
+            if (
+                destino.l10n_br_esocial_nat_rubr_id.codigo
+                not in NATUREZAS_SALARIO_MATERNIDADE
+            ):
+                raise ValidationError(
+                    _(
+                        "A rubrica de salário-maternidade da regra '%(regra)s' "
+                        "('%(destino)s') precisa ter a natureza 4050 ou 4051."
+                    )
+                    % {"regra": rule.display_name, "destino": destino.display_name}
+                )
 
     @api.constrains("l10n_br_esocial_nat_rubr_id", "l10n_br_esocial_cod_inc_cp")
     def _check_esocial_natureza_maternidade(self):
