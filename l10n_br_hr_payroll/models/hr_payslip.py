@@ -7,7 +7,7 @@ import types
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from . import salary_rules_br
 
@@ -62,22 +62,27 @@ class HrPayslip(models.Model):
                     )
                 )
 
-    def write(self, vals):
-        # Cancelar (ou reabrir) o holerite muda quem desconta o DSR da semana.
-        if "state" in vals and any(
-            "cancel" in (rec.state, vals["state"]) for rec in self
-        ):
-            pares = self.l10n_br_falta_ids._l10n_br_pares()
-            res = super().write(vals)
-            self.env["l10n_br.hr.payslip.falta"]._l10n_br_reconciliar_semanas(pares)
-            return res
-        return super().write(vals)
-
-    def unlink(self):
-        pares = self.l10n_br_falta_ids._l10n_br_pares()
-        res = super().unlink()
-        self.env["l10n_br.hr.payslip.falta"]._l10n_br_reconciliar_semanas(pares)
-        return res
+    @api.constrains(
+        "l10n_br_faltas_injustificadas", "l10n_br_falta_ids", "date_from", "date_to"
+    )
+    def _check_datas_faltas_periodo(self):
+        """Datas das faltas dentro do período (que pode ser alterado depois)."""
+        for rec in self:
+            fora = rec.l10n_br_falta_ids.filtered(
+                lambda f: rec.date_from
+                and rec.date_to
+                and not rec.date_from <= f.date <= rec.date_to
+            )
+            if fora:
+                raise ValidationError(
+                    _(
+                        "A falta de %(dia)s está fora do período do holerite "
+                        "(%(ini)s a %(fim)s).",
+                        dia=fora[0].date,
+                        ini=rec.date_from,
+                        fim=rec.date_to,
+                    )
+                )
 
     def _compute_horas_noturnas_computadas(self):
         for rec in self:
@@ -106,7 +111,178 @@ class HrPayslip(models.Model):
                     )
                     lines = [(0, 0, wd) for wd in worked_days]
                     payslip.write({"worked_days_line_ids": lines})
-        return super().compute_sheet()
+        # O compute_sheet também grava o que o DSR de outros holerites do
+        # empregado pode depender (as faltas, no ponto; as férias): a
+        # conferência é uma só, no fim, contra o "antes" (variável local).
+        if self.env.context.get("l10n_br_dsr_reconciliando"):
+            return super().compute_sheet()
+        empregados = self.employee_id
+        antes = self._l10n_br_dsr_participacao(empregados)
+        res = super(
+            HrPayslip, self.with_context(l10n_br_dsr_em_compute=True)
+        ).compute_sheet()
+        self._l10n_br_dsr_reconciliar(antes, self.employee_id | empregados, self)
+        return res
+
+    # ------------------------------------------------------------------
+    # DSR por semana com falta: ponto único de reconciliação (TG-84)
+    # ------------------------------------------------------------------
+    # Uma semana com falta é descontada UMA vez só, no holerite que traz a
+    # primeira falta válida dela. Logo, o que cada holerite do empregado
+    # desconta depende dos outros. Em vez de enumerar gatilhos, compara-se,
+    # antes e depois de qualquer gravação que possa mudar isso, quais semanas
+    # cada holerite desconta: só os que mudaram são recalculados (rascunho e
+    # verificação) ou recusam a gravação (já confirmados). O "antes" é variável
+    # local: não sobrevive a rollback.
+
+    _L10N_BR_CAMPOS_DSR = (
+        "state",
+        "employee_id",
+        "contract_id",
+        "date_from",
+        "date_to",
+        "struct_id",
+        "line_ids",
+        "l10n_br_faltas_injustificadas",
+        "l10n_br_falta_ids",
+        # Do l10n_br_hr_vacation: o gozo das férias tira dias das faltas.
+        "l10n_br_dias_periodo_gozado",
+        "l10n_br_ferias_allocation_id",
+        "l10n_br_abono_pecuniario",
+    )
+
+    def _l10n_br_faltas_validas(self):
+        """Datas de falta que valem: as que não caem em férias nem afastamento."""
+        self.ensure_one()
+        contrato = self.contract_id
+        periodos = []
+        if contrato:
+            periodos = list(self._l10n_br_afastamentos_inss(contrato)) + list(
+                self._l10n_br_ferias_gozadas(contrato)
+            )
+        return [
+            f.date
+            for f in self.l10n_br_falta_ids
+            if not any(ini <= f.date <= fim for ini, fim in periodos)
+        ]
+
+    @api.model
+    def _l10n_br_dsr_participacao(self, empregados):
+        """``{holerite: (semanas que desconta, faltas sem data)}`` dos empregados.
+
+        Das semanas com falta válida, a descontada é a do holerite com a
+        primeira falta (data e, no empate, o menor id). A falta sem data conta
+        numa semana própria, no máximo uma por semana do período do holerite
+        que ainda não tenha falta datada (critério conservador: nunca mais
+        repousos do que semanas).
+        """
+        res = {}
+        for empregado in empregados:
+            slips = (
+                self.sudo()
+                .with_context(active_test=False)
+                .search(
+                    [
+                        ("employee_id", "=", empregado.id),
+                        ("state", "!=", "cancel"),
+                        "|",
+                        ("l10n_br_falta_ids", "!=", False),
+                        ("l10n_br_faltas_injustificadas", ">", 0),
+                    ]
+                )
+            )
+            validas = {slip.id: slip._l10n_br_faltas_validas() for slip in slips}
+            primeira = {}
+            for slip in slips:
+                for dia in validas[slip.id]:
+                    sem = salary_rules_br.inicio_semana(dia)
+                    chave = (dia, slip.id)
+                    if sem not in primeira or chave < primeira[sem]:
+                        primeira[sem] = chave
+            for slip in slips:
+                proprias = {salary_rules_br.inicio_semana(d) for d in validas[slip.id]}
+                donas = frozenset(s for s in proprias if primeira[s][1] == slip.id)
+                sem_data = max(
+                    slip.l10n_br_faltas_injustificadas - len(slip.l10n_br_falta_ids), 0
+                )
+                if slip.date_from and slip.date_to:
+                    livres = salary_rules_br.semanas_do_periodo(
+                        slip.date_from, slip.date_to
+                    ) - len(proprias)
+                    sem_data = min(sem_data, max(livres, 0))
+                res[slip.id] = (donas, sem_data)
+        return res
+
+    def _l10n_br_dsr_reconciliar(self, antes, empregados, proprios):
+        """Recalcula/recusa os holerites cujo DSR mudou, fora ``proprios``."""
+        if self.env.context.get("l10n_br_dsr_reconciliando"):
+            return
+        depois = self._l10n_br_dsr_participacao(empregados)
+        mudaram = {i for i in set(antes) | set(depois) if antes.get(i) != depois.get(i)}
+        dependentes = self.sudo().browse(sorted(mudaram)).exists() - proprios.sudo()
+        dependentes = dependentes.filtered(lambda r: r.state != "cancel")
+        fechados = dependentes.filtered(lambda r: r.state not in ("draft", "verify"))
+        if fechados:
+            raise UserError(
+                _(
+                    "Não é possível alterar este holerite ou falta: %(fechados)s, "
+                    "do mesmo empregado, já está confirmado e o desconto de DSR "
+                    "da semana depende dele. Volte o confirmado para rascunho "
+                    "primeiro.",
+                    fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
+                )
+            )
+        # Quem nunca foi calculado não tem DSR a corrigir: será certo no 1º cálculo.
+        dependentes.filtered("line_ids").with_context(
+            l10n_br_dsr_reconciliando=True
+        ).compute_sheet()
+
+    def write(self, vals):
+        if (
+            not self
+            or self.env.context.get("l10n_br_dsr_em_compute")
+            or self.env.context.get("l10n_br_dsr_reconciliando")
+            or not set(vals) & set(self._L10N_BR_CAMPOS_DSR)
+        ):
+            return super().write(vals)
+        if "l10n_br_faltas_injustificadas" in vals and "l10n_br_falta_ids" in vals:
+            # A contagem antes das datas: a conferência "datas <= faltas" das
+            # linhas novas lê a contagem já gravada.
+            vals = {
+                "l10n_br_faltas_injustificadas": vals["l10n_br_faltas_injustificadas"],
+                **vals,
+            }
+        empregados = self.employee_id
+        antes = self._l10n_br_dsr_participacao(empregados)
+        res = super().write(vals)
+        self._l10n_br_dsr_reconciliar(antes, self.employee_id | empregados, self)
+        return res
+
+    def unlink(self):
+        empregados = self.employee_id
+        antes = self._l10n_br_dsr_participacao(empregados)
+        res = super().unlink()
+        self._l10n_br_dsr_reconciliar(antes, empregados, self.browse())
+        return res
+
+    def _l10n_br_gravar_datas_falta(self, datas, faltas=None):
+        """Faz as datas de falta do holerite serem exatamente ``datas``.
+
+        ``faltas`` (a contagem) vai na mesma gravação: baixar a contagem antes
+        de apagar as datas velhas faria "datas <= faltas" falhar no meio.
+        """
+        self.ensure_one()
+        datas = set(datas)
+        atuais = {f.date: f for f in self.l10n_br_falta_ids}
+        comandos = [(2, f.id) for d, f in atuais.items() if d not in datas]
+        comandos += [(0, 0, {"date": d}) for d in sorted(datas - set(atuais))]
+        vals = {}
+        if faltas is not None and faltas != self.l10n_br_faltas_injustificadas:
+            vals["l10n_br_faltas_injustificadas"] = faltas
+        if comandos:
+            vals["l10n_br_falta_ids"] = comandos
+        if vals:
+            self.write(vals)
 
     # Códigos referenciados por regras COMPARTILHADAS entre estruturas cuja
     # regra-fonte pode não estar na estrutura corrente (ex.: a regra IRRF é
@@ -269,58 +445,13 @@ class HrPayslip(models.Model):
         """
         return []
 
-    def _l10n_br_semanas_com_falta(self, contract):
-        """Semanas (segunda a domingo) em que este holerite desconta o DSR.
-
-        Cada semana com falta injustificada perde um repouso. Os dias de
-        férias gozadas e de afastamento do INSS não geram falta e ficam de
-        fora. Semana que atravessa a virada do mês é descontada uma vez só,
-        no holerite que traz a primeira falta dela. Falta sem data conta numa
-        semana própria.
-        """
+    def _l10n_br_semanas_com_falta(self, contract=None):
+        """Repousos que este holerite desconta: semanas com falta mais as sem data."""
         self.ensure_one()
-        periodos = list(self._l10n_br_afastamentos_inss(contract)) + list(
-            self._l10n_br_ferias_gozadas(contract)
+        donas, sem_data = self._l10n_br_dsr_participacao(self.employee_id).get(
+            self.id, (frozenset(), 0)
         )
-        datas = [
-            f.date
-            for f in self.l10n_br_falta_ids
-            if not any(ini <= f.date <= fim for ini, fim in periodos)
-        ]
-        semanas = {}
-        for dia in datas:
-            semanas.setdefault(salary_rules_br.inicio_semana(dia), []).append(dia)
-        proprias = []
-        for inicio, dias in semanas.items():
-            if not self._l10n_br_falta_anterior_na_semana(inicio, min(dias)):
-                proprias.extend(dias)
-        sem_data = max(
-            self.l10n_br_faltas_injustificadas - len(self.l10n_br_falta_ids), 0
-        )
-        return salary_rules_br.semanas_com_falta(proprias, sem_data)
-
-    def _l10n_br_falta_anterior_na_semana(self, inicio_semana, primeira_falta):
-        """Outro holerite do empregado já traz falta na semana, antes desta?"""
-        self.ensure_one()
-        fim_semana = inicio_semana + relativedelta(days=6)
-        outras = (
-            self.env["l10n_br.hr.payslip.falta"]
-            .sudo()
-            .search(
-                [
-                    ("payslip_id", "!=", self.id),
-                    ("payslip_id.employee_id", "=", self.employee_id.id),
-                    ("payslip_id.state", "!=", "cancel"),
-                    ("date", ">=", inicio_semana),
-                    ("date", "<=", fim_semana),
-                ]
-            )
-        )
-        return any(
-            f.date < primeira_falta
-            or (f.date == primeira_falta and f.payslip_id.id < self.id)
-            for f in outras
-        )
+        return len(donas) + sem_data
 
     def _l10n_br_inss_ferias_competencia(self, contract):
         """``(base, retido)`` de INSS dos recibos de férias da competência.

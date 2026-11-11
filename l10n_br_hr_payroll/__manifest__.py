@@ -22,6 +22,7 @@
     ],
     "data": [
         "security/ir.model.access.csv",
+        "security/hr_payslip_falta_rule.xml",
         "data/l10n_br.hr.payroll.inss.faixa.csv",
         "data/l10n_br.hr.payroll.irrf.faixa.csv",
         "data/l10n_br.hr.payroll.irrf.redutor.csv",

@@ -1,12 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from datetime import timedelta
-
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
-
-from . import salary_rules_br
 
 
 class HrPayslipFalta(models.Model):
@@ -54,67 +50,75 @@ class HrPayslipFalta(models.Model):
                         )
                     )
 
-    # Semana que atravessa a virada do mês: o repouso é descontado uma vez só,
-    # no holerite que traz a primeira falta dela (``_l10n_br_semanas_com_falta``).
-    # Logo, lançar, mudar ou apagar uma falta pode mudar o DESC_DSR de OUTRO
-    # holerite do empregado; a reconciliação fica aqui, no ponto de gravação.
+    @api.constrains("payslip_id", "date")
+    def _check_datas_ate_faltas(self):
+        """Falta criada direto no modelo não fura "datas <= faltas" do holerite."""
+        for slip in self.payslip_id:
+            if len(slip.l10n_br_falta_ids) > slip.l10n_br_faltas_injustificadas:
+                raise ValidationError(
+                    _(
+                        "Há %(datas)s datas de falta para %(faltas)s faltas "
+                        "injustificadas no holerite.",
+                        datas=len(slip.l10n_br_falta_ids),
+                        faltas=slip.l10n_br_faltas_injustificadas,
+                    )
+                )
+
+    # O que cada holerite do empregado desconta de DSR depende das faltas dos
+    # outros (semana que atravessa o mês): a reconciliação é o ponto único do
+    # hr.payslip (``_l10n_br_dsr_reconciliar``), aqui só se tira o "antes".
 
     @api.model
-    def _l10n_br_reconciliar_semanas(self, pares):
-        """Recalcula os holerites que dependem da primeira falta de cada semana.
-
-        Args:
-            pares: ``(holerite, empregado, dia)`` das faltas que mudaram.
-        """
-        afetados = self.env["hr.payslip"]
-        for slip, empregado, dia in pares:
-            inicio = salary_rules_br.inicio_semana(dia)
-            outras = self.search(
-                [
-                    ("payslip_id", "!=", slip.id),
-                    ("payslip_id.employee_id", "=", empregado.id),
-                    ("payslip_id.state", "!=", "cancel"),
-                    ("date", ">=", inicio),
-                    ("date", "<=", inicio + timedelta(days=6)),
-                ]
-            )
-            for outro in outras.mapped("payslip_id"):
-                primeira = min(
-                    outras.filtered(lambda f: f.payslip_id == outro).mapped("date")
-                )
-                if primeira >= dia:
-                    afetados |= outro
-        fechados = afetados.filtered(lambda r: r.state not in ("draft", "verify"))
+    def _l10n_br_exigir_aberto(self, slips):
+        if self.env.context.get("l10n_br_dsr_reconciliando"):
+            return
+        fechados = slips.filtered(lambda r: r.state not in ("draft", "verify"))
         if fechados:
             raise UserError(
                 _(
-                    "Não é possível alterar esta falta: %(fechados)s, do mesmo "
-                    "empregado, já está confirmado e o desconto de DSR da semana "
-                    "depende dela. Volte o confirmado para rascunho primeiro.",
+                    "Não é possível lançar, alterar ou apagar falta de holerite "
+                    "já confirmado ou cancelado: %(fechados)s. Volte-o para "
+                    "rascunho primeiro.",
                     fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
                 )
             )
-        afetados.compute_sheet()
 
-    def _l10n_br_pares(self):
-        return [(f.payslip_id, f.payslip_id.employee_id, f.date) for f in self]
+    def _l10n_br_com_reconciliacao(self, operacao, slips=None):
+        """Roda ``operacao`` e reconcilia o DSR dos outros holerites."""
+        Payslip = self.env["hr.payslip"]
+        if self.env.context.get("l10n_br_dsr_reconciliando"):
+            return operacao()
+        slips = slips if slips is not None else self.payslip_id
+        empregados = slips.employee_id
+        antes = Payslip._l10n_br_dsr_participacao(empregados)
+        res = operacao()
+        Payslip._l10n_br_dsr_reconciliar(antes, empregados, slips.exists())
+        return res
 
     @api.model_create_multi
     def create(self, vals_list):
-        faltas = super().create(vals_list)
-        self._l10n_br_reconciliar_semanas(faltas._l10n_br_pares())
-        return faltas
+        slips = self.env["hr.payslip"].browse(
+            [v["payslip_id"] for v in vals_list if v.get("payslip_id")]
+        )
+        self._l10n_br_exigir_aberto(slips)
+        return self._l10n_br_com_reconciliacao(
+            lambda: super(HrPayslipFalta, self).create(vals_list), slips
+        )
 
     def write(self, vals):
         if not {"date", "payslip_id"} & set(vals):
             return super().write(vals)
-        pares = self._l10n_br_pares()
-        res = super().write(vals)
-        self._l10n_br_reconciliar_semanas(pares + self._l10n_br_pares())
-        return res
+        self._l10n_br_exigir_aberto(self.payslip_id)
+        slips = self.payslip_id | self.env["hr.payslip"].browse(
+            [vals["payslip_id"]] if vals.get("payslip_id") else []
+        )
+        return self._l10n_br_com_reconciliacao(
+            lambda: super(HrPayslipFalta, self).write(vals), slips
+        )
 
     def unlink(self):
-        pares = self._l10n_br_pares()
-        res = super().unlink()
-        self._l10n_br_reconciliar_semanas(pares)
-        return res
+        self._l10n_br_exigir_aberto(self.payslip_id)
+        slips = self.payslip_id
+        return self._l10n_br_com_reconciliacao(
+            lambda: super(HrPayslipFalta, self).unlink(), slips
+        )

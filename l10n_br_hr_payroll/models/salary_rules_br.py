@@ -494,6 +494,11 @@ def inicio_semana(dia):
     return dia - timedelta(days=dia.weekday())
 
 
+def semanas_do_periodo(data_de, data_ate):
+    """Quantas semanas (segunda a domingo) o período ``data_de``..``data_ate`` toca."""
+    return (data_ate - inicio_semana(data_de)).days // 7 + 1
+
+
 def semanas_com_falta(datas, faltas_sem_data=0):
     """Número de repousos semanais perdidos por faltas injustificadas.
 
@@ -504,7 +509,8 @@ def semanas_com_falta(datas, faltas_sem_data=0):
     Args:
         datas: Datas das faltas já descontadas de semanas alheias.
         faltas_sem_data: Faltas informadas só como contagem. Sem data não há
-            como agrupar por semana, então cada uma conta numa semana própria.
+            como agrupar por semana, então cada uma conta numa semana própria
+            (quem chama limita ao número de semanas do período).
 
     Returns:
         Quantidade de semanas distintas com falta mais ``faltas_sem_data``.

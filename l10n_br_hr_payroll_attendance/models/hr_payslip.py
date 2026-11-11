@@ -156,7 +156,10 @@ class HrPayslip(models.Model):
             slip.l10n_br_horas_extras_50 = totais["he_50"]
             slip.l10n_br_horas_extras_100 = totais["he_100"]
             slip.l10n_br_horas_noturnas = totais["noturno"]
-            slip.l10n_br_faltas_injustificadas = totais["faltas"]
+            datas_falta = dias.filtered("falta_injustificada").mapped("date")
+            # A contagem e as datas juntas: com a data, o DSR é descontado
+            # uma vez por semana com falta, não por falta (Lei 605/49, art. 6º).
+            slip._l10n_br_gravar_datas_falta(datas_falta, totais["faltas"])
 
     # ------------------------------------------------------------------
     # Dias trabalhados

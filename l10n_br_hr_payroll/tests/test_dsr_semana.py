@@ -225,3 +225,203 @@ class TestDsrPorSemana(PayrollCommon):
                     "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 2, 29)})],
                 }
             )
+
+    # ------------------------------------------------------------------
+    # r2: ponto único por comparação antes/depois e variantes da revisão
+    # ------------------------------------------------------------------
+
+    def test_trocar_empregado_do_holerite_reconcilia_o_outro_mes(self):
+        """G1: o outro mês volta a descontar a semana do empregado antigo."""
+        fev, mar = self._dois_meses()
+        emp2 = self._create_employee(name="Outro")
+        contract2 = self._create_contract(emp2, wage=3000.00)
+        fev.write({"employee_id": emp2.id, "contract_id": contract2.id})
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 100.00)
+
+    def test_mudar_o_periodo_nao_deixa_falta_fora_dele(self):
+        """G2: a falta de 29/02 não cabe num holerite de janeiro."""
+        fev, _mar = self._dois_meses()
+        with self.assertRaises(ValidationError):
+            fev.write({"date_from": date(2024, 1, 1), "date_to": date(2024, 1, 31)})
+
+    def test_falta_do_mes_anterior_em_ferias_nao_bloqueia_o_seguinte(self):
+        """G4: a falta que cai em férias não é falta, nem para o mês seguinte."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        ferias = [(date(2024, 2, 26), date(2024, 2, 29))]
+        with mock.patch.object(
+            type(self.env["hr.payslip"]), "_l10n_br_ferias_gozadas", return_value=ferias
+        ):
+            fev = self._holerite(
+                1,
+                [date(2024, 2, 29)],
+                contract=contract,
+                date_from=date(2024, 2, 1),
+                date_to=date(2024, 2, 29),
+            )
+            mar = self._holerite(1, [date(2024, 3, 1)], contract=contract)
+        self.assertAlmostEqualMoney(self._get_line_total(fev, "DESC_DSR"), 0.0)
+        self.assertAlmostEqualMoney(self._get_line_total(mar, "DESC_DSR"), 100.00)
+
+    def test_segunda_falta_na_mesma_semana_nao_recusa_se_o_outro_nao_muda(self):
+        """G9: o março confirmado não depende da 2ª falta de fevereiro."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        fev = self._holerite(
+            1,
+            [date(2024, 2, 28)],
+            contract=contract,
+            date_from=date(2024, 2, 1),
+            date_to=date(2024, 2, 29),
+        )
+        mar = self._holerite(1, [date(2024, 3, 1)], contract=contract)
+        mar.write({"state": "done"})
+        fev.write(
+            {
+                "l10n_br_faltas_injustificadas": 2,
+                "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 2, 29)})],
+            }
+        )
+        self.assertEqual(len(fev.l10n_br_falta_ids), 2)
+        self.assertEqual(mar.state, "done")
+
+    def test_rascunho_nunca_calculado_nao_e_calculado_pela_reconciliacao(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        fev = self._holerite(
+            1,
+            [date(2024, 2, 28)],
+            contract=contract,
+            date_from=date(2024, 2, 1),
+            date_to=date(2024, 2, 29),
+        )
+        mar = self.env["hr.payslip"].create(
+            {
+                "name": "Março",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": contract.struct_id.id,
+                "date_from": date(2024, 3, 1),
+                "date_to": date(2024, 3, 31),
+                "company_id": self.env.company.id,
+                "l10n_br_faltas_injustificadas": 1,
+                "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 3, 1)})],
+            }
+        )
+        fev.write(
+            {
+                "l10n_br_faltas_injustificadas": 2,
+                "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 2, 29)})],
+            }
+        )
+        self.assertEqual(mar.state, "draft")
+        self.assertFalse(mar.line_ids)
+
+    def test_falta_criada_direto_no_modelo_respeita_a_contagem(self):
+        """M5: sem folga na contagem de faltas, a data nova é recusada."""
+        slip = self._holerite(0)
+        with self.assertRaises(ValidationError):
+            self.env["l10n_br.hr.payslip.falta"].create(
+                {"payslip_id": slip.id, "date": date(2024, 3, 5)}
+            )
+
+    def test_holerite_confirmado_nao_aceita_falta_nova(self):
+        """M7."""
+        slip = self._holerite(1, [date(2024, 3, 5)])
+        slip.write({"state": "done"})
+        with self.assertRaises(UserError):
+            slip.write(
+                {
+                    "l10n_br_faltas_injustificadas": 2,
+                    "l10n_br_falta_ids": [(0, 0, {"date": date(2024, 3, 12)})],
+                }
+            )
+        with self.assertRaises(UserError):
+            slip.l10n_br_falta_ids.unlink()
+
+    def test_falta_sem_data_nao_passa_das_semanas_do_periodo(self):
+        """S1: 5 faltas só por contagem numa semana de período: um repouso."""
+        slip = self._holerite(5, date_from=date(2024, 3, 4), date_to=date(2024, 3, 10))
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "FALTAS"), 500.00)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "DESC_DSR"), 100.00)
+
+    def test_falta_sem_data_completa_as_semanas_sem_falta_datada(self):
+        """Semana com falta datada não recebe também uma falta sem data."""
+        slip = self._holerite(
+            3,
+            [date(2024, 3, 5)],
+            date_from=date(2024, 3, 4),
+            date_to=date(2024, 3, 17),
+        )
+        # 2 semanas no período: 1 datada + 1 sem data (a outra sem data não cabe).
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "DESC_DSR"), 200.00)
+
+    def test_usuario_sem_acesso_ao_holerite_nao_le_a_falta(self):
+        """M6: o acesso à falta segue o acesso ao holerite (multiempresa)."""
+        slip = self._holerite(1, [date(2024, 3, 5)])
+        outra = self.env["res.company"].create({"name": "Outra empresa"})
+        user = self.env["res.users"].create(
+            {
+                "name": "Gerente de outra empresa",
+                "login": "gerente_outra_dsr",
+                "company_id": outra.id,
+                "company_ids": [(6, 0, [outra.id])],
+                "groups_id": [
+                    (
+                        6,
+                        0,
+                        [
+                            self.env.ref("base.group_user").id,
+                            self.env.ref("payroll.group_payroll_manager").id,
+                        ],
+                    )
+                ],
+            }
+        )
+        self.env.flush_all()
+        faltas = self.env["l10n_br.hr.payslip.falta"].with_user(user)
+        self.assertFalse(faltas.search([("payslip_id", "=", slip.id)]))
+
+    def test_oficial_de_folha_nao_le_falta_de_departamento_alheio(self):
+        """M6: o oficial só vê as faltas do que o holerite lhe mostra."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        gerente = self.env["hr.employee"].create(
+            {"name": "Chefe", "cnpj_cpf": self._proximo_cpf()}
+        )
+        depto = self.env["hr.department"].create(
+            {"name": "Depto alheio", "manager_id": gerente.id}
+        )
+        emp.department_id = depto
+        slip = self._holerite(1, [date(2024, 3, 5)], contract=contract)
+        oficial = self.env["res.users"].create(
+            {
+                "name": "Oficial de folha",
+                "login": "oficial_dsr",
+                "groups_id": [
+                    (
+                        6,
+                        0,
+                        [
+                            self.env.ref("base.group_user").id,
+                            self.env.ref("payroll.group_payroll_user").id,
+                        ],
+                    )
+                ],
+            }
+        )
+        self.env.flush_all()
+        faltas = self.env["l10n_br.hr.payslip.falta"].with_user(oficial)
+        self.assertFalse(faltas.search([("payslip_id", "=", slip.id)]))
+
+    def test_gravar_datas_falta_e_idempotente_e_troca_as_datas(self):
+        """Gancho do módulo de ponto: datas e contagem na mesma gravação."""
+        slip = self._holerite(2, [date(2024, 3, 4), date(2024, 3, 12)])
+        slip._l10n_br_gravar_datas_falta([date(2024, 3, 4), date(2024, 3, 12)], 2)
+        self.assertEqual(len(slip.l10n_br_falta_ids), 2)
+        # Menos faltas que antes: a contagem cai junto com as datas.
+        slip._l10n_br_gravar_datas_falta([date(2024, 3, 12)], 1)
+        self.assertEqual(slip.l10n_br_falta_ids.mapped("date"), [date(2024, 3, 12)])
+        self.assertEqual(slip.l10n_br_faltas_injustificadas, 1)
+        slip.compute_sheet()
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "DESC_DSR"), 100.00)

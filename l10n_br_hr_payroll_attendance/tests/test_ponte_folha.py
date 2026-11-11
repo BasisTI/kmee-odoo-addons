@@ -164,6 +164,31 @@ class TestPonteFolha(TransactionCase):
         self.assertEqual(holerite.l10n_br_faltas_injustificadas, 22)
         self.assertGreater(self._valor(holerite, "FALTAS"), 0.0)
 
+    def test_faltas_da_apuracao_chegam_ao_holerite_com_a_data(self):
+        """22 faltas em 5 semanas descontam 5 repousos, não 22 (Lei 605/49)."""
+        self._apurar_marco()
+        holerite = self._holerite()
+        self.assertEqual(len(holerite.l10n_br_falta_ids), 22)
+        self.assertEqual(
+            min(holerite.l10n_br_falta_ids.mapped("date")), date(2026, 3, 2)
+        )
+        # 4.400 / 30 = 146,67 por repouso; março/2026 toca 5 semanas de trabalho.
+        self.assertAlmostEqual(self._valor(holerite, "DESC_DSR"), 733.33, places=2)
+        holerite.compute_sheet()
+        self.assertEqual(len(holerite.l10n_br_falta_ids), 22)
+
+    def test_duas_faltas_na_mesma_semana_descontam_um_repouso(self):
+        for dia in (2, 5, 6, 9, 10, 11, 12, 13, 16, 17, 18, 19, 20):
+            self._marcar(dia, (8, 0), (12, 0), (13, 0), (17, 0))
+        for dia in (23, 24, 25, 26, 27, 30, 31):
+            self._marcar(dia, (8, 0), (12, 0), (13, 0), (17, 0))
+        self._apurar_marco()
+        holerite = self._holerite()
+        # Só 3 e 4 de março faltaram: duas faltas, uma semana, um repouso.
+        self.assertEqual(holerite.l10n_br_faltas_injustificadas, 2)
+        self.assertAlmostEqual(self._valor(holerite, "FALTAS"), 293.33, places=2)
+        self.assertAlmostEqual(self._valor(holerite, "DESC_DSR"), 146.67, places=2)
+
     def test_worked_days_derivado_da_presenca_efetiva(self):
         self._marcar(2, (8, 0), (12, 0), (13, 0), (17, 0))
         self._marcar(3, (8, 0), (12, 0), (13, 0), (17, 0))
