@@ -55,9 +55,11 @@ class TestHoraExtra(PayrollCommon):
         payslip.write({"l10n_br_horas_extras_50": 10})
         payslip.compute_sheet()
         he = self._get_line_total(payslip, "HE_50")
+        dsr = self._get_line_total(payslip, "DSR_HE")
+        self.assertGreater(dsr, 0.0)
         fgts = self._get_line_total(payslip, "FGTS")
-        # FGTS = (3000 + HE) × 8%
-        self.assertAlmostEqualMoney(fgts, (3000.00 + he) * 0.08)
+        # FGTS = (3000 + HE + reflexo no DSR) × 8% (Súmula 63 do TST)
+        self.assertAlmostEqualMoney(fgts, (3000.00 + he + dsr) * 0.08)
 
 
 class TestFaltasDSR(PayrollCommon):

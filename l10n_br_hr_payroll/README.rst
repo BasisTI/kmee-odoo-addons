@@ -129,6 +129,23 @@ vai de segunda a domingo.
   traz a primeira falta dela.
 * Falta justificada não entra na contagem.
 
+**Reflexo no DSR de horas extras e adicional noturno**
+
+As horas extras e o adicional noturno do mês refletem no repouso semanal
+remunerado (Lei 605/49, art. 7º, a; Súmulas 172 e 60 do TST). As rubricas
+``DSR_HE`` e ``DSR_NOTURNO`` são o valor da verba ÷ dias úteis × dias de repouso
+do mês, entram no bruto (logo nas bases de INSS, IRRF e FGTS) e na média habitual
+que compõe férias, 13º e rescisão.
+
+* Repouso é domingo ou feriado; dia útil é o restante (segunda a sábado).
+* O módulo não tem calendário de feriados próprio: cadastre-os como *ausência
+  global* (Tempo livre ▸ Configuração ▸ Feriados) no calendário de trabalho do
+  contrato, ou sem calendário para valerem a todos. Sem feriado cadastrado, só os
+  domingos são repouso e o reflexo sai menor que o devido.
+* Em banco existente a atualização liga as rubricas à estrutura CLT. Se a
+  estrutura já tem uma rubrica ``DSR_HE`` (como a do
+  ``l10n_br_hr_payroll_attendance``), ela é mantida.
+
 Bug Tracker
 ===========
 

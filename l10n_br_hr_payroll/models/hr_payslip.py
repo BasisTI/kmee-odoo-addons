@@ -4,6 +4,7 @@
 import logging
 import types
 
+import pytz
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
@@ -400,6 +401,57 @@ class HrPayslip(models.Model):
         ]
         return salary_rules_br.calc_media_habitual(valores, janela_meses)
 
+    def _l10n_br_feriados_competencia(self):
+        """Feriados do mês da competência, no calendário de trabalho do contrato.
+
+        O módulo não tem calendário de feriados próprio: usa as ausências
+        GLOBAIS (``resource.calendar.leaves`` sem recurso, o "feriado" do
+        Odoo) do calendário do contrato, ou sem calendário (valem para todos),
+        da empresa do holerite. Cada dia coberto pela ausência, no fuso do
+        calendário, é um feriado. Sem ausência cadastrada, devolve vazio e o
+        repouso do mês são só os domingos.
+
+        Returns:
+            ``set`` de ``date`` dentro do mês da competência.
+        """
+        self.ensure_one()
+        competencia = self._get_competencia()
+        if not competencia:
+            return set()
+        inicio = competencia.replace(day=1)
+        fim = inicio + relativedelta(months=1, days=-1)
+        contrato = self.contract_id
+        calendario = contrato.resource_calendar_id if contrato else False
+        empresa = self.company_id or contrato.company_id
+        fuso = pytz.timezone(
+            (calendario and calendario.tz) or self.env.user.tz or "UTC"
+        )
+        # Folga de um dia nas pontas: as datas guardadas são UTC.
+        limite_ini = fields.Datetime.to_datetime(inicio - relativedelta(days=1))
+        limite_fim = fields.Datetime.to_datetime(fim + relativedelta(days=2))
+        ausencias = (
+            self.env["resource.calendar.leaves"]
+            .sudo()
+            .search(
+                [
+                    ("resource_id", "=", False),
+                    ("calendar_id", "in", [False, calendario.id if calendario else 0]),
+                    ("company_id", "in", [False, empresa.id]),
+                    ("date_from", "<", limite_fim),
+                    ("date_to", ">", limite_ini),
+                ]
+            )
+        )
+        feriados = set()
+        for ausencia in ausencias:
+            dia = pytz.utc.localize(ausencia.date_from).astimezone(fuso).date()
+            ultimo = pytz.utc.localize(ausencia.date_to).astimezone(fuso).date()
+            while dia <= ultimo:
+                if inicio <= dia <= fim:
+                    feriados.add(dia)
+                dia += relativedelta(days=1)
+        return feriados
+
     def _l10n_br_salario_pago_mensal(self, contract):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
 
@@ -573,7 +625,16 @@ class HrPayslip(models.Model):
             return self._l10n_br_semanas_com_falta(contrato)
 
         def dias_dsr():
-            return salary_rules_br.dias_dsr(competencia.year, competencia.month)
+            return salary_rules_br.dias_dsr(
+                competencia.year,
+                competencia.month,
+                self._l10n_br_feriados_competencia(),
+            )
+
+        def dsr_reflexo(valor):
+            """Reflexo de ``valor`` (horas extras, adicional noturno) no DSR."""
+            uteis, repouso = dias_dsr()
+            return salary_rules_br.calc_dsr_reflexo(valor, uteis, repouso)
 
         def aliquotas_patronais(contrato, decimo_terceiro=False):
             """Alíquotas dos encargos patronais do contrato na competência.
@@ -631,6 +692,8 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Reflexo no DSR de horas extras e adicional noturno (TG-86).
+            dsr_reflexo=dsr_reflexo,
             # Repousos perdidos por falta: um por semana com falta (TG-84).
             semanas_com_falta=semanas_com_falta,
             # Encargos patronais por regime tributário (RF-31/32/33).

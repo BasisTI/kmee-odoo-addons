@@ -518,22 +518,24 @@ def semanas_com_falta(datas, faltas_sem_data=0):
     return len({inicio_semana(d) for d in datas}) + max(faltas_sem_data, 0)
 
 
-def dias_dsr(ano, mes):
+def dias_dsr(ano, mes, feriados=()):
     """Dias úteis e de descanso (DSR) de um mês.
 
-    Deriva do calendário civil da competência: os domingos são o descanso
-    semanal remunerado (DSR) e os demais dias (segunda a sábado) são úteis
-    para fins do rateio do desconto de DSR.
+    Deriva do calendário civil da competência: os domingos e os feriados são o
+    descanso semanal remunerado (Lei 605/49, art. 1º) e os demais dias
+    (segunda a sábado) são úteis. É a base do reflexo das horas extras e do
+    adicional noturno no DSR (Súmulas 172 e 60 do TST).
 
-    Limitação conhecida: feriados NÃO são computados como DSR (exigiria um
-    calendário de feriados por localidade - ver ``l10n_br_resource``). Para a
-    maioria das competências o erro é pequeno; quando houver feriado no mês o
-    desconto de DSR fica marginalmente subestimado. Documentado como
-    pendência de evolução (RF-26).
+    O módulo não tem calendário de feriados próprio: quem chama informa as
+    datas (``feriados``), tiradas do calendário de trabalho do contrato (ver
+    ``hr.payslip._l10n_br_feriados_competencia``). Sem feriados informados só
+    os domingos são repouso, e o erro é o de um feriado a menos no mês.
 
     Args:
         ano: Ano da competência.
         mes: Mês da competência (1-12).
+        feriados: Datas de feriado. As de outro mês e as que caem num domingo
+            não alteram a contagem.
 
     Returns:
         Tupla ``(dias_uteis, dsr)``.
@@ -542,8 +544,25 @@ def dias_dsr(ano, mes):
     from datetime import date as _date
 
     total = _cal.monthrange(ano, mes)[1]
-    domingos = sum(1 for d in range(1, total + 1) if _date(ano, mes, d).weekday() == 6)
-    return total - domingos, domingos
+    feriados = set(feriados or ())
+    repouso = sum(
+        1
+        for d in range(1, total + 1)
+        if _date(ano, mes, d).weekday() == 6 or _date(ano, mes, d) in feriados
+    )
+    return total - repouso, repouso
+
+
+def calc_dsr_reflexo(valor, dias_uteis, dias_repouso):
+    """Reflexo de uma verba variável no DSR do mês (Lei 605/49, art. 7º, a).
+
+    ``valor / dias úteis * dias de repouso``: Súmula 172 do TST (horas extras)
+    e Súmula 60 (adicional noturno). Sem dia útil não há divisor, e o reflexo
+    é zero.
+    """
+    if not valor or dias_uteis <= 0:
+        return 0.0
+    return round_money(valor / dias_uteis * dias_repouso)
 
 
 def calc_ferias_dias(faltas):
