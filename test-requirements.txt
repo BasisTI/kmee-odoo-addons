@@ -1,2 +1,8 @@
 odoo-addon-l10n_br_hr==18.0.*
 odoo==18.0.*
+# oca-ci (Ubuntu 22.04) ships cryptography 3.4.8 + pyOpenSSL 21.0.0, the pair Odoo 18
+# supports. l10n_br_nfe now requires brazil_fiscal_client -> requests-pkcs12, which lets pip
+# upgrade cryptography to 50.x; pyOpenSSL 21 then fails to import and
+# `import odoo.addons` breaks in oca_install_addons. Keep the image's pair.
+cryptography==3.4.8
+pyOpenSSL==21.0.0
