@@ -10,3 +10,4 @@ from . import test_pensao_apuracoes_separadas
 from . import test_medias_habituais
 from . import test_fracionamento_ferias
 from . import test_trct_rf06
+from . import test_ferias_folha_mensal

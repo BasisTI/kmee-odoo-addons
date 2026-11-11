@@ -223,6 +223,14 @@ class HrPayslip(models.Model):
         )
         return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
 
+    def _l10n_br_ferias_gozadas(self, contract):
+        """Períodos ``(inicio, fim)`` de férias gozadas já pagas em recibo.
+
+        Gancho: o recibo de férias vive no ``l10n_br_hr_vacation``, que o
+        sobrescreve. Sem ele, não há férias a descontar.
+        """
+        return []
+
     def _get_tools_dict(self):
         tools = super()._get_tools_dict()
         # `self` é único aqui (chamado a partir de _get_baselocaldict, que faz
@@ -296,8 +304,9 @@ class HrPayslip(models.Model):
         def dias_salario(contrato):
             """Dias de salário do ``contrato`` no período (mês de 30 dias).
 
-            Considera admissão, desligamento e afastamentos previdenciários
-            (tipo com ``l10n_br_afastamento_inss``): dias além do 15º são do INSS.
+            Considera admissão, desligamento, afastamentos previdenciários
+            (tipo com ``l10n_br_afastamento_inss``: dias além do 15º são do
+            INSS) e férias gozadas já pagas no recibo de férias.
             """
             return salary_rules_br.dias_salario_mes(
                 self.date_from,
@@ -305,6 +314,7 @@ class HrPayslip(models.Model):
                 contrato.date_start,
                 contrato.date_end,
                 self._l10n_br_afastamentos_inss(contrato),
+                self._l10n_br_ferias_gozadas(contrato),
             )
 
         def salario_pago_mensal(contrato):

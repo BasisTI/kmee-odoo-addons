@@ -1,6 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from datetime import timedelta
+
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
@@ -254,6 +256,40 @@ class HrPayslip(models.Model):
         return super(
             HrPayslip, self.with_context(l10n_br_em_compute=True)
         ).compute_sheet()
+
+    def _l10n_br_ferias_gozadas(self, contract):
+        """Períodos de gozo dos recibos de férias que se sobrepõem a este holerite.
+
+        A folha mensal paga só os dias fora das férias (CLT art. 129 e 145): os
+        dias gozados já foram pagos no recibo de férias. O período de gozo
+        começa em ``date_from`` do recibo e dura ``l10n_br_dias_ferias_gozadas``
+        dias (limitado a ``date_to``); os dias de abono pecuniário não entram.
+        Recibos cancelados e o próprio holerite ficam de fora.
+        """
+        periodos = super()._l10n_br_ferias_gozadas(contract)
+        self.ensure_one()
+        if not self.date_from or not self.date_to or not contract:
+            return periodos
+        if self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS:
+            return periodos
+        recibos = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "!=", "cancel"),
+                ("struct_id.code", "=", "FERIAS"),
+                ("date_from", "<=", self.date_to),
+                ("date_to", ">=", self.date_from),
+            ]
+        )
+        for recibo in recibos:
+            fim = min(
+                recibo.date_to,
+                recibo.date_from
+                + timedelta(days=max(recibo.l10n_br_dias_ferias_gozadas, 1) - 1),
+            )
+            periodos.append((recibo.date_from, fim))
+        return periodos
 
     @api.depends(
         "l10n_br_ferias_allocation_id",

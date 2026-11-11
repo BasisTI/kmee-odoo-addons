@@ -741,6 +741,7 @@ def dias_salario_mes(
     data_admissao=None,
     data_demissao=None,
     afastamentos_inss=(),
+    ferias_gozadas=(),
 ):
     """Dias de salário devidos no período do holerite (mês comercial de 30 dias).
 
@@ -748,6 +749,10 @@ def dias_salario_mes(
     - Admissão ou desligamento no mês: dias corridos de vigência (teto de 30).
     - Afastamento previdenciário: a empresa paga os 15 primeiros dias; os dias
       seguintes, dentro do período, saem do salário (são do INSS).
+    - Férias gozadas: os dias de gozo dentro do período já foram pagos no
+      recibo de férias (CLT art. 145) e saem do salário do mês. Entram no mesmo
+      conjunto de dias do afastamento, então dias coincidentes não saem duas
+      vezes. O abono pecuniário não entra: são dias trabalhados, não gozados.
 
     Args:
         date_from: Início do período do holerite (date).
@@ -757,6 +762,8 @@ def dias_salario_mes(
         afastamentos_inss: Pares ``(inicio, fim)`` de afastamentos cujos dias
             após o 15º são pagos pelo INSS. O 15º dia conta desde o início do
             afastamento, ainda que anterior ao período.
+        ferias_gozadas: Pares ``(inicio, fim)`` dos períodos de gozo de férias
+            (já pagos no recibo de férias), com todos os dias descontados.
 
     Returns:
         Dias de salário (int, 0..30).
@@ -775,16 +782,20 @@ def dias_salario_mes(
         and date_from.year == date_to.year
     )
     dias = 30 if mes_inteiro else vigencia
-    # Dias civis do INSS dentro da vigência (conjunto: ausências sobrepostas
-    # não contam duas vezes).
+    # Dias civis não pagos no salário (INSS e férias) dentro da vigência
+    # (conjunto: ausências sobrepostas não contam duas vezes).
     dias_inss = set()
-    for a_inicio, a_fim in afastamentos_inss:
-        ini = max(a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), inicio)
-        fi = min(a_fim, fim)
+    pares = [
+        (a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), a_fim)
+        for a_inicio, a_fim in afastamentos_inss
+    ] + list(ferias_gozadas)
+    for p_inicio, p_fim in pares:
+        ini = max(p_inicio, inicio)
+        fi = min(p_fim, fim)
         for n in range((fi - ini).days + 1):
             dias_inss.add(ini + timedelta(days=n))
     if mes_inteiro:
-        # Mês inteiro: leva os dias civis do INSS à base comercial de 30 dias
+        # Mês inteiro: leva os dias civis do INSS e das férias à base comercial de 30 dias
         # por CONTAGEM, sem fração/arredondamento. O dia 31 não tem
         # correspondente comercial (não conta); o último dia de fevereiro
         # vale também os dias 29 e 30 que faltam. Assim os 15 primeiros dias do
