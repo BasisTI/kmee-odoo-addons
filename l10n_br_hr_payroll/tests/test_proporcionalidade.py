@@ -4,7 +4,9 @@
 
 Casos de referência: gabarito da POC (P009, P010, P011), outubro/2026.
 """
+import importlib.util
 from datetime import date
+from pathlib import Path
 
 from odoo.tests.common import BaseCase
 
@@ -70,6 +72,56 @@ class TestDiasSalarioMes(BaseCase):
             dias_salario_mes(OUT_INI, OUT_FIM, data_demissao=date(2026, 9, 30)), 0
         )
 
+    def test_fevereiro_inteiro_de_inss_paga_zero(self):
+        for ano, ultimo in ((2026, 28), (2028, 29)):
+            self.assertEqual(
+                dias_salario_mes(
+                    date(ano, 2, 1),
+                    date(ano, 2, ultimo),
+                    afastamentos_inss=[(date(ano, 1, 1), date(ano, 3, 31))],
+                ),
+                0,
+                ano,
+            )
+
+    def test_mes_de_31_dias_inteiro_de_inss_paga_zero(self):
+        self.assertEqual(
+            dias_salario_mes(
+                OUT_INI,
+                OUT_FIM,
+                afastamentos_inss=[(date(2026, 9, 1), date(2026, 11, 30))],
+            ),
+            0,
+        )
+
+    def test_mes_de_31_dias_dias_1_e_2_pagos_pela_empresa(self):
+        self.assertEqual(
+            dias_salario_mes(
+                OUT_INI,
+                OUT_FIM,
+                afastamentos_inss=[(date(2026, 9, 17), date(2026, 11, 30))],
+            ),
+            1,
+        )
+        self.assertEqual(
+            dias_salario_mes(
+                OUT_INI,
+                OUT_FIM,
+                afastamentos_inss=[(date(2026, 9, 17), date(2026, 10, 30))],
+            ),
+            2,
+        )
+
+    def test_fevereiro_com_um_dia_trabalhado_paga_um(self):
+        self.assertEqual(
+            dias_salario_mes(
+                date(2026, 2, 1),
+                date(2026, 2, 28),
+                afastamentos_inss=[(date(2026, 1, 1), date(2026, 2, 27))],
+            ),
+            1,
+        )
+
 
 class TestSalarioProporcional(PayrollCommon):
     """Holerite de 10/2026 com contrato iniciado, encerrado ou afastado no mês."""
@@ -102,6 +154,21 @@ class TestSalarioProporcional(PayrollCommon):
             self._get_line_total(slip, "ADICIONAL_PERICULOSIDADE"), 1020.0
         )
 
+    def test_insalubridade_acompanha_os_dias(self):
+        emp = self._create_employee()
+        contract = self._create_contract(
+            emp, wage=6000.0, date_start=date(2026, 10, 15)
+        )
+        contract.write(
+            {"l10n_br_insalubridade": True, "l10n_br_grau_insalubridade": "minimo"}
+        )
+        slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
+        sm = slip._get_tools_dict()["br"].salario_minimo()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "ADICIONAL_INSALUBRIDADE"),
+            round(sm * 0.10 * 17 / 30, 2),
+        )
+
     def test_afastamento_por_doenca_acima_de_15_dias(self):
         tipo = self.env["hr.leave.type"].create(
             {
@@ -125,3 +192,37 @@ class TestSalarioProporcional(PayrollCommon):
             leave.sudo().action_validate()
         slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
         self.assertAlmostEqualMoney(self._get_line_total(slip, "SALARIO_BASE"), 4216.67)
+
+
+class TestMigracaoFormulas(PayrollCommon):
+    """A migração troca só as fórmulas padrão antigas (regras são noupdate)."""
+
+    def _migrar(self):
+        caminho = Path(__file__).parent.parent / "migrations/18.0.1.1.0"
+        spec = importlib.util.spec_from_file_location(
+            "post_migration_tg82", caminho / "post-migration.py"
+        )
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.migrate(self.env.cr, "18.0.1.0.0")
+        return modulo
+
+    def test_formula_padrao_antiga_e_atualizada(self):
+        modulo = self._migrar()
+        regras = {
+            xmlid: self.env.ref(f"l10n_br_hr_payroll.{xmlid}")
+            for xmlid in modulo.FORMULAS_ANTIGAS
+        }
+        novas = {x: r.amount_python_compute for x, r in regras.items()}
+        for xmlid, regra in regras.items():
+            regra.amount_python_compute = modulo.FORMULAS_ANTIGAS[xmlid]
+        self._migrar()
+        for xmlid, regra in regras.items():
+            self.assertEqual(regra.amount_python_compute, novas[xmlid], xmlid)
+            self.assertIn("dias_salario", regra.amount_python_compute, xmlid)
+
+    def test_formula_personalizada_e_preservada(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
+        regra.amount_python_compute = "result = contract.wage * 0.9"
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, "result = contract.wage * 0.9")

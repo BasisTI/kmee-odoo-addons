@@ -782,4 +782,10 @@ def dias_salario_mes(
         fi = min(a_fim, fim)
         if fi >= ini:
             inss += (fi - ini).days + 1
+    if mes_inteiro:
+        # Os dias do INSS são corridos (28 a 31); leva-os à base comercial de
+        # 30 dias para que mês inteiro de INSS pague 0 dia (inclusive em
+        # fevereiro e nos meses de 31) e um dia trabalhado pague 1.
+        dias_civis = (date_to - date_from).days + 1
+        inss = int(inss * 30 / dias_civis + 0.5)
     return max(dias - inss, 0)

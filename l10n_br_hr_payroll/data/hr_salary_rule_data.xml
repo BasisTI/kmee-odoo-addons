@@ -122,7 +122,10 @@ result = contract.l10n_br_insalubridade
 SM = tools.br.salario_minimo()
 grau = contract.l10n_br_grau_insalubridade
 percentuais = {'minimo': 0.10, 'medio': 0.20, 'maximo': 0.40}
-result = tools.br.round_money(SM * percentuais.get(grau, 0.10))
+# Adicional fixo: proporcional aos dias de salário do mês, como o salário base.
+result = tools.br.round_money(
+    SM * percentuais.get(grau, 0.10) * tools.br.dias_salario(contract) / 30
+)
         </field>
     </record>
 

@@ -124,7 +124,10 @@
 # quanto o contrato iniciado no MEIO do mês (tools.br.dias_trabalhados_mes
 # já balanceia contra contract.date_start e contract.date_end).
 dias = tools.br.dias_trabalhados_mes(contract)
-result = tools.br.round_money((contract.wage / 30) * dias)
+# Compensa o que o holerite mensal do mesmo período já pagou de salário
+# (evita pagar os mesmos dias duas vezes); sem mensal, paga o saldo inteiro.
+saldo = (contract.wage / 30) * dias - tools.br.salario_pago_mensal(contract)
+result = tools.br.round_money(max(saldo, 0))
         </field>
     </record>
 

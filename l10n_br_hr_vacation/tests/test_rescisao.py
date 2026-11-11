@@ -135,3 +135,61 @@ class TestRescisao(VacationCommon):
         )
         # Período em curso: 15/03/2024 -> 30/09/2024 = ~6,5 meses => 7 avos
         self.assertEqual(avos, 7)
+
+
+@tagged("post_install", "-at_install")
+class TestSaldoSalarioCompensado(VacationCommon):
+    """Mensal + rescisão do mesmo período pagam os dias uma única vez (TG-82)."""
+
+    def _holerites(self, mensal=True):
+        emp = self._create_employee("Saldo compensado")
+        contract = self._create_contract(emp, wage=5000.00, date_start=date(2023, 1, 2))
+        contract.date_end = date(2026, 10, 20)
+        mensal_slip = None
+        if mensal:
+            mensal_slip = self.env["hr.payslip"].create(
+                {
+                    "name": "Mensal",
+                    "employee_id": emp.id,
+                    "contract_id": contract.id,
+                    "struct_id": self.structure_clt.id,
+                    "date_from": date(2026, 10, 1),
+                    "date_to": date(2026, 10, 31),
+                    "company_id": self.env.company.id,
+                }
+            )
+            mensal_slip.compute_sheet()
+        rescisao = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_rescisao.id,
+                "date_from": date(2026, 10, 1),
+                "date_to": date(2026, 10, 20),
+                "company_id": self.env.company.id,
+            }
+        )
+        rescisao.compute_sheet()
+        return mensal_slip, rescisao
+
+    def test_mensal_mais_rescisao_pagam_os_20_dias_uma_vez(self):
+        mensal, rescisao = self._holerites()
+        total_mensal = self._get_line_total(mensal, "SALARIO_BASE")
+        saldo = self._get_line_total(rescisao, "SALDO_SALARIO")
+        self.assertAlmostEqualMoney(total_mensal, 3333.33)
+        self.assertAlmostEqualMoney(total_mensal + saldo, 3333.33)
+
+    def test_sem_mensal_a_rescisao_paga_o_saldo_inteiro(self):
+        _mensal, rescisao = self._holerites(mensal=False)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+
+    def test_mensal_cancelado_nao_compensa(self):
+        mensal, rescisao = self._holerites()
+        mensal.write({"state": "cancel"})
+        rescisao.compute_sheet()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
