@@ -775,17 +775,24 @@ def dias_salario_mes(
         and date_from.year == date_to.year
     )
     dias = 30 if mes_inteiro else vigencia
-    inss = 0
+    # Dias civis do INSS dentro da vigência (conjunto: ausências sobrepostas
+    # não contam duas vezes).
+    dias_inss = set()
     for a_inicio, a_fim in afastamentos_inss:
-        primeiro = a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA)
-        ini = max(primeiro, inicio)
+        ini = max(a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), inicio)
         fi = min(a_fim, fim)
-        if fi >= ini:
-            inss += (fi - ini).days + 1
+        for n in range((fi - ini).days + 1):
+            dias_inss.add(ini + timedelta(days=n))
     if mes_inteiro:
-        # Os dias do INSS são corridos (28 a 31); leva-os à base comercial de
-        # 30 dias para que mês inteiro de INSS pague 0 dia (inclusive em
-        # fevereiro e nos meses de 31) e um dia trabalhado pague 1.
-        dias_civis = (date_to - date_from).days + 1
-        inss = int(inss * 30 / dias_civis + 0.5)
+        # Mês inteiro: leva os dias civis do INSS à base comercial de 30 dias
+        # por CONTAGEM, sem fração/arredondamento. O dia 31 não tem
+        # correspondente comercial (não conta); o último dia de fevereiro
+        # vale também os dias 29 e 30 que faltam. Assim os 15 primeiros dias do
+        # afastamento são sempre da empresa, mês todo de INSS paga 0 e mês sem
+        # afastamento paga 30.
+        inss = len([d for d in dias_inss if d.day <= 30])
+        if date_to in dias_inss and date_to.day < 30:
+            inss += 30 - date_to.day
+    else:
+        inss = len(dias_inss)
     return max(dias - inss, 0)

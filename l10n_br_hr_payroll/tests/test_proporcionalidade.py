@@ -72,6 +72,61 @@ class TestDiasSalarioMes(BaseCase):
             dias_salario_mes(OUT_INI, OUT_FIM, data_demissao=date(2026, 9, 30)), 0
         )
 
+    def _afast(self, inicio, fim, periodo=OUT_FIM, ini_periodo=OUT_INI, **kw):
+        return dias_salario_mes(
+            ini_periodo, periodo, afastamentos_inss=[(inicio, fim)], **kw
+        )
+
+    def test_classe_fevereiro_afastado_do_dia_1_ao_ultimo_paga_15(self):
+        self.assertEqual(
+            self._afast(
+                date(2026, 2, 1), date(2026, 2, 28), date(2026, 2, 28), date(2026, 2, 1)
+            ),
+            15,
+        )
+        self.assertEqual(
+            self._afast(
+                date(2028, 2, 1), date(2028, 2, 29), date(2028, 2, 29), date(2028, 2, 1)
+            ),
+            15,
+        )
+
+    def test_classe_mes_de_31_afastado_do_dia_1_ao_31_paga_15(self):
+        self.assertEqual(self._afast(date(2026, 10, 1), date(2026, 10, 31)), 15)
+
+    def test_classe_16o_dia_neste_mes_paga_ate_o_15o(self):
+        """Início em 25/09: o 15º dia é 09/10; a empresa paga 1 a 9/10."""
+        self.assertEqual(self._afast(date(2026, 9, 25), date(2026, 10, 31)), 9)
+
+    def test_classe_afastamento_com_dias_sobrepostos_nao_duplica(self):
+        dias = dias_salario_mes(
+            OUT_INI,
+            OUT_FIM,
+            afastamentos_inss=[
+                (date(2026, 10, 1), date(2026, 10, 31)),
+                (date(2026, 10, 10), date(2026, 10, 31)),
+            ],
+        )
+        self.assertEqual(dias, 15)
+
+    def test_classe_admissao_no_mesmo_mes_do_afastamento(self):
+        """Admitido 15/10 (17 dias) e afastado 16 a 31/10: INSS só em 31/10."""
+        self.assertEqual(
+            self._afast(
+                date(2026, 10, 16), date(2026, 10, 31), data_admissao=date(2026, 10, 15)
+            ),
+            16,
+        )
+
+    def test_classe_desligamento_no_mesmo_mes_do_afastamento(self):
+        """Desligado 20/10 e afastado de 1 a 20/10: 15 da empresa, 5 do INSS."""
+        self.assertEqual(
+            self._afast(
+                date(2026, 10, 1), date(2026, 10, 20), data_demissao=date(2026, 10, 20)
+            ),
+            15,
+        )
+
     def test_fevereiro_inteiro_de_inss_paga_zero(self):
         for ano, ultimo in ((2026, 28), (2028, 29)):
             self.assertEqual(
@@ -94,7 +149,7 @@ class TestDiasSalarioMes(BaseCase):
             0,
         )
 
-    def test_mes_de_31_dias_dias_1_e_2_pagos_pela_empresa(self):
+    def test_mes_de_31_dias_dia_31_nao_tem_correspondente_comercial(self):
         self.assertEqual(
             dias_salario_mes(
                 OUT_INI,
@@ -109,17 +164,29 @@ class TestDiasSalarioMes(BaseCase):
                 OUT_FIM,
                 afastamentos_inss=[(date(2026, 9, 17), date(2026, 10, 30))],
             ),
-            2,
+            1,
         )
 
-    def test_fevereiro_com_um_dia_trabalhado_paga_um(self):
+    def test_fevereiro_so_o_dia_1_da_empresa_paga_um(self):
+        """Início em 18/01: o 15º dia é 01/02; INSS de 2 a 28/02."""
+        self.assertEqual(
+            dias_salario_mes(
+                date(2026, 2, 1),
+                date(2026, 2, 28),
+                afastamentos_inss=[(date(2026, 1, 18), date(2026, 2, 28))],
+            ),
+            1,
+        )
+
+    def test_fevereiro_so_o_ultimo_dia_trabalhado_vale_3_dias_comerciais(self):
+        """O dia 28/02 é o dia 30 comercial (vale também 29 e 30)."""
         self.assertEqual(
             dias_salario_mes(
                 date(2026, 2, 1),
                 date(2026, 2, 28),
                 afastamentos_inss=[(date(2026, 1, 1), date(2026, 2, 27))],
             ),
-            1,
+            3,
         )
 
 
