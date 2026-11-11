@@ -9,6 +9,7 @@ Cobertura:
   - Férias proporcionais + 1/3 (indenizatórias: isentas de INSS/IRRF/FGTS)
   - Composição do NET
 """
+
 from datetime import date
 
 from odoo.exceptions import UserError
@@ -358,3 +359,81 @@ class TestCicloCompensacaoMensalRescisao(VacationCommon):
         self.assertAlmostEqualMoney(self._total([m1, m2], rescisao), 3333.33, places=1)
         m2.action_payslip_cancel()
         self.assertAlmostEqualMoney(self._total([m1], rescisao), 3333.33, places=1)
+
+    # --- r5: ponto único na gravação (participação do mensal) --------------
+
+    def test_r4_mensal_cancelado_reaberto_com_rescisao_confirmada(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.action_payslip_cancel()
+        rescisao.action_payslip_done()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+        # reabrir o mensal duplicaria os dias: recusado já ao voltar a rascunho
+        with self.assertRaises(UserError):
+            mensal.action_payslip_draft()
+        self.assertEqual(mensal.state, "cancel")
+        self.assertEqual(rescisao.state, "done")
+        # nem pela via de confirmar: o mensal segue cancelado
+        with self.assertRaises(UserError):
+            mensal.action_payslip_done()
+        self.assertEqual(mensal.state, "cancel")
+
+    def test_mensal_cancelado_reaberto_com_rescisao_em_rascunho(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.action_payslip_cancel()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+        mensal.action_payslip_draft()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 0.0
+        )
+        mensal.action_payslip_done()
+        self.assertAlmostEqualMoney(self._total([mensal], rescisao), 3333.33)
+
+    def test_troca_de_periodo_do_mensal_reconcilia(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.write({"date_from": date(2026, 11, 1), "date_to": date(2026, 11, 30)})
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+
+    def test_troca_de_periodo_com_rescisao_confirmada_recusa(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        rescisao.action_payslip_done()
+        with self.assertRaises(UserError):
+            mensal.write(
+                {"date_from": date(2026, 11, 1), "date_to": date(2026, 11, 30)}
+            )
+
+    def test_troca_de_contrato_do_mensal_reconcilia(self):
+        emp, contract = self._contrato()
+        outro = self._create_employee("Outro empregado")
+        contrato_outro = self._create_contract(
+            outro, wage=5000.00, date_start=date(2023, 1, 2)
+        )
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.write({"employee_id": outro.id, "contract_id": contrato_outro.id})
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
