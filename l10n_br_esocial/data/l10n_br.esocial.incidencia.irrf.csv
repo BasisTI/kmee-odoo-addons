@@ -31,7 +31,7 @@ inc_irrf_64,64,Fundação de previdência complementar do servidor público - 13
 inc_irrf_65,65,Fundação de previdência complementar do servidor público - Férias,2015-10-01,
 inc_irrf_66,66,Fundo de Aposentadoria Programada Individual - FAPI - Férias,2015-10-01,
 inc_irrf_67,67,Plano privado coletivo de assistência à saúde,2015-10-01,
-inc_irrf_68,68,Desconto Simplificado Mensal,2023-05-01,
+inc_irrf_68,68,Desconto simplificado mensal,2023-05-01,
 inc_irrf_70,70,Parcela isenta 65 anos - Remuneração mensal,2015-10-01,
 inc_irrf_71,71,Parcela isenta 65 anos - 13º salário,2015-10-01,
 inc_irrf_72,72,Diárias,2015-10-01,
@@ -43,9 +43,9 @@ inc_irrf_77,77,Rendimento de beneficiário com moléstia grave ou acidente em se
 inc_irrf_78,78,"Valores pagos a titular ou sócio de microempresa ou empresa de pequeno porte, exceto pró-labore e aluguéis",2015-10-01,2021-06-30
 inc_irrf_700,700,Auxílio moradia,2015-10-01,
 inc_irrf_701,701,Parte não tributável do valor de serviço de transporte de passageiros ou cargas,2015-10-01,
-inc_irrf_702,702,Bolsa médico residente - Remuneração mensal,2015-10-01,
-inc_irrf_703,703,Bolsa médico residente - 13º salário,2015-10-01,
-inc_irrf_704,704,"Juros de mora recebidos, devidos pelo atraso no pagamento de remuneração por exercício de emprego, cargo ou função",2015-10-01,
+inc_irrf_702,702,Bolsa médico residente - remuneração mensal,2024-12-01,
+inc_irrf_703,703,Bolsa médico residente - 13º salário,2024-12-01,
+inc_irrf_704,704,"Juros de mora recebidos, devidos pelo atraso no pagamento de remuneração por exercício de emprego, cargo ou função",2024-12-01,
 inc_irrf_79,79,Outras isenções (o nome da rubrica deve ser claro para identificação da natureza dos valores),2015-10-01,
 inc_irrf_81,81,Depósito judicial,2015-10-01,2021-06-30
 inc_irrf_82,82,Compensação judicial do ano-calendário,2015-10-01,2021-06-30
