@@ -4,7 +4,7 @@
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 # Tipos de rescisão que dão direito a aviso prévio indenizado pago pelo
 # empregador e à multa do FGTS (com percentuais distintos, ver as regras).
@@ -136,6 +136,116 @@ class HrPayslip(models.Model):
                 if rec.l10n_br_ferias_allocation_id
                 else 0.0
             )
+
+    # ------------------------------------------------------------------
+    # Compensação mensal x rescisão (TG-82)
+    #
+    # O SALDO_SALARIO da rescisão desconta o que o holerite MENSAL do mesmo
+    # período já pagou (ver tools.br.salario_pago_mensal). Para que os dias
+    # nunca sejam pagos duas vezes nem desapareçam, qualquer mudança do que o
+    # mensal paga (calcular, cancelar, excluir) reconcilia a rescisão aberta
+    # (rascunho/verify) recalculando-a, e é RECUSADA quando a rescisão já está
+    # confirmada: cancele/recalcule a rescisão antes.
+    # ------------------------------------------------------------------
+    def _l10n_br_is_mensal(self):
+        return self.struct_id.code in self._L10N_BR_STRUCT_CODES_MENSAIS
+
+    @api.model
+    def _l10n_br_rescisoes_do_periodo(self, periodos):
+        """Rescisões não canceladas que se sobrepõem a (contrato, de, até)."""
+        rescisoes = self.browse()
+        for contract, date_from, date_to in periodos:
+            rescisoes |= self.search(
+                [
+                    ("contract_id", "=", contract.id),
+                    ("state", "!=", "cancel"),
+                    ("struct_id.code", "=", "RESCISAO"),
+                    ("date_from", "<=", date_to),
+                    ("date_to", ">=", date_from),
+                ]
+            )
+        return rescisoes
+
+    @api.model
+    def _l10n_br_recusar_se_rescisao_fechada(self, periodos, motivo):
+        fechadas = self._l10n_br_rescisoes_do_periodo(periodos).filtered(
+            lambda r: r.state == "done"
+        )
+        if fechadas:
+            raise UserError(
+                _(
+                    "Não é possível %(motivo)s: a rescisão %(rescisao)s do mesmo "
+                    "período já está confirmada e compensa o saldo de salário "
+                    "deste holerite mensal. Volte a rescisão para rascunho "
+                    "primeiro.",
+                    motivo=motivo,
+                    rescisao=", ".join(fechadas.mapped(lambda r: r.number or r.name)),
+                )
+            )
+
+    @api.model
+    def _l10n_br_reconciliar_rescisoes(self, periodos):
+        abertas = self._l10n_br_rescisoes_do_periodo(periodos).filtered(
+            lambda r: r.state in ("draft", "verify")
+        )
+        if abertas:
+            abertas.compute_sheet()
+
+    def _l10n_br_periodos_mensais(self, com_salario=False):
+        periodos = []
+        for slip in self.filtered(lambda s: s._l10n_br_is_mensal()):
+            if com_salario and not any(
+                ln.code == "SALARIO_BASE" and ln.total for ln in slip.line_ids
+            ):
+                continue
+            periodos.append((slip.contract_id, slip.date_from, slip.date_to))
+        return periodos
+
+    def _l10n_br_salario_base_mensais(self):
+        return {
+            slip.id: sum(
+                slip.line_ids.filtered(lambda ln: ln.code == "SALARIO_BASE").mapped(
+                    "total"
+                )
+            )
+            for slip in self.filtered(lambda s: s._l10n_br_is_mensal())
+        }
+
+    def compute_sheet(self):
+        antes = self._l10n_br_salario_base_mensais()
+        res = super().compute_sheet()
+        periodos = self._l10n_br_periodos_mensais()
+        if periodos:
+            depois = self._l10n_br_salario_base_mensais()
+            if depois != antes:
+                # O que o mensal paga mudou: rescisão confirmada impede.
+                self._l10n_br_recusar_se_rescisao_fechada(
+                    periodos, _("alterar o salário pago no holerite mensal")
+                )
+            self._l10n_br_reconciliar_rescisoes(periodos)
+        return res
+
+    def action_payslip_cancel(self):
+        periodos = self._l10n_br_periodos_mensais(com_salario=True)
+        if periodos:
+            self._l10n_br_recusar_se_rescisao_fechada(
+                periodos, _("cancelar o holerite mensal")
+            )
+        res = super().action_payslip_cancel()
+        if periodos:
+            self._l10n_br_reconciliar_rescisoes(periodos)
+        return res
+
+    def unlink(self):
+        periodos = self._l10n_br_periodos_mensais(com_salario=True)
+        if periodos:
+            self._l10n_br_recusar_se_rescisao_fechada(
+                periodos, _("excluir o holerite mensal")
+            )
+        res = super().unlink()
+        if periodos:
+            self._l10n_br_reconciliar_rescisoes(periodos)
+        return res
 
     @api.depends(
         "l10n_br_ferias_allocation_id",

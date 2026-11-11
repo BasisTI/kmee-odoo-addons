@@ -11,6 +11,7 @@ Cobertura:
 """
 from datetime import date
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from .common import VacationCommon
@@ -193,3 +194,167 @@ class TestSaldoSalarioCompensado(VacationCommon):
         self.assertAlmostEqualMoney(
             self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
         )
+
+
+@tagged("post_install", "-at_install")
+class TestCicloCompensacaoMensalRescisao(VacationCommon):
+    """Os dias do saldo nunca são pagos em dobro nem somem (TG-82, classe
+    "integridade da compensação mensal x rescisão"), qualquer que seja a
+    ordem das ações padrão. Nenhum teste chama compute_sheet() só para
+    "consertar" o estado: a reconciliação é da própria ação."""
+
+    def _contrato(self):
+        emp = self._create_employee("Ciclo compensação")
+        contract = self._create_contract(emp, wage=5000.00, date_start=date(2023, 1, 2))
+        contract.date_end = date(2026, 10, 20)
+        return emp, contract
+
+    def _holerite(self, emp, contract, struct, de, ate, nome):
+        return self.env["hr.payslip"].create(
+            {
+                "name": nome,
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": struct.id,
+                "date_from": de,
+                "date_to": ate,
+                "company_id": self.env.company.id,
+            }
+        )
+
+    def _mensal(self, emp, contract, de=None, ate=None):
+        de = de or date(2026, 10, 1)
+        ate = ate or date(2026, 10, 31)
+        return self._holerite(emp, contract, self.structure_clt, de, ate, "Mensal")
+
+    def _rescisao(self, emp, contract):
+        return self._holerite(
+            emp,
+            contract,
+            self.structure_rescisao,
+            date(2026, 10, 1),
+            date(2026, 10, 20),
+            "Rescisão",
+        )
+
+    def _pago(self, *slips):
+        return sum(self._get_line_total(s, "SALARIO_BASE") for s in slips)
+
+    def _total(self, mensais, rescisao):
+        return self._pago(*mensais) + self._get_line_total(rescisao, "SALDO_SALARIO")
+
+    def test_a_rescisao_calculada_antes_do_mensal(self):
+        emp, contract = self._contrato()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        self.assertAlmostEqualMoney(self._total([mensal], rescisao), 3333.33)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 0.0
+        )
+
+    def test_a_rescisao_confirmada_recusa_calcular_o_mensal(self):
+        emp, contract = self._contrato()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        rescisao.action_payslip_done()
+        mensal = self._mensal(emp, contract)
+        with self.assertRaises(UserError):
+            mensal.compute_sheet()
+
+    def test_b_cancelar_o_mensal_devolve_o_saldo_a_rescisao(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 0.0
+        )
+        mensal.action_payslip_cancel()
+        self.assertEqual(mensal.state, "cancel")
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+
+    def test_b_rescisao_confirmada_recusa_cancelar_o_mensal(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        rescisao.action_payslip_done()
+        with self.assertRaises(UserError):
+            mensal.action_payslip_cancel()
+        self.assertNotEqual(mensal.state, "cancel")
+        # voltando a rescisão para rascunho, o cancelamento do mensal passa
+        rescisao.action_payslip_draft()
+        mensal.action_payslip_cancel()
+        self.assertEqual(mensal.state, "cancel")
+
+    def test_mensal_recalculado_depois_da_rescisao(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        contract.wage = 6000.00
+        mensal.compute_sheet()
+        self.assertAlmostEqualMoney(self._pago(mensal), 4000.00)
+        self.assertAlmostEqualMoney(self._total([mensal], rescisao), 4000.00)
+
+    def test_rescisao_confirmada_mensal_confirmado_sem_mudanca(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        rescisao.action_payslip_done()
+        # confirmar o mensal recalcula, mas nada muda: não deve recusar
+        mensal.action_payslip_done()
+        self.assertEqual(mensal.state, "done")
+        self.assertAlmostEqualMoney(self._total([mensal], rescisao), 3333.33)
+
+    def test_mensal_voltado_para_rascunho_continua_compensando(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        mensal.action_payslip_done()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.action_payslip_draft()
+        rescisao.compute_sheet()
+        self.assertAlmostEqualMoney(self._total([mensal], rescisao), 3333.33)
+        # e cancelá-lo depois devolve o saldo sem recálculo manual
+        mensal.action_payslip_cancel()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+
+    def test_excluir_o_mensal_em_rascunho_devolve_o_saldo(self):
+        emp, contract = self._contrato()
+        mensal = self._mensal(emp, contract)
+        mensal.compute_sheet()
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        mensal.action_payslip_draft()
+        mensal.unlink()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(rescisao, "SALDO_SALARIO"), 3333.33
+        )
+
+    def test_dois_mensais_parciais(self):
+        emp, contract = self._contrato()
+        m1 = self._mensal(emp, contract, date(2026, 10, 1), date(2026, 10, 10))
+        m2 = self._mensal(emp, contract, date(2026, 10, 11), date(2026, 10, 31))
+        rescisao = self._rescisao(emp, contract)
+        rescisao.compute_sheet()
+        m1.compute_sheet()
+        m2.compute_sheet()
+        self.assertAlmostEqualMoney(self._total([m1, m2], rescisao), 3333.33, places=1)
+        m2.action_payslip_cancel()
+        self.assertAlmostEqualMoney(self._total([m1], rescisao), 3333.33, places=1)
