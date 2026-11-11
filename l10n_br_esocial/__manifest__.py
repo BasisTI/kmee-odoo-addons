@@ -83,6 +83,7 @@
         "views/esocial_tabelas_views.xml",
         "views/hr_salary_rule_views.xml",
         "views/hr_leave_type_views.xml",
+        "views/hr_employee_views.xml",
         "views/res_company_views.xml",
         "views/esocial_evento_views.xml",
         "views/esocial_lote_views.xml",

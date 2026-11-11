@@ -457,6 +457,25 @@ antes de gerar o S-1010.</li>
 <li>Quando sair outra Nota Técnica, atualize <tt class="docutils literal">tests/leiaute_s13.py</tt> e os dados do
 módulo juntos; <tt class="docutils literal">test_tabelas_incidencia</tt> acusa qualquer diferença.</li>
 </ol>
+<p>Admissão (S-2200):</p>
+<ol class="arabic simple">
+<li>O S-2200 não usa mais valores fixos: raça/cor, grau de instrução, nascimento,
+sexo, CNPJ do sindicato, jornada, local de trabalho e dependentes vêm do
+cadastro, e a geração recusa o evento (<tt class="docutils literal">UserError</tt>) quando algum falta.</li>
+<li>No <strong>empregado</strong>: <strong>Gênero</strong> (masculino ou feminino), <strong>Data de Nascimento</strong>,
+<strong>Raça/Cor</strong> (<tt class="docutils literal">ethnicity</tt>, códigos 1 a 6) e, na aba eSocial, <strong>Grau de
+Instrução eSocial</strong> (tabela do leiaute S-1.3).</li>
+<li>No <strong>contrato</strong>: <strong>Sindicato</strong> (parceiro com CNPJ válido), o calendário de
+<strong>Jornada de Trabalho</strong> e, no grupo <strong>eSocial - Jornada</strong>, o <strong>Tipo de
+Jornada</strong> (sem padrão) e o <strong>Tempo Parcial</strong>. As horas semanais, o horário
+noturno (22h às 5h) e a descrição da jornada saem do calendário.</li>
+<li>O <strong>local de trabalho</strong> é o <strong>Endereço de Trabalho</strong> do empregado: precisa ser
+um estabelecimento do empregador (CNPJ com a mesma raiz da empresa) e estar
+no S-1005.</li>
+<li><strong>Dependentes</strong>: nos parentes do empregado, preencha o <strong>Tipo de Dependente
+eSocial</strong> (Tabela 07) para declará-lo. Parente sem tipo não é enviado. O CPF é
+obrigatório para dependente de IRRF, e o tipo 99 exige a descrição.</li>
+</ol>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>

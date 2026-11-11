@@ -104,6 +104,25 @@ Tabelas de incidência (S-1010):
 #. Quando sair outra Nota Técnica, atualize ``tests/leiaute_s13.py`` e os dados do
    módulo juntos; ``test_tabelas_incidencia`` acusa qualquer diferença.
 
+Admissão (S-2200):
+
+#. O S-2200 não usa mais valores fixos: raça/cor, grau de instrução, nascimento,
+   sexo, CNPJ do sindicato, jornada, local de trabalho e dependentes vêm do
+   cadastro, e a geração recusa o evento (``UserError``) quando algum falta.
+#. No **empregado**: **Gênero** (masculino ou feminino), **Data de Nascimento**,
+   **Raça/Cor** (``ethnicity``, códigos 1 a 6) e, na aba eSocial, **Grau de
+   Instrução eSocial** (tabela do leiaute S-1.3).
+#. No **contrato**: **Sindicato** (parceiro com CNPJ válido), o calendário de
+   **Jornada de Trabalho** e, no grupo **eSocial - Jornada**, o **Tipo de
+   Jornada** (sem padrão) e o **Tempo Parcial**. As horas semanais, o horário
+   noturno (22h às 5h) e a descrição da jornada saem do calendário.
+#. O **local de trabalho** é o **Endereço de Trabalho** do empregado: precisa ser
+   um estabelecimento do empregador (CNPJ com a mesma raiz da empresa) e estar
+   no S-1005.
+#. **Dependentes**: nos parentes do empregado, preencha o **Tipo de Dependente
+   eSocial** (Tabela 07) para declará-lo. Parente sem tipo não é enviado. O CPF é
+   obrigatório para dependente de IRRF, e o tipo 99 exige a descrição.
+
 Bug Tracker
 ===========
 
