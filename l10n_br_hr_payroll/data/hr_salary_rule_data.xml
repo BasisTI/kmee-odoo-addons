@@ -34,7 +34,9 @@
         <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = contract.wage
+# Proporcional aos dias de salário do mês (admissão, desligamento, afastamento
+# previdenciário), em mês comercial de 30 dias.
+result = tools.br.round_money(contract.wage * tools.br.dias_salario(contract) / 30)
         </field>
     </record>
 
@@ -101,7 +103,7 @@ result = contract.l10n_br_periculosidade
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.round_money(contract.wage * 0.30)
+result = tools.br.round_money(contract.wage * 0.30 * tools.br.dias_salario(contract) / 30)
         </field>
     </record>
 

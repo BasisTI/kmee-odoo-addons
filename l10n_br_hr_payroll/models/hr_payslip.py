@@ -173,6 +173,30 @@ class HrPayslip(models.Model):
         ]
         return salary_rules_br.calc_media_habitual(valores, janela_meses)
 
+    def _l10n_br_afastamentos_inss(self, contract):
+        """Afastamentos aprovados do empregado cujos dias após o 15º são do INSS.
+
+        Traz também os que começaram antes do período, pois a contagem dos 15
+        dias da empresa parte do início do afastamento.
+        """
+        self.ensure_one()
+        if not self.date_from or not self.date_to:
+            return []
+        leaves = (
+            self.env["hr.leave"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", contract.employee_id.id),
+                    ("state", "=", "validate"),
+                    ("holiday_status_id.l10n_br_afastamento_inss", "=", True),
+                    ("request_date_from", "<=", self.date_to),
+                    ("request_date_to", ">=", self.date_from),
+                ]
+            )
+        )
+        return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
+
     def _get_tools_dict(self):
         tools = super()._get_tools_dict()
         # `self` é único aqui (chamado a partir de _get_baselocaldict, que faz
@@ -243,6 +267,20 @@ class HrPayslip(models.Model):
                 contrato.date_end,
             )
 
+        def dias_salario(contrato):
+            """Dias de salário do ``contrato`` no período (mês de 30 dias).
+
+            Considera admissão, desligamento e afastamentos previdenciários
+            (tipo com ``l10n_br_afastamento_inss``): dias além do 15º são do INSS.
+            """
+            return salary_rules_br.dias_salario_mes(
+                self.date_from,
+                self.date_to,
+                contrato.date_start,
+                contrato.date_end,
+                self._l10n_br_afastamentos_inss(contrato),
+            )
+
         def dias_dsr():
             return salary_rules_br.dias_dsr(competencia.year, competencia.month)
 
@@ -294,6 +332,8 @@ class HrPayslip(models.Model):
             calc_salario_familia=calc_salario_familia,
             # Dias de vigência do contrato no mês (verbas proporcionais).
             dias_trabalhados_mes=dias_trabalhados_mes,
+            # Dias de salário do mês (admissão, desligamento, afastamento).
+            dias_salario=dias_salario,
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,

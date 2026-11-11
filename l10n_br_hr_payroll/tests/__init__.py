@@ -12,3 +12,4 @@ from . import test_redutor_irrf
 from . import test_verbas
 from . import test_worked_days
 from . import test_encargos_patronais
+from . import test_proporcionalidade

@@ -11,6 +11,7 @@
     "category": "Human Resources",
     "depends": [
         "payroll",
+        "hr_holidays",
         "l10n_br_hr",
         "l10n_br_hr_contract",
         # Fonte única do REGIME TRIBUTÁRIO na localização
@@ -36,6 +37,7 @@
         "views/hr_employee_views.xml",
         "views/hr_contract_views.xml",
         "views/hr_payslip_views.xml",
+        "views/hr_leave_type_views.xml",
     ],
     "demo": [
         "demo/resource_calendar_payroll_demo.xml",
