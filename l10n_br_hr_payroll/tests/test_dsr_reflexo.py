@@ -115,8 +115,10 @@ class TestDsrReflexoHolerite(PayrollCommon):
         dsr = self._get_line_total(slip, "DSR_HE") + self._get_line_total(
             slip, "DSR_NOTURNO"
         )
-        sem = 3500.00 + self._get_line_total(slip, "HE_50") + self._get_line_total(
-            slip, "ADICIONAL_NOTURNO"
+        sem = (
+            3500.00
+            + self._get_line_total(slip, "HE_50")
+            + self._get_line_total(slip, "ADICIONAL_NOTURNO")
         )
         self.assertAlmostEqualMoney(self._get_line_total(slip, "GROSS"), sem + dsr)
         # FGTS = 8% da base, que inclui o reflexo.
@@ -191,9 +193,7 @@ class TestMigracaoDsr(PayrollCommon):
     def test_nao_duplica_rubrica_de_mesmo_codigo(self):
         padrao = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
         outra = padrao.copy({"name": "DSR HE do ponto"})
-        self.structure_clt.write(
-            {"rule_ids": [(3, padrao.id), (4, outra.id)]}
-        )
+        self.structure_clt.write({"rule_ids": [(3, padrao.id), (4, outra.id)]})
         self._migrar()
         self.assertEqual(self.structure_clt.rule_ids.mapped("code").count("DSR_HE"), 1)
         self.assertIn(outra, self.structure_clt.rule_ids)
