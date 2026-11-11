@@ -157,12 +157,11 @@ result = tools.br.round_money((contract.wage / 30) * payslip.l10n_br_faltas_inju
         <field name="category_id" ref="hr_salary_rule_category_ded" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = payslip.l10n_br_faltas_injustificadas > 0
+result = tools.br.semanas_com_falta(contract) > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-dias_uteis, dsr_mes = tools.br.dias_dsr()
-result = tools.br.round_money((contract.wage / 30) * payslip.l10n_br_faltas_injustificadas * dsr_mes / dias_uteis)
+result = tools.br.round_money((contract.wage / 30) * tools.br.semanas_com_falta(contract))
         </field>
     </record>
 

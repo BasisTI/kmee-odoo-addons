@@ -4,7 +4,7 @@
 {
     "name": "Folha de Pagamento Brasileira",
     "summary": "Folha de pagamento brasileira com INSS, IRRF, FGTS e verbas CLT",
-    "version": "18.0.1.2.0",
+    "version": "18.0.1.3.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
@@ -22,6 +22,7 @@
     ],
     "data": [
         "security/ir.model.access.csv",
+        "security/hr_payslip_falta_rule.xml",
         "data/l10n_br.hr.payroll.inss.faixa.csv",
         "data/l10n_br.hr.payroll.irrf.faixa.csv",
         "data/l10n_br.hr.payroll.irrf.redutor.csv",

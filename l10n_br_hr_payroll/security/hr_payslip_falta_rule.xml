@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<!-- Copyright 2024 KMEE
+     License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
+<odoo>
+    <!-- A falta é do holerite: as regras repetem as do ``hr.payslip`` do
+         payroll (multiempresa, oficial e subordinados, gerente), porque o
+         operador ``any`` não aplica as regras do holerite à falta. -->
+    <record id="hr_payslip_falta_rule_company" model="ir.rule">
+        <field name="name">Falta do holerite: multiempresa</field>
+        <field name="model_id" ref="model_l10n_br_hr_payslip_falta" />
+        <field name="global" eval="True" />
+        <field
+            name="domain_force"
+        >['|', ('payslip_id.company_id', '=', False), ('payslip_id.company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="hr_payslip_falta_rule_officer" model="ir.rule">
+        <field name="name">Falta do holerite: oficial e subordinados</field>
+        <field name="model_id" ref="model_l10n_br_hr_payslip_falta" />
+        <field
+            name="domain_force"
+        >['|', '|', ('payslip_id.employee_id.user_id', '=', user.id), ('payslip_id.employee_id.department_id', '=', False), ('payslip_id.employee_id.department_id.manager_id.user_id', '=', user.id)]</field>
+        <field name="groups" eval="[(4, ref('payroll.group_payroll_user'))]" />
+    </record>
+    <record id="hr_payslip_falta_rule_manager" model="ir.rule">
+        <field name="name">Falta do holerite: todas</field>
+        <field name="model_id" ref="model_l10n_br_hr_payslip_falta" />
+        <field name="domain_force">[(1, '=', 1)]</field>
+        <field name="groups" eval="[(4, ref('payroll.group_payroll_manager'))]" />
+    </record>
+</odoo>

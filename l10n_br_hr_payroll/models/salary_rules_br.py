@@ -489,6 +489,35 @@ def calc_encargos_sobre_provisao(provisao, aliquota_total, perc_base_isenta=0.0)
     return round_money(base * (aliquota_total or 0.0))
 
 
+def inicio_semana(dia):
+    """Segunda-feira da semana de ``dia`` (a semana do DSR vai de segunda a domingo)."""
+    return dia - timedelta(days=dia.weekday())
+
+
+def semanas_do_periodo(data_de, data_ate):
+    """Quantas semanas (segunda a domingo) o período ``data_de``..``data_ate`` toca."""
+    return (data_ate - inicio_semana(data_de)).days // 7 + 1
+
+
+def semanas_com_falta(datas, faltas_sem_data=0):
+    """Número de repousos semanais perdidos por faltas injustificadas.
+
+    Lei 605/49, art. 6º: a falta injustificada faz perder o repouso da semana
+    em que ocorreu, e duas faltas na mesma semana perdem um repouso só. A
+    semana é a de segunda a domingo (o DSR é o domingo, como em ``dias_dsr``).
+
+    Args:
+        datas: Datas das faltas já descontadas de semanas alheias.
+        faltas_sem_data: Faltas informadas só como contagem. Sem data não há
+            como agrupar por semana, então cada uma conta numa semana própria
+            (quem chama limita ao número de semanas do período).
+
+    Returns:
+        Quantidade de semanas distintas com falta mais ``faltas_sem_data``.
+    """
+    return len({inicio_semana(d) for d in datas}) + max(faltas_sem_data, 0)
+
+
 def dias_dsr(ano, mes):
     """Dias úteis e de descanso (DSR) de um mês.
 

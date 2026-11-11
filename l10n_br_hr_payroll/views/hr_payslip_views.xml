@@ -19,6 +19,11 @@
                         </group>
                         <group string="Faltas">
                             <field name="l10n_br_faltas_injustificadas" />
+                            <field name="l10n_br_falta_ids" nolabel="1">
+                                <list editable="bottom">
+                                    <field name="date" />
+                                </list>
+                            </field>
                         </group>
                     </group>
                 </page>
