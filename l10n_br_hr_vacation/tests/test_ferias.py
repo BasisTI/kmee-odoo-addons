@@ -279,9 +279,10 @@ class TestValorFerias(VacationCommon):
         )
         mensal.compute_sheet()
 
-        # Bases independentes: nenhuma contém a outra.
+        # Bases independentes: nenhuma contém a outra. O mês inteiro é de
+        # férias, já pagas no recibo (TG-83): o mensal não paga os mesmos dias.
         self.assertAlmostEqualMoney(self._get_line_total(ferias, "GROSS"), 8000.00)
-        self.assertAlmostEqualMoney(self._get_line_total(mensal, "GROSS"), 6000.00)
+        self.assertAlmostEqualMoney(self._get_line_total(mensal, "GROSS"), 0.00)
         # O IRRF das férias é calculado sobre a base do próprio holerite.
         faixas = self.env["l10n_br.hr.payroll.irrf.faixa"]._tabela(ferias.date_to)
         self.assertAlmostEqualMoney(

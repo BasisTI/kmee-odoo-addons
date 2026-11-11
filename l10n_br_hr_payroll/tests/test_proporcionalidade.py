@@ -190,6 +190,112 @@ class TestDiasSalarioMes(BaseCase):
         )
 
 
+class TestDiasSalarioFerias(BaseCase):
+    """Férias gozadas (TG-83): os dias já pagos no recibo saem do salário do mês."""
+
+    NOV_INI, NOV_FIM = date(2026, 11, 1), date(2026, 11, 30)
+
+    def _dias(self, ferias, ini=None, fim=None, **kw):
+        return dias_salario_mes(
+            ini or self.NOV_INI, fim or self.NOV_FIM, ferias_gozadas=ferias, **kw
+        )
+
+    def test_sem_ferias_nao_muda(self):
+        self.assertEqual(self._dias([]), 30)
+
+    def test_10_dias_no_meio_do_mes(self):
+        """M01: férias de 16 a 25/11 deixam 20 dias de salário."""
+        self.assertEqual(self._dias([(date(2026, 11, 16), date(2026, 11, 25))]), 20)
+
+    def test_mes_inteiro_em_ferias_paga_zero(self):
+        """M02: férias de 01 a 30/11 não deixam salário."""
+        self.assertEqual(self._dias([(date(2026, 11, 1), date(2026, 11, 30))]), 0)
+
+    def test_ferias_comecando_no_meio_e_terminando_no_proximo_mes(self):
+        """Férias de 20/11 a 09/12: novembro perde 11 dias; dezembro, 9."""
+        ferias = [(date(2026, 11, 20), date(2026, 12, 9))]
+        self.assertEqual(self._dias(ferias), 19)
+        self.assertEqual(self._dias(ferias, date(2026, 12, 1), date(2026, 12, 31)), 21)
+
+    def test_ferias_comecadas_no_mes_anterior(self):
+        """Férias de 25/10 a 13/11: novembro perde 13 dias."""
+        self.assertEqual(self._dias([(date(2026, 10, 25), date(2026, 11, 13))]), 17)
+
+    def test_mes_de_31_dias_inteiro_em_ferias_paga_zero(self):
+        """O dia 31 não tem correspondente comercial: 1 a 31/12 também zera."""
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 12, 1), date(2026, 12, 31))],
+                date(2026, 12, 1),
+                date(2026, 12, 31),
+            ),
+            0,
+        )
+
+    def test_fevereiro_inteiro_em_ferias_paga_zero(self):
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 2, 1), date(2026, 2, 28))],
+                date(2026, 2, 1),
+                date(2026, 2, 28),
+            ),
+            0,
+        )
+
+    def test_ferias_ate_o_fim_de_fevereiro_valem_30_dias_comerciais(self):
+        """Férias de 15 a 28/02 (14 dias civis) tiram 16 dias comerciais."""
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 2, 15), date(2026, 2, 28))],
+                date(2026, 2, 1),
+                date(2026, 2, 28),
+            ),
+            14,
+        )
+
+    def test_dias_de_ferias_e_de_inss_coincidentes_nao_saem_duas_vezes(self):
+        """Afastamento de 01 a 30/11 (INSS do 16º ao 30º); férias de 20 a 25/11."""
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 11, 20), date(2026, 11, 25))],
+                afastamentos_inss=[(date(2026, 11, 1), date(2026, 11, 30))],
+            ),
+            15,
+        )
+
+    def test_ferias_somadas_ao_afastamento_inss(self):
+        """INSS de 16 a 20/11 (5 dias) e férias de 25 a 29/11 (5): paga 20."""
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 11, 25), date(2026, 11, 29))],
+                afastamentos_inss=[(date(2026, 11, 1), date(2026, 11, 20))],
+            ),
+            20,
+        )
+
+    def test_ferias_na_admissao_no_meio_do_mes(self):
+        """Admitido em 10/11, férias de 20 a 25/11: 21 dias de vigência, 6 de férias."""
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 11, 20), date(2026, 11, 25))],
+                data_admissao=date(2026, 11, 10),
+            ),
+            15,
+        )
+
+    def test_ferias_fora_do_periodo_nao_descontam(self):
+        self.assertEqual(self._dias([(date(2026, 12, 1), date(2026, 12, 10))]), 30)
+
+    def test_nao_deixa_negativo(self):
+        self.assertEqual(
+            self._dias(
+                [(date(2026, 10, 1), date(2026, 12, 31))],
+                data_demissao=date(2026, 11, 10),
+            ),
+            0,
+        )
+
+
 class TestSalarioProporcional(PayrollCommon):
     """Holerite de 10/2026 com contrato iniciado, encerrado ou afastado no mês."""
 
@@ -293,3 +399,31 @@ class TestMigracaoFormulas(PayrollCommon):
         regra.amount_python_compute = "result = contract.wage * 0.9"
         self._migrar()
         self.assertEqual(regra.amount_python_compute, "result = contract.wage * 0.9")
+
+
+class TestMigracaoInssFerias(PayrollCommon):
+    """A migração 18.0.1.2.0 troca só a fórmula padrão antiga do INSS."""
+
+    def _migrar(self):
+        caminho = Path(__file__).parent.parent / "migrations/18.0.1.2.0"
+        spec = importlib.util.spec_from_file_location(
+            "post_migration_tg83", caminho / "post-migration.py"
+        )
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.migrate(self.env.cr, "18.0.1.1.0")
+        return modulo
+
+    def test_formula_padrao_antiga_e_atualizada(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_inss")
+        nova = regra.amount_python_compute
+        regra.amount_python_compute = self._migrar().FORMULA_ANTIGA
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, nova)
+        self.assertIn("inss_ferias_competencia", nova)
+
+    def test_formula_personalizada_e_preservada(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_inss")
+        regra.amount_python_compute = "result = 1.0"
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, "result = 1.0")

@@ -144,8 +144,9 @@ class TestPensaoFerias(VacationCommon):
     def test_sem_dupla_deducao_entre_mensal_e_ferias(self):
         """Fixo R$500 + 10%: no mês há mensal E férias, a fixa entra uma vez.
 
-        Total retido no mês = 500 (fixa, uma vez) + 10% de cada verba
-        (6.000 do salário + 8.000 das férias) = 500 + 1.400 = 1.900.
+        O mês inteiro é de férias, já pagas no recibo (TG-83): o mensal não
+        tem salário e retém só a parcela fixa. Total retido no mês = 500
+        (fixa, uma vez) + 10% das férias (8.000) = 500 + 800 = 1.300.
         """
         emp = self._create_employee()
         emp.write(
@@ -160,13 +161,13 @@ class TestPensaoFerias(VacationCommon):
 
         pensao_mensal = self._get_line_total(mensal, "PENSAO_ALIMENTICIA")
         pensao_ferias = self._get_line_total(ferias, "PENSAO_ALIMENTICIA")
-        # Mensal: 500 + 10% x 6.000. Férias: só 10% x 8.000.
-        self.assertAlmostEqualMoney(pensao_mensal, 1100.00)
+        # Mensal: só os 500 fixos (sem salário). Férias: só 10% x 8.000.
+        self.assertAlmostEqualMoney(pensao_mensal, 500.00)
         self.assertAlmostEqualMoney(pensao_ferias, 800.00)
-        self.assertAlmostEqualMoney(pensao_mensal + pensao_ferias, 1900.00)
+        self.assertAlmostEqualMoney(pensao_mensal + pensao_ferias, 1300.00)
         # A parcela fixa aparece uma única vez no mês.
         self.assertAlmostEqualMoney(
-            pensao_mensal + pensao_ferias - 0.10 * (6000.00 + 8000.00), 500.00
+            pensao_mensal + pensao_ferias - 0.10 * (0.00 + 8000.00), 500.00
         )
 
 

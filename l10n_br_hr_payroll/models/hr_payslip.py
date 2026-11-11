@@ -223,6 +223,22 @@ class HrPayslip(models.Model):
         )
         return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
 
+    def _l10n_br_ferias_gozadas(self, contract):
+        """Períodos ``(inicio, fim)`` de férias gozadas já pagas em recibo.
+
+        Gancho: o recibo de férias vive no ``l10n_br_hr_vacation``, que o
+        sobrescreve. Sem ele, não há férias a descontar.
+        """
+        return []
+
+    def _l10n_br_inss_ferias_competencia(self, contract):
+        """``(base, retido)`` de INSS dos recibos de férias da competência.
+
+        Gancho sobrescrito pelo ``l10n_br_hr_vacation``. Sem recibos de férias,
+        ``(0.0, 0.0)`` e o INSS do mensal é apurado só sobre o próprio bruto.
+        """
+        return (0.0, 0.0)
+
     def _get_tools_dict(self):
         tools = super()._get_tools_dict()
         # `self` é único aqui (chamado a partir de _get_baselocaldict, que faz
@@ -296,8 +312,9 @@ class HrPayslip(models.Model):
         def dias_salario(contrato):
             """Dias de salário do ``contrato`` no período (mês de 30 dias).
 
-            Considera admissão, desligamento e afastamentos previdenciários
-            (tipo com ``l10n_br_afastamento_inss``): dias além do 15º são do INSS.
+            Considera admissão, desligamento, afastamentos previdenciários
+            (tipo com ``l10n_br_afastamento_inss``: dias além do 15º são do
+            INSS) e férias gozadas já pagas no recibo de férias.
             """
             return salary_rules_br.dias_salario_mes(
                 self.date_from,
@@ -305,7 +322,12 @@ class HrPayslip(models.Model):
                 contrato.date_start,
                 contrato.date_end,
                 self._l10n_br_afastamentos_inss(contrato),
+                self._l10n_br_ferias_gozadas(contrato),
             )
+
+        def inss_ferias_competencia(contrato):
+            """``(base, retido)`` de INSS nos recibos de férias da competência."""
+            return self._l10n_br_inss_ferias_competencia(contrato)
 
         def salario_pago_mensal(contrato):
             """Salário já pago em holerite mensal que se sobrepõe a este período."""
@@ -364,6 +386,7 @@ class HrPayslip(models.Model):
             dias_trabalhados_mes=dias_trabalhados_mes,
             # Dias de salário do mês (admissão, desligamento, afastamento).
             dias_salario=dias_salario,
+            inss_ferias_competencia=inss_ferias_competencia,
             # Salário já pago no mensal do período (compensação na rescisão).
             salario_pago_mensal=salario_pago_mensal,
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
