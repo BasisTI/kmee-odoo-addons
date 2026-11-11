@@ -119,11 +119,11 @@
         <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-# Dias de vigência do contrato dentro do período do holerite (mês
-# comercial de 30 dias) - cobre tanto a rescisão em qualquer dia do mês
-# quanto o contrato iniciado no MEIO do mês (tools.br.dias_trabalhados_mes
-# já balanceia contra contract.date_start e contract.date_end).
-dias = tools.br.dias_trabalhados_mes(contract)
+# Dias de salário do contrato dentro do período do holerite (mês comercial de
+# 30 dias): cobre a rescisão em qualquer dia do mês e o contrato iniciado no
+# MEIO do mês, e já tira os dias de férias gozadas, pagos no recibo de férias
+# (tools.br.dias_salario é o mesmo cálculo de dias do holerite mensal).
+dias = tools.br.dias_salario(contract)
 # Compensa o que o holerite mensal do mesmo período já pagou de salário
 # (evita pagar os mesmos dias duas vezes); sem mensal, paga o saldo inteiro.
 saldo = (contract.wage / 30) * dias - tools.br.salario_pago_mensal(contract)

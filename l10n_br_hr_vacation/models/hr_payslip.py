@@ -140,17 +140,26 @@ class HrPayslip(models.Model):
             )
 
     # ------------------------------------------------------------------
-    # Compensação mensal x rescisão (TG-82)
+    # Integridade entre holerites dependentes (TG-82 e TG-83)
     #
-    # O SALDO_SALARIO da rescisão desconta o que os holerites MENSAIS do
-    # mesmo período já pagam (tools.br.salario_pago_mensal). A "participação"
-    # de um mensal nessa compensação é: 0 se cancelado (ou se não for
-    # mensal), senão o total do SALARIO_BASE. UM ÚNICO gancho (write/create/
-    # unlink, mais a exclusão de linhas) compara a participação antes e
-    # depois de QUALQUER gravação (estado, linhas, período, contrato,
-    # estrutura): se mudou, a rescisão sobreposta em rascunho/verificação é
-    # recalculada na mesma transação e a rescisão confirmada faz a gravação
-    # ser recusada (volte a rescisão para rascunho antes).
+    # Três holerites do mesmo contrato e período dependem uns dos outros:
+    #
+    # * o RECIBO DE FÉRIAS define os dias gozados (que saem do salário do mês
+    #   e do saldo da rescisão), a base e o INSS retido (apurado na competência
+    #   do mensal);
+    # * o MENSAL paga o salário dos dias fora das férias;
+    # * a RESCISÃO desconta o que o mensal já pagou (SALDO_SALARIO).
+    #
+    # A "participação" de um holerite é o que ele entrega aos dependentes: do
+    # mensal, o total do SALARIO_BASE; do recibo, o gozo (dias e fim), a base e
+    # o INSS retido; 0 se cancelado ou de outra estrutura. UM ÚNICO gancho
+    # (write/create/unlink, a exclusão de linhas e o compute_sheet) compara a
+    # participação antes e depois de QUALQUER gravação (estado, linhas,
+    # período, contrato, estrutura, dias): se mudou, os dependentes em
+    # rascunho/verificação são recalculados na mesma transação e a gravação é
+    # recusada se algum estiver confirmado (volte-o para rascunho antes).
+    # Nada é guardado entre chamadas: o "antes" é variável local, então um
+    # rollback não deixa participação velha para trás.
     # ------------------------------------------------------------------
     _L10N_BR_CAMPOS_PARTICIPACAO = (
         "state",
@@ -159,85 +168,104 @@ class HrPayslip(models.Model):
         "date_to",
         "contract_id",
         "struct_id",
+        "l10n_br_ferias_allocation_id",
+        "l10n_br_dias_periodo_gozado",
+        "l10n_br_abono_pecuniario",
     )
+    _L10N_BR_PARTICIPACAO_NULA = (0, False, False, 0.0, None)
 
     def _l10n_br_participacao(self):
-        """{id: (contrato, de, até, valor)}; valor 0 fora da compensação."""
+        """{id: (contrato, de, até, valor, tipo)}; valor 0 fora da integridade."""
         res = {}
         for slip in self:
-            valor = 0.0
-            if slip.struct_id.code in self._L10N_BR_STRUCT_CODES_MENSAIS and (
-                slip.state != "cancel"
-            ):
-                valor = sum(
-                    ln.total for ln in slip.line_ids if ln.code == "SALARIO_BASE"
-                )
-            res[slip.id] = (slip.contract_id.id, slip.date_from, slip.date_to, valor)
+            valor, tipo = 0.0, None
+            if slip.state != "cancel":
+                if slip.struct_id.code in self._L10N_BR_STRUCT_CODES_MENSAIS:
+                    tipo = "mensal"
+                    valor = sum(
+                        ln.total for ln in slip.line_ids if ln.code == "SALARIO_BASE"
+                    )
+                elif slip.struct_id.code == "FERIAS":
+                    tipo = "ferias"
+                    linhas = {ln.code: ln.total for ln in slip.line_ids}
+                    valor = (
+                        slip.l10n_br_dias_ferias_gozadas,
+                        linhas.get("GROSS", 0.0),
+                        linhas.get("INSS", 0.0),
+                    )
+            res[slip.id] = (
+                slip.contract_id.id,
+                slip.date_from,
+                slip.date_to,
+                valor,
+                tipo,
+            )
         return res
 
-    def _l10n_br_participacao_original(self):
-        """Participação registrada antes de as linhas serem apagadas.
-
-        compute_sheet() apaga as linhas e só depois grava as novas; o valor
-        de antes é guardado pela exclusão das linhas (HrPayslipLine.unlink).
-        """
-        pendentes = self.env.cr.cache.setdefault("l10n_br_part_orig", {})
-        antes = self._l10n_br_participacao()
-        for slip_id in self.ids:
-            if slip_id in pendentes:
-                antes[slip_id] = pendentes.pop(slip_id)
-        return antes
-
     def _l10n_br_reconciliar_participacao(self, antes, depois):
-        periodos = set()
+        periodos = {"mensal": set(), "ferias": set()}
         for slip_id, chave in antes.items():
-            nova = depois.get(slip_id)
+            nova = depois.get(slip_id, self._L10N_BR_PARTICIPACAO_NULA)
             if nova == chave:
                 continue
-            for contrato, de, ate, valor in (chave, nova):
+            for contrato, de, ate, valor, tipo in (chave, nova):
                 if valor and contrato:
-                    periodos.add((contrato, de, ate))
-        if not periodos:
+                    periodos[tipo].add((contrato, de, ate))
+        if not periodos["mensal"] and not periodos["ferias"]:
             return
+        mensais = self.browse()
         rescisoes = self.browse()
-        for contrato, de, ate in periodos:
-            rescisoes |= self.search(
-                [
+        for tipo, conjunto in periodos.items():
+            for contrato, de, ate in conjunto:
+                dominio = [
                     ("contract_id", "=", contrato),
                     ("state", "!=", "cancel"),
-                    ("struct_id.code", "=", "RESCISAO"),
                     ("date_from", "<=", ate),
                     ("date_to", ">=", de),
                 ]
-            )
-        fechadas = rescisoes.filtered(lambda r: r.state == "done")
-        if fechadas:
+                rescisoes |= self.search(
+                    dominio + [("struct_id.code", "=", "RESCISAO")]
+                )
+                if tipo == "ferias":
+                    mensais |= self.search(
+                        dominio
+                        + [("struct_id.code", "in", self._L10N_BR_STRUCT_CODES_MENSAIS)]
+                    )
+        dependentes = (mensais | rescisoes) - self
+        fechados = dependentes.filtered(lambda r: r.state not in ("draft", "verify"))
+        if fechados:
             raise UserError(
                 _(
-                    "Não é possível alterar o holerite mensal: a rescisão "
-                    "%(rescisao)s do mesmo período já está confirmada e "
-                    "compensa o saldo de salário dele. Volte a rescisão para "
-                    "rascunho primeiro.",
-                    rescisao=", ".join(fechadas.mapped(lambda r: r.number or r.name)),
+                    "Não é possível alterar este holerite: %(fechados)s, do mesmo "
+                    "contrato e período, já está confirmado e depende dele (dias "
+                    "de férias, salário ou saldo compensado). Volte o confirmado "
+                    "para rascunho primeiro.",
+                    fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
                 )
             )
-        abertas = rescisoes.filtered(lambda r: r.state in ("draft", "verify"))
-        if abertas:
-            abertas.compute_sheet()
+        # Os mensais primeiro: o recálculo de cada um já reconcilia a rescisão
+        # se o salário pago mudou; a rescisão é recalculada ao fim por causa
+        # dos dias de férias, que ela também desconta.
+        (mensais - self).compute_sheet()
+        (rescisoes - self).compute_sheet()
 
     @api.model_create_multi
     def create(self, vals_list):
         slips = super().create(vals_list)
         slips._l10n_br_reconciliar_participacao(
-            {i: (0, False, False, 0.0) for i in slips.ids},
+            {i: self._L10N_BR_PARTICIPACAO_NULA for i in slips.ids},
             slips._l10n_br_participacao(),
         )
         return slips
 
     def write(self, vals):
-        if not self or not set(vals) & set(self._L10N_BR_CAMPOS_PARTICIPACAO):
+        if (
+            not self
+            or self.env.context.get("l10n_br_em_compute")
+            or not set(vals) & set(self._L10N_BR_CAMPOS_PARTICIPACAO)
+        ):
             return super().write(vals)
-        antes = self._l10n_br_participacao_original()
+        antes = self._l10n_br_participacao()
         res = super().write(vals)
         self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
         return res
@@ -245,23 +273,25 @@ class HrPayslip(models.Model):
     def unlink(self):
         antes = self._l10n_br_participacao()
         res = super().unlink()
-        self.browse()._l10n_br_reconciliar_participacao(
-            antes, {i: (0, False, False, 0.0) for i in antes}
-        )
+        self.browse()._l10n_br_reconciliar_participacao(antes, {})
         return res
 
     def compute_sheet(self):
-        # Marca o recálculo: a exclusão das linhas feita por ele só registra a
-        # participação anterior; quem confere é o write que grava as novas.
-        return super(
+        # O compute_sheet apaga as linhas e grava as novas: a conferência é uma
+        # só, no fim, contra a participação de antes (variável local).
+        antes = self._l10n_br_participacao()
+        res = super(
             HrPayslip, self.with_context(l10n_br_em_compute=True)
         ).compute_sheet()
+        self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
+        return res
 
     def _l10n_br_ferias_gozadas(self, contract):
         """Períodos de gozo dos recibos de férias que se sobrepõem a este holerite.
 
         A folha mensal paga só os dias fora das férias (CLT art. 129 e 145): os
-        dias gozados já foram pagos no recibo de férias. O período de gozo
+        dias gozados já foram pagos no recibo de férias; vale também para a rescisão
+        (SALDO_SALARIO). O período de gozo
         começa em ``date_from`` do recibo e dura ``l10n_br_dias_ferias_gozadas``
         dias (limitado a ``date_to``); os dias de abono pecuniário não entram.
         Recibos cancelados e o próprio holerite ficam de fora.
@@ -270,7 +300,10 @@ class HrPayslip(models.Model):
         self.ensure_one()
         if not self.date_from or not self.date_to or not contract:
             return periodos
-        if self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS:
+        if (
+            self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS
+            and self.struct_id.code != "RESCISAO"
+        ):
             return periodos
         recibos = self.env["hr.payslip"].search(
             [
@@ -670,18 +703,12 @@ class HrPayslipLine(models.Model):
     def unlink(self):
         slips = self.mapped("slip_id").filtered(
             lambda s: s.struct_id.code in s._L10N_BR_STRUCT_CODES_MENSAIS
+            or s.struct_id.code == "FERIAS"
         )
-        if not slips:
+        if not slips or self.env.context.get("l10n_br_em_compute"):
+            # compute_sheet(): a conferência é do próprio compute_sheet.
             return super().unlink()
-        antes = slips._l10n_br_participacao_original()
+        antes = slips._l10n_br_participacao()
         res = super().unlink()
-        if self.env.context.get("l10n_br_em_compute"):
-            # compute_sheet(): o write seguinte confere contra este "antes".
-            pend = self.env.cr.cache.setdefault("l10n_br_part_orig", {})
-            for slip_id, chave in antes.items():
-                pend.setdefault(slip_id, chave)
-        else:
-            slips._l10n_br_reconciliar_participacao(
-                antes, slips._l10n_br_participacao()
-            )
+        slips._l10n_br_reconciliar_participacao(antes, slips._l10n_br_participacao())
         return res
