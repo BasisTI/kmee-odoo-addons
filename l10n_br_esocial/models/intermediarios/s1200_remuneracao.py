@@ -1,8 +1,17 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
+# Categorias de regra que carregam verba ou desconto do trabalhador. Totais
+# (GROSS, NET), informativas, encargos do empregador e provisões não são
+# rubricas do S-1200 e não geram aviso.
+CATEGORIAS_DECLARAVEIS = ("BASIC", "ALW", "DED")
 
 
 class ESocialS1200(models.Model):
@@ -50,6 +59,14 @@ class ESocialS1200(models.Model):
         "Obrigatório quando Indicativo de Retificação for 'Retificação'.",
     )
 
+    avisos = fields.Text(
+        string="Avisos da geração",
+        readonly=True,
+        copy=False,
+        help="Linhas do holerite que ficaram fora do XML por falta de "
+        "configuração eSocial na regra salarial.",
+    )
+
     @api.constrains("nr_recibo")
     def _check_nr_recibo(self):
         for rec in self:
@@ -85,16 +102,21 @@ class ESocialS1200(models.Model):
     def _build_itens_remun(self):
         """Build list of rubric items from payslip lines."""
         itens = []
+        sem_config = {}
         for payslip in self.payslip_ids:
             for line in payslip.line_ids:
                 rule = line.salary_rule_id
-                # Only lines with nat_rubr go to XML (ABGF rule)
-                if not rule.l10n_br_esocial_nat_rubr_id:
-                    continue
-                if not rule.l10n_br_esocial_cod_rubr:
-                    continue
                 # Skip zero-valued lines — they must not be reported.
                 if not line.total:
+                    continue
+                # Only lines with nat_rubr go to XML (ABGF rule), mas a regra
+                # com valor e sem configuração é avisada, não calada.
+                if (
+                    not rule.l10n_br_esocial_nat_rubr_id
+                    or not rule.l10n_br_esocial_cod_rubr
+                ):
+                    if rule.category_id.code in CATEGORIAS_DECLARAVEIS:
+                        sem_config.setdefault(rule, []).append(line.total)
                     continue
                 itens.append(
                     {
@@ -103,7 +125,39 @@ class ESocialS1200(models.Model):
                         "vr_rubr": str(abs(line.total)),
                     }
                 )
+        self._registrar_avisos_sem_config(sem_config)
         return itens
+
+    def _registrar_avisos_sem_config(self, sem_config):
+        """Avisa (log e campo ``avisos``) das regras que ficaram fora do XML."""
+        if not sem_config:
+            self.avisos = False
+            return
+        linhas = []
+        for rule, valores in sem_config.items():
+            faltando = []
+            if not rule.l10n_br_esocial_cod_rubr:
+                faltando.append(_("código da rubrica"))
+            if not rule.l10n_br_esocial_nat_rubr_id:
+                faltando.append(_("natureza da rubrica"))
+            linhas.append(
+                _(
+                    "Regra '%(regra)s' (%(code)s) com valor no holerite e sem "
+                    "%(faltando)s eSocial: %(n)d linha(s), total %(total).2f, "
+                    "fora do S-1200."
+                )
+                % {
+                    "regra": rule.name,
+                    "code": rule.code,
+                    "faltando": " e ".join(faltando),
+                    "n": len(valores),
+                    "total": sum(abs(v) for v in valores),
+                }
+            )
+        self.avisos = "\n".join(linhas)
+        _logger.warning(
+            "eSocial S-1200 %s (%s): %s", self.id, self.per_apur, self.avisos
+        )
 
     def _to_esociallib_dict(self):
         self.ensure_one()

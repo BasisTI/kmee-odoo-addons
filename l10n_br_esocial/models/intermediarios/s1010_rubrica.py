@@ -1,8 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import fields, models
-from odoo.exceptions import UserError
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError, ValidationError
 
 
 class ESocialS1010(models.Model):
@@ -36,6 +36,63 @@ class ESocialS1010(models.Model):
         string="Fim Validade",
         size=7,
     )
+
+    @api.model
+    def criar_para_regras(self, regras, ini_valid, operacao="inclusao"):
+        """Cria um S-1010 por rubrica, não por regra.
+
+        Regras de estruturas diferentes (mensal, férias, 13º, rescisão) repetem
+        o código eSocial; o governo recusa a rubrica declarada duas vezes.
+        """
+        criados = self.browse()
+        vistos = set()
+        for regra in regras.filtered("l10n_br_esocial_cod_rubr"):
+            chave = regra._esocial_chave_rubrica()
+            if chave in vistos:
+                continue
+            vistos.add(chave)
+            criados |= self.create(
+                {
+                    "salary_rule_id": regra.id,
+                    "operacao": operacao,
+                    "ini_valid": ini_valid,
+                }
+            )
+        return criados
+
+    @api.constrains("salary_rule_id", "operacao", "ini_valid", "company_id")
+    def _check_rubrica_unica(self):
+        for rec in self:
+            regra = rec.salary_rule_id
+            if not regra.l10n_br_esocial_cod_rubr:
+                continue
+            chave = regra._esocial_chave_rubrica()
+            repetidos = self.search(
+                [
+                    ("id", "!=", rec.id),
+                    ("company_id", "=", rec.company_id.id),
+                    ("operacao", "=", rec.operacao),
+                    ("ini_valid", "=", rec.ini_valid),
+                    ("salary_rule_id.l10n_br_esocial_cod_rubr", "=", chave[0]),
+                ]
+            ).filtered(
+                lambda r, chave=chave: r.salary_rule_id._esocial_chave_rubrica()
+                == chave
+            )
+            if repetidos:
+                raise ValidationError(
+                    _(
+                        "A rubrica '%(cod)s' já tem S-1010 de %(op)s com início "
+                        "de validade %(ini)s para esta empresa (regra "
+                        "'%(outra)s'). Cada código de rubrica entra uma vez."
+                    )
+                    % {
+                        "cod": chave[0],
+                        "op": rec.operacao,
+                        "ini": rec.ini_valid,
+                        "outra": repetidos[0].salary_rule_id.display_name,
+                    }
+                )
 
     def _get_event_type(self):
         return "S-1010"
