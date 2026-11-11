@@ -27,15 +27,21 @@ class HrPayslip(models.Model):
     )
     l10n_br_horas_noturnas = fields.Float(
         string="Horas Noturnas",
-        help="Horas trabalhadas entre 22h e 05h",
+        help="Horas de relógio trabalhadas entre 22h e 05h (60 minutos cada), "
+        "sem a conversão pela hora reduzida: ela é feita uma vez só, em "
+        "Horas Noturnas Computadas.",
     )
     l10n_br_usar_hora_reduzida = fields.Boolean(
         string="Usar Hora Noturna Reduzida",
-        help="Hora noturna = 52min30s (7/8 da hora normal)",
+        help="Hora noturna = 52min30s: cada hora de relógio noturna conta como "
+        "60/52,5 = 8/7 de hora (CLT, art. 73, § 1º). A conversão incide sobre as "
+        "Horas Noturnas, que são de relógio.",
     )
     l10n_br_horas_noturnas_computadas = fields.Float(
         string="Horas Noturnas Computadas",
         compute="_compute_horas_noturnas_computadas",
+        help="Horas noturnas já convertidas pela hora reduzida (relógio x 8/7); "
+        "é a quantidade sobre a qual incide o adicional noturno.",
     )
     l10n_br_faltas_injustificadas = fields.Integer(
         string="Faltas Injustificadas",
@@ -84,11 +90,18 @@ class HrPayslip(models.Model):
                     )
                 )
 
+    @api.depends("l10n_br_horas_noturnas", "l10n_br_usar_hora_reduzida")
     def _compute_horas_noturnas_computadas(self):
+        """Converte as horas noturnas de relógio pela hora reduzida (art. 73, § 1º).
+
+        Cada 52min30s de relógio valem uma hora de trabalho: 60 / 52,5 = 8/7
+        (60 min de relógio = 1h08min34s computadas). O fator 7/8, usado antes,
+        era o inverso e reduzia a quantidade em vez de aumentá-la.
+        """
         for rec in self:
             if rec.l10n_br_usar_hora_reduzida:
                 rec.l10n_br_horas_noturnas_computadas = (
-                    rec.l10n_br_horas_noturnas * 7 / 8
+                    rec.l10n_br_horas_noturnas * 8 / 7
                 )
             else:
                 rec.l10n_br_horas_noturnas_computadas = rec.l10n_br_horas_noturnas
