@@ -291,6 +291,36 @@ class HrPayslip(models.Model):
             periodos.append((recibo.date_from, fim))
         return periodos
 
+    def _l10n_br_inss_ferias_competencia(self, contract):
+        """INSS das férias na competência: base e valor já retido no recibo.
+
+        O salário de contribuição do mês soma o mensal e as férias gozadas
+        (Lei 8.212/91, art. 28), sob um só teto: o INSS do mensal é a alíquota
+        progressiva sobre a soma, menos o que o recibo de férias já reteve.
+        Entram os recibos que começam dentro do período deste mensal.
+        """
+        base, retido = super()._l10n_br_inss_ferias_competencia(contract)
+        self.ensure_one()
+        if not self.date_from or not self.date_to or not contract:
+            return base, retido
+        if self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS:
+            return base, retido
+        recibos = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "!=", "cancel"),
+                ("struct_id.code", "=", "FERIAS"),
+                ("date_from", ">=", self.date_from),
+                ("date_from", "<=", self.date_to),
+            ]
+        )
+        for recibo in recibos:
+            linhas = {ln.code: ln.total for ln in recibo.line_ids}
+            base += linhas.get("GROSS", 0.0)
+            retido += linhas.get("INSS", 0.0)
+        return base, retido
+
     @api.depends(
         "l10n_br_ferias_allocation_id",
         "l10n_br_dias_periodo_gozado",

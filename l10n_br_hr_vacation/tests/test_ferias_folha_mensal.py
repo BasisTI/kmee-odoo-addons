@@ -116,3 +116,48 @@ class TestFeriasFolhaMensal(VacationCommon):
         self.assertAlmostEqualMoney(
             self._get_line_total(slip, "ADICIONAL_PERICULOSIDADE"), 450
         )
+
+    def _inss(self, slip):
+        return self._get_line_total(slip, "INSS")
+
+    def test_inss_do_mensal_apurado_na_competencia(self):
+        """M01: INSS sobre mensal + férias (4.000), menos o retido no recibo.
+
+        Férias de 10 dias: 1.200 + 1/3 = 1.600, INSS retido 120,00. Sobre a
+        soma de 4.000 o INSS é 368,60, então o mensal retém 248,60.
+        """
+        emp, contract = self._contrato(3600.0)
+        recibo = self._recibo(emp, contract, date(2026, 11, 16), date(2026, 11, 25), 10)
+        recibo.compute_sheet()
+        mensal = self._create_payslip(emp, contract, NOV_INI, NOV_FIM)
+        self.assertAlmostEqualMoney(self._get_line_total(recibo, "GROSS"), 1600)
+        self.assertAlmostEqualMoney(self._inss(recibo), 120)
+        self.assertAlmostEqualMoney(self._inss(mensal), 248.60)
+        self.assertAlmostEqualMoney(self._inss(recibo) + self._inss(mensal), 368.60)
+
+    def test_inss_mes_inteiro_em_ferias_nao_retem_no_mensal(self):
+        """M02: o INSS todo foi retido no recibo; o mensal não retém nada."""
+        emp, contract = self._contrato(4000.0)
+        recibo = self._recibo(emp, contract, NOV_INI, NOV_FIM, 30)
+        recibo.compute_sheet()
+        mensal = self._create_payslip(emp, contract, NOV_INI, NOV_FIM)
+        self.assertGreater(self._inss(recibo), 0)
+        self.assertAlmostEqualMoney(self._inss(mensal), 0)
+
+    def test_inss_sem_ferias_inalterado(self):
+        emp, contract = self._contrato(3600.0)
+        mensal = self._create_payslip(emp, contract, NOV_INI, NOV_FIM)
+        self.assertAlmostEqualMoney(
+            self._inss(mensal),
+            mensal._get_tools_dict()["br"].calc_inss(3600.0),
+        )
+
+    def test_inss_recibo_cancelado_nao_entra(self):
+        emp, contract = self._contrato(3600.0)
+        recibo = self._recibo(emp, contract, date(2026, 11, 16), date(2026, 11, 25), 10)
+        recibo.compute_sheet()
+        recibo.action_payslip_cancel()
+        mensal = self._create_payslip(emp, contract, NOV_INI, NOV_FIM)
+        self.assertAlmostEqualMoney(
+            self._inss(mensal), mensal._get_tools_dict()["br"].calc_inss(3600.0)
+        )

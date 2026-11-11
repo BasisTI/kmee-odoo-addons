@@ -200,7 +200,12 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 base_inss = categories.GROSS - FALTAS - DESC_DSR
-result = tools.br.calc_inss(max(base_inss, 0))
+# Salário de contribuição da competência: soma o mensal e as férias gozadas no
+# mês (Lei 8.212/91, art. 28); desconta o INSS já retido no recibo de férias.
+base_ferias, inss_ferias = tools.br.inss_ferias_competencia(contract)
+result = max(
+    tools.br.calc_inss(max(base_inss, 0) + base_ferias) - inss_ferias, 0
+)
         </field>
     </record>
 

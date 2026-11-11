@@ -399,3 +399,31 @@ class TestMigracaoFormulas(PayrollCommon):
         regra.amount_python_compute = "result = contract.wage * 0.9"
         self._migrar()
         self.assertEqual(regra.amount_python_compute, "result = contract.wage * 0.9")
+
+
+class TestMigracaoInssFerias(PayrollCommon):
+    """A migração 18.0.1.2.0 troca só a fórmula padrão antiga do INSS."""
+
+    def _migrar(self):
+        caminho = Path(__file__).parent.parent / "migrations/18.0.1.2.0"
+        spec = importlib.util.spec_from_file_location(
+            "post_migration_tg83", caminho / "post-migration.py"
+        )
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.migrate(self.env.cr, "18.0.1.1.0")
+        return modulo
+
+    def test_formula_padrao_antiga_e_atualizada(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_inss")
+        nova = regra.amount_python_compute
+        regra.amount_python_compute = self._migrar().FORMULA_ANTIGA
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, nova)
+        self.assertIn("inss_ferias_competencia", nova)
+
+    def test_formula_personalizada_e_preservada(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_inss")
+        regra.amount_python_compute = "result = 1.0"
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, "result = 1.0")
