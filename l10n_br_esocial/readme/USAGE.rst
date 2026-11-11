@@ -42,3 +42,14 @@ Rubricas (S-1010 e S-1200):
 #. Regra de provento ou desconto com valor no holerite e sem código ou natureza
    eSocial fica fora do S-1200; a geração registra um aviso no log e no campo
    **Avisos da geração** do S-1200.
+
+Tabelas de incidência (S-1010):
+
+#. As listas de **Incidência INSS**, **IRRF** e **FGTS** da regra salarial seguem o
+   leiaute S-1.3 (NT 07/2026 rev. 20/10/2026). No IRRF só aparecem os códigos
+   vigentes da Tabela 21.
+#. Ao atualizar o módulo, regras com um código que saiu do leiaute (por exemplo,
+   IRRF ``00``) não são alteradas: o log do servidor avisa quais são, para revisão
+   antes de gerar o S-1010.
+#. Quando sair outra Nota Técnica, atualize ``tests/leiaute_s13.py`` e os dados do
+   módulo juntos; ``test_tabelas_incidencia`` acusa qualquer diferença.

@@ -4,82 +4,378 @@
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
-# Incidência INSS (Contribuição Previdenciária) — eSocial S-1.3
+# Tabelas de incidência do leiaute S-1.3 do eSocial (NT 07/2026 rev. 20/10/2026):
+# códigos de ``codIncCP``, ``codIncIRRF`` (Tabela 21, só os vigentes) e ``codIncFGTS``.
+# A cópia oficial usada pelo teste está em ``tests/leiaute_s13.py``.
+
+# Incidência INSS (Contribuição Previdenciária) - S-1010 codIncCP
 ESOCIAL_COD_INC_CP = [
     ("00", "00 - Não é base de cálculo"),
-    ("11", "11 - Base de cálculo das contribuições sociais - Mensal"),
-    ("12", "12 - Base de cálculo das contribuições sociais - 13º Salário"),
-    ("13", "13 - Exclusiva do empregador - Mensal"),
-    ("14", "14 - Exclusiva do empregador - 13º Salário"),
-    ("15", "15 - Exclusiva do segurado - Mensal"),
-    ("16", "16 - Exclusiva do segurado - 13º Salário"),
-    ("21", "21 - Base de cálculo das contribuições sociais - Sal. Maternidade"),
-    ("22", "22 - Base de cálculo - Sal. Maternidade 13o"),
-    ("25", "25 - Exclusiva do segurado - Sal. Maternidade"),
-    ("26", "26 - Exclusiva do segurado - Sal. Maternidade 13o"),
-    ("31", "31 - Não é base, mas compõe limite de desconto"),
-    ("32", "32 - Já tributada ou isenta de contribuição previdenciária"),
-    ("34", "34 - Acordo internacional de previdência"),
-    ("35", "35 - Valor descontado do segurado"),
-    ("51", "51 - Base de cálculo - Sal. Maternidade complementar"),
-    ("91", "91 - Incidência suspensa em decisão judicial - Mensal"),
-    ("92", "92 - Incidência suspensa em decisão judicial - 13º Sal."),
-    ("93", "93 - Incidência suspensa em decisão judicial - Sal. Maternidade"),
-    ("94", "94 - Incidência suspensa em decisão judicial - Sal. Maternidade 13o"),
+    (
+        "01",
+        "01 - Não é base de cálculo em função de acordos internacionais de previdência social",  # noqa: B950
+    ),
+    (
+        "11",
+        "11 - Base de cálculo das contribuições sociais - Salário de contribuição - Mensal",  # noqa: B950
+    ),
+    (
+        "12",
+        "12 - Base de cálculo das contribuições sociais - Salário de contribuição - 13º salário",  # noqa: B950
+    ),
+    (
+        "13",
+        "13 - Base de cálculo das contribuições sociais - Salário de contribuição - Exclusiva do empregador - Mensal",  # noqa: B950
+    ),
+    (
+        "14",
+        "14 - Base de cálculo das contribuições sociais - Salário de contribuição - Exclusiva do empregador - 13° salário",  # noqa: B950
+    ),
+    (
+        "15",
+        "15 - Base de cálculo das contribuições sociais - Salário de contribuição - Exclusiva do segurado - Mensal",  # noqa: B950
+    ),
+    (
+        "16",
+        "16 - Base de cálculo das contribuições sociais - Salário de contribuição - Exclusiva do segurado - 13° salário",  # noqa: B950
+    ),
+    (
+        "21",
+        "21 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-maternidade mensal, pago pelo empregador",  # noqa: B950
+    ),
+    (
+        "22",
+        "22 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-maternidade 13º salário, pago pelo empregador",  # noqa: B950
+    ),
+    (
+        "23",
+        "23 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-paternidade mensal, pago pelo empregador",  # noqa: B950
+    ),
+    (
+        "24",
+        "24 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-paternidade 13º salário, pago pelo empregador",  # noqa: B950
+    ),
+    (
+        "25",
+        "25 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-maternidade mensal, pago pelo INSS",  # noqa: B950
+    ),
+    (
+        "26",
+        "26 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-maternidade 13° salário, pago pelo INSS",  # noqa: B950
+    ),
+    (
+        "27",
+        "27 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-paternidade mensal, pago pelo INSS",  # noqa: B950
+    ),
+    (
+        "28",
+        "28 - Base de cálculo das contribuições sociais - Salário de contribuição - Salário-paternidade 13° salário, pago pelo INSS",  # noqa: B950
+    ),
+    (
+        "31",
+        "31 - Contribuição descontada do segurado sobre salário de contribuição - Mensal",  # noqa: B950
+    ),
+    (
+        "32",
+        "32 - Contribuição descontada do segurado sobre salário de contribuição - 13º salário",  # noqa: B950
+    ),
+    (
+        "34",
+        "34 - Contribuição descontada do segurado sobre salário de contribuição - SEST",
+    ),
+    (
+        "35",
+        "35 - Contribuição descontada do segurado sobre salário de contribuição - SENAT",  # noqa: B950
+    ),
+    ("51", "51 - Outros - Salário-família"),
+    (
+        "91",
+        "91 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Mensal",  # noqa: B950
+    ),
+    (
+        "92",
+        "92 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - 13º salário",  # noqa: B950
+    ),
+    (
+        "93",
+        "93 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Salário-maternidade",  # noqa: B950
+    ),
+    (
+        "94",
+        "94 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Salário-maternidade 13º salário",  # noqa: B950
+    ),
+    (
+        "95",
+        "95 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Exclusiva do empregador - Mensal",  # noqa: B950
+    ),
+    (
+        "96",
+        "96 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Exclusiva do empregador - 13º salário",  # noqa: B950
+    ),
+    (
+        "97",
+        "97 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Exclusiva do empregador - Salário-maternidade",  # noqa: B950
+    ),
+    (
+        "98",
+        "98 - Suspensão de incidência sobre salário de contribuição em decorrência de decisão judicial - Exclusiva do empregador - Salário-maternidade 13º salário",  # noqa: B950
+    ),
 ]
 
-# Incidência IRRF — eSocial S-1.3
+# Incidência IRRF - S-1010 codIncIRRF (Tabela 21; 0, 1, 15, 35, 44, 55, 78 e 81 a 95 expiraram)
 ESOCIAL_COD_INC_IRRF = [
-    ("00", "00 - Não é base de cálculo (rendimento não tributável)"),
-    ("01", "01 - Rendimento não tributável pelo ajuste anual (diárias)"),
-    ("09", "09 - Verba transitada pela folha - rendimento tributável"),
-    ("11", "11 - Base de cálculo do IRRF - Remuneração mensal"),
-    ("12", "12 - Base de cálculo do IRRF - 13° Salário"),
-    ("13", "13 - Base de cálculo do IRRF - Férias"),
-    ("14", "14 - Base de cálculo do IRRF - PLR"),
-    ("15", "15 - Base de cálculo do IRRF - Rendimentos recebidos acumuladamente"),
-    ("31", "31 - Retenção do IRRF"),
-    ("32", "32 - Retenção do IRRF - 13° Salário"),
-    ("33", "33 - Retenção do IRRF - Férias"),
-    ("34", "34 - Retenção do IRRF - PLR"),
-    ("35", "35 - Retenção do IRRF - RRA"),
-    ("41", "41 - Dedução do rendimento tributável do IRRF"),
-    ("42", "42 - Dedução do rendimento tributável do IRRF - 13° Salário"),
-    ("43", "43 - Dedução do rendimento tributável do IRRF - Férias"),
-    ("44", "44 - Dedução do rendimento tributável do IRRF - PLR"),
-    ("46", "46 - Dedução do rendimento tributável do IRRF - RRA"),
-    ("51", "51 - Isenção do IRRF - Parcela isenta 65 anos"),
-    ("52", "52 - Isenção do IRRF - Diárias"),
-    ("53", "53 - Isenção do IRRF - Indenização por rescisão"),
-    ("54", "54 - Isenção do IRRF - Abono pecuniário de férias"),
-    ("55", "55 - Isenção do IRRF - Pensão/Proventos/Reforma por moléstia grave"),
-    ("56", "56 - Isenção do IRRF - Lucros e dividendos"),
-    ("61", "61 - Dedução cesta básica (Lei 10.925)"),
-    ("71", "71 - Rendimento não tributável - PLR"),
-    ("72", "72 - Rendimento não tributável - RRA"),
-    ("73", "73 - Rendimento não tributável - Outros"),
-    ("74", "74 - Depósito judicial"),
-    ("75", "75 - Compensação judicial do ano calendário"),
-    ("76", "76 - Compensação judicial de anos anteriores"),
-    ("77", "77 - Proc. de auto regularização"),
-    ("79", "79 - Rendimento isento ou não tributável"),
-    ("81", "81 - Base de cálculo do IRRF - Férias complementar"),
-    ("82", "82 - Isenção do IRRF - Complem. aposentadoria (poupança)"),
-    ("83", "83 - Dedução - Contribuição FAPI"),
-    ("91", "91 - Base de cálculo IRRF - Decisão judicial"),
-    ("92", "92 - Base de cálculo IRRF 13° - Decisão judicial"),
-    ("93", "93 - Base de cálculo IRRF Férias - Decisão judicial"),
-    ("94", "94 - Base de cálculo IRRF PLR - Decisão judicial"),
-    ("95", "95 - Base de cálculo IRRF RRA - Decisão judicial"),
+    (
+        "09",
+        "09 - Verba transitada pela folha de pagamento de natureza diversa de rendimento ou retenção/isenção/dedução de IR (exemplo: desconto de convênio farmácia, desconto de consignações, etc.)",  # noqa: B950
+    ),
+    ("11", "11 - Rendimento tributável (base de cálculo do IR) - Remuneração mensal"),
+    ("12", "12 - Rendimento tributável (base de cálculo do IR) - 13º salário"),
+    ("13", "13 - Rendimento tributável (base de cálculo do IR) - Férias"),
+    ("14", "14 - Rendimento tributável (base de cálculo do IR) - PLR"),
+    ("31", "31 - Retenção do IRRF efetuada sobre - Remuneração mensal"),
+    ("32", "32 - Retenção do IRRF efetuada sobre - 13º salário"),
+    ("33", "33 - Retenção do IRRF efetuada sobre - Férias"),
+    ("34", "34 - Retenção do IRRF efetuada sobre - PLR"),
+    (
+        "41",
+        "41 - Dedução do rendimento tributável do IRRF - Previdência Social Oficial - PSO - Remuneração mensal",  # noqa: B950
+    ),
+    ("42", "42 - Dedução do rendimento tributável do IRRF - PSO - 13º salário"),
+    ("43", "43 - Dedução do rendimento tributável do IRRF - PSO - Férias"),
+    (
+        "46",
+        "46 - Dedução do rendimento tributável do IRRF - Previdência complementar - Salário mensal",  # noqa: B950
+    ),
+    (
+        "47",
+        "47 - Dedução do rendimento tributável do IRRF - Previdência complementar - 13º salário",  # noqa: B950
+    ),
+    (
+        "48",
+        "48 - Dedução do rendimento tributável do IRRF - Previdência complementar - Férias",  # noqa: B950
+    ),
+    (
+        "51",
+        "51 - Dedução do rendimento tributável do IRRF - Pensão alimentícia - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "52",
+        "52 - Dedução do rendimento tributável do IRRF - Pensão alimentícia - 13º salário",  # noqa: B950
+    ),
+    (
+        "53",
+        "53 - Dedução do rendimento tributável do IRRF - Pensão alimentícia - Férias",
+    ),
+    ("54", "54 - Dedução do rendimento tributável do IRRF - Pensão alimentícia - PLR"),
+    (
+        "61",
+        "61 - Dedução do rendimento tributável do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "62",
+        "62 - Dedução do rendimento tributável do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - 13º salário",  # noqa: B950
+    ),
+    (
+        "63",
+        "63 - Dedução do rendimento tributável do IRRF - Fundação de previdência complementar do servidor público - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "64",
+        "64 - Dedução do rendimento tributável do IRRF - Fundação de previdência complementar do servidor público - 13º salário",  # noqa: B950
+    ),
+    (
+        "65",
+        "65 - Dedução do rendimento tributável do IRRF - Fundação de previdência complementar do servidor público - Férias",  # noqa: B950
+    ),
+    (
+        "66",
+        "66 - Dedução do rendimento tributável do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - Férias",  # noqa: B950
+    ),
+    (
+        "68",
+        "68 - Dedução do rendimento tributável do IRRF - Desconto simplificado mensal",
+    ),
+    (
+        "67",
+        "67 - Dedução do rendimento tributável para uso exclusivo na Declaração de Ajuste Anual - Plano privado coletivo de assistência à saúde",  # noqa: B950
+    ),
+    (
+        "70",
+        "70 - Rendimento não tributável ou isento do IRRF - Parcela isenta 65 anos - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "71",
+        "71 - Rendimento não tributável ou isento do IRRF - Parcela isenta 65 anos - 13º salário",  # noqa: B950
+    ),
+    ("72", "72 - Rendimento não tributável ou isento do IRRF - Diárias"),
+    ("73", "73 - Rendimento não tributável ou isento do IRRF - Ajuda de custo"),
+    (
+        "74",
+        "74 - Rendimento não tributável ou isento do IRRF - Indenização e rescisão de contrato, inclusive a título de PDV e acidentes de trabalho",  # noqa: B950
+    ),
+    ("75", "75 - Rendimento não tributável ou isento do IRRF - Abono pecuniário"),
+    (
+        "76",
+        "76 - Rendimento não tributável ou isento do IRRF - Rendimento de beneficiário com moléstia grave ou acidente em serviço - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "77",
+        "77 - Rendimento não tributável ou isento do IRRF - Rendimento de beneficiário com moléstia grave ou acidente em serviço - 13º salário",  # noqa: B950
+    ),
+    ("700", "700 - Rendimento não tributável ou isento do IRRF - Auxílio moradia"),
+    (
+        "701",
+        "701 - Rendimento não tributável ou isento do IRRF - Parte não tributável do valor de serviço de transporte de passageiros ou cargas",  # noqa: B950
+    ),
+    (
+        "702",
+        "702 - Rendimento não tributável ou isento do IRRF - Bolsa médico residente - remuneração mensal",  # noqa: B950
+    ),
+    (
+        "703",
+        "703 - Rendimento não tributável ou isento do IRRF - Bolsa médico residente - 13º salário",  # noqa: B950
+    ),
+    (
+        "704",
+        "704 - Rendimento não tributável ou isento do IRRF - Juros de mora recebidos, devidos pelo atraso no pagamento de remuneração por exercício de emprego, cargo ou função",  # noqa: B950
+    ),
+    (
+        "79",
+        "79 - Rendimento não tributável ou isento do IRRF - Outras isenções (o nome da rubrica deve ser claro para identificação da natureza dos valores)",  # noqa: B950
+    ),
+    (
+        "9011",
+        "9011 - Exigibilidade suspensa - Rendimento tributável (base de cálculo do IR) - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9012",
+        "9012 - Exigibilidade suspensa - Rendimento tributável (base de cálculo do IR) - 13º salário",  # noqa: B950
+    ),
+    (
+        "9013",
+        "9013 - Exigibilidade suspensa - Rendimento tributável (base de cálculo do IR) - Férias",  # noqa: B950
+    ),
+    (
+        "9014",
+        "9014 - Exigibilidade suspensa - Rendimento tributável (base de cálculo do IR) - PLR",  # noqa: B950
+    ),
+    (
+        "9031",
+        "9031 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9032",
+        "9032 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - 13º salário",
+    ),
+    (
+        "9033",
+        "9033 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Férias",
+    ),
+    ("9034", "9034 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - PLR"),
+    (
+        "9831",
+        "9831 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Depósito judicial - Mensal",  # noqa: B950
+    ),
+    (
+        "9832",
+        "9832 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Depósito judicial - 13º salário",  # noqa: B950
+    ),
+    (
+        "9833",
+        "9833 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Depósito judicial - Férias",  # noqa: B950
+    ),
+    (
+        "9834",
+        "9834 - Exigibilidade suspensa - Retenção do IRRF efetuada sobre - Depósito judicial - PLR",  # noqa: B950
+    ),
+    (
+        "9041",
+        "9041 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Previdência Social Oficial - PSO - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9042",
+        "9042 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - PSO - 13º salário",  # noqa: B950
+    ),
+    (
+        "9043",
+        "9043 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - PSO - Férias",  # noqa: B950
+    ),
+    (
+        "9046",
+        "9046 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Previdência complementar - Salário mensal",  # noqa: B950
+    ),
+    (
+        "9047",
+        "9047 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Previdência complementar - 13º salário",  # noqa: B950
+    ),
+    (
+        "9048",
+        "9048 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Previdência complementar - Férias",  # noqa: B950
+    ),
+    (
+        "9051",
+        "9051 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Pensão alimentícia - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9052",
+        "9052 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Pensão alimentícia - 13º salário",  # noqa: B950
+    ),
+    (
+        "9053",
+        "9053 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Pensão alimentícia - Férias",  # noqa: B950
+    ),
+    (
+        "9054",
+        "9054 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Pensão alimentícia - PLR",  # noqa: B950
+    ),
+    (
+        "9061",
+        "9061 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9062",
+        "9062 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - 13º salário",  # noqa: B950
+    ),
+    (
+        "9063",
+        "9063 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundação de previdência complementar do servidor público - Remuneração mensal",  # noqa: B950
+    ),
+    (
+        "9064",
+        "9064 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundação de previdência complementar do servidor público - 13º salário",  # noqa: B950
+    ),
+    (
+        "9065",
+        "9065 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundação de previdência complementar do servidor público - Férias",  # noqa: B950
+    ),
+    (
+        "9066",
+        "9066 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Fundo de Aposentadoria Programada Individual - FAPI - Férias",  # noqa: B950
+    ),
+    (
+        "9067",
+        "9067 - Exigibilidade suspensa - Dedução da base de cálculo do IRRF - Plano privado coletivo de assistência à saúde",  # noqa: B950
+    ),
+    ("9082", "9082 - Compensação judicial - Compensação judicial do ano-calendário"),
+    ("9083", "9083 - Compensação judicial - Compensação judicial de anos anteriores"),
 ]
 
-# Incidência FGTS — eSocial S-1.3
+# Incidência FGTS - S-1010 codIncFGTS
 ESOCIAL_COD_INC_FGTS = [
     ("00", "00 - Não é base de cálculo do FGTS"),
-    ("11", "11 - Base de cálculo do FGTS - Mensal"),
-    ("12", "12 - Base de cálculo do FGTS - 13° Salário"),
-    ("21", "21 - Base de cálculo do FGTS - Sal. Maternidade"),
-    ("91", "91 - Incidência suspensa em decisão judicial"),
+    ("11", "11 - Base de cálculo do FGTS mensal"),
+    ("12", "12 - Base de cálculo do FGTS 13° salário"),
+    ("21", "21 - Base de cálculo do FGTS aviso prévio indenizado"),
+    ("31", "31 - Desconto eConsignado"),
+    ("91", "91 - Incidência suspensa em decorrência de decisão judicial - FGTS mensal"),
+    (
+        "92",
+        "92 - Incidência suspensa em decorrência de decisão judicial - FGTS 13º salário",  # noqa: B950
+    ),
+    (
+        "93",
+        "93 - Incidência suspensa em decorrência de decisão judicial - FGTS aviso prévio indenizado",  # noqa: B950
+    ),
 ]
 
 
@@ -199,11 +495,13 @@ class HrSalaryRule(models.Model):
                     ("l10n_br_esocial_cod_rubr", "=", chave[0]),
                 ]
             ).filtered(
-                lambda r, chave=chave, rule=rule: r._esocial_chave_rubrica() == chave
-                and (
-                    not r.company_id
-                    or not rule.company_id
-                    or r.company_id == rule.company_id
+                lambda r, chave=chave, rule=rule: (
+                    r._esocial_chave_rubrica() == chave
+                    and (
+                        not r.company_id
+                        or not rule.company_id
+                        or r.company_id == rule.company_id
+                    )
                 )
             )
             for outra in outras:
