@@ -157,6 +157,17 @@ class TestPonteFolha(TransactionCase):
         self.assertAlmostEqual(holerite.l10n_br_horas_noturnas, 1.0, places=2)
         self.assertGreater(self._valor(holerite, "ADICIONAL_NOTURNO"), 0.0)
 
+    def test_horas_noturnas_chegam_de_relogio_e_convertidas_uma_vez(self):
+        """1 h de relógio: o holerite guarda 1,0 e computa 8/7, não 8/7 x 8/7."""
+        self._marcar(2, (22, 0), (23, 0))
+        self._apurar_marco()
+        holerite = self._holerite()
+        self.assertTrue(holerite.l10n_br_usar_hora_reduzida)
+        self.assertAlmostEqual(holerite.l10n_br_horas_noturnas, 1.0, places=2)
+        self.assertAlmostEqual(
+            holerite.l10n_br_horas_noturnas_computadas, 8 / 7, places=2
+        )
+
     def test_faltas_vem_da_apuracao(self):
         """Março de 2026 tem 22 dias úteis; sem marcação, todos são falta."""
         self._apurar_marco()

@@ -89,31 +89,71 @@ class TestAdicionalNoturno(PayrollCommon):
     """Testes do adicional noturno (art. 73 CLT)."""
 
     def test_adicional_noturno_20_porcento(self):
-        """Adicional noturno = 20% sobre as horas noturnas."""
+        """Adicional noturno = 20% sobre as horas noturnas (sem hora reduzida)."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00)
         payslip = self._create_payslip(emp, contract)
         payslip.write({"l10n_br_horas_noturnas": 176})
         payslip.compute_sheet()
+        self.assertFalse(payslip.l10n_br_usar_hora_reduzida)
         adicional = self._get_line_total(payslip, "ADICIONAL_NOTURNO")
         divisor = contract._l10n_br_divisor_horas_mensais()
         esperado = (3000.00 / divisor) * 0.20 * 176
         self.assertAlmostEqualMoney(adicional, esperado)
 
-    def test_hora_noturna_reduzida_52min30s(self):
-        """Hora noturna reduzida (52min30s = 7/8 da hora normal)."""
+    def _adicional_noturno(self, horas, reduzida, wage=3500.00):
         emp = self._create_employee()
-        contract = self._create_contract(emp, wage=3000.00)
+        contract = self._create_contract(emp, wage=wage)
         payslip = self._create_payslip(emp, contract)
         payslip.write(
-            {
-                "l10n_br_horas_noturnas": 60,
-                "l10n_br_usar_hora_reduzida": True,
-            }
+            {"l10n_br_horas_noturnas": horas, "l10n_br_usar_hora_reduzida": reduzida}
         )
         payslip.compute_sheet()
-        horas_computadas = payslip.l10n_br_horas_noturnas_computadas
-        self.assertAlmostEqualMoney(horas_computadas, 52.5)
+        divisor = contract._l10n_br_divisor_horas_mensais()
+        return payslip, wage / divisor
+
+    def test_hora_noturna_reduzida_52min30s(self):
+        """60 min de relógio noturnos = 60/52,5 = 8/7 de hora computada."""
+        payslip, _hora = self._adicional_noturno(60, True)
+        self.assertAlmostEqual(
+            payslip.l10n_br_horas_noturnas_computadas, 60 * 8 / 7, places=6
+        )
+
+    def test_adicional_incide_sobre_horas_reduzidas(self):
+        """Gabarito P016 (TG-72): 40 h de relógio, salário 3.500 => 8/7 x 40 h."""
+        payslip, hora = self._adicional_noturno(40, True)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADICIONAL_NOTURNO"),
+            hora * 0.20 * 40 * 8 / 7,
+        )
+
+    def test_sem_hora_reduzida_nao_converte(self):
+        """Hora reduzida desligada (ex.: trabalhador rural): paga o relógio."""
+        payslip, hora = self._adicional_noturno(40, False)
+        self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 40.0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADICIONAL_NOTURNO"), hora * 0.20 * 40
+        )
+
+    def test_horas_fracionadas(self):
+        """7,5 h de relógio => 8,5714 h computadas, sem arredondar antes."""
+        payslip, hora = self._adicional_noturno(7.5, True)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADICIONAL_NOTURNO"),
+            hora * 0.20 * 7.5 * 8 / 7,
+        )
+
+    def test_zero_horas_noturnas_sem_rubrica(self):
+        payslip, _hora = self._adicional_noturno(0, True)
+        self.assertFalse(
+            payslip.line_ids.filtered(lambda r: r.code == "ADICIONAL_NOTURNO")
+        )
+
+    def test_computadas_recalcula_ao_alterar_flag(self):
+        payslip, _hora = self._adicional_noturno(7, False)
+        self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 7.0)
+        payslip.l10n_br_usar_hora_reduzida = True
+        self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 8.0)
 
 
 class TestPericulosidadeInsalubridade(PayrollCommon):
