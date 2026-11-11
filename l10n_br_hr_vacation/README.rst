@@ -55,8 +55,15 @@ que caem no período saem do SALARIO_BASE e dos adicionais proporcionais, no mê
 comercial de 30 dias. O período de gozo começa em ``date_from`` do recibo e dura
 ``Dias de Férias Gozadas`` (limitado a ``date_to``); o abono pecuniário não sai
 do salário. Férias que atravessam dois meses descontam em cada mês só os dias
-que cabem nele. Depois de lançar, alterar ou cancelar um recibo de férias,
-recalcule o holerite mensal do período.
+que cabem nele. A rescisão do mesmo período também desconta os dias de férias
+no saldo de salário.
+
+O vínculo é mantido no mesmo ponto único da compensação acima: ao lançar,
+calcular, alterar (período, dias, contrato, estrutura), cancelar, reabrir ou
+excluir um recibo de férias, os holerites mensais e as rescisões sobrepostos em
+rascunho/verificação são recalculados na mesma transação; se algum já estiver
+confirmado, a alteração do recibo é recusada com mensagem (volte o confirmado
+para rascunho primeiro).
 
 Bug Tracker
 ===========
