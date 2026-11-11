@@ -173,6 +173,56 @@ class HrPayslip(models.Model):
         ]
         return salary_rules_br.calc_media_habitual(valores, janela_meses)
 
+    def _l10n_br_salario_pago_mensal(self, contract):
+        """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
+
+        Usado pela rescisão para não pagar de novo, no saldo de salário, os
+        dias que o holerite mensal da mesma competência já pagou. Sem holerite
+        mensal sobreposto, devolve 0 e a rescisão paga o saldo inteiro.
+        """
+        self.ensure_one()
+        if not self.date_from or not self.date_to:
+            return 0.0
+        mensais = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "!=", "cancel"),
+                ("struct_id.code", "in", self._L10N_BR_STRUCT_CODES_MENSAIS),
+                ("date_from", "<=", self.date_to),
+                ("date_to", ">=", self.date_from),
+            ]
+        )
+        return sum(
+            mensais.mapped("line_ids")
+            .filtered(lambda ln: ln.code == "SALARIO_BASE")
+            .mapped("total")
+        )
+
+    def _l10n_br_afastamentos_inss(self, contract):
+        """Afastamentos aprovados do empregado cujos dias após o 15º são do INSS.
+
+        Traz também os que começaram antes do período, pois a contagem dos 15
+        dias da empresa parte do início do afastamento.
+        """
+        self.ensure_one()
+        if not self.date_from or not self.date_to:
+            return []
+        leaves = (
+            self.env["hr.leave"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", contract.employee_id.id),
+                    ("state", "=", "validate"),
+                    ("holiday_status_id.l10n_br_afastamento_inss", "=", True),
+                    ("request_date_from", "<=", self.date_to),
+                    ("request_date_to", ">=", self.date_from),
+                ]
+            )
+        )
+        return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
+
     def _get_tools_dict(self):
         tools = super()._get_tools_dict()
         # `self` é único aqui (chamado a partir de _get_baselocaldict, que faz
@@ -243,6 +293,24 @@ class HrPayslip(models.Model):
                 contrato.date_end,
             )
 
+        def dias_salario(contrato):
+            """Dias de salário do ``contrato`` no período (mês de 30 dias).
+
+            Considera admissão, desligamento e afastamentos previdenciários
+            (tipo com ``l10n_br_afastamento_inss``): dias além do 15º são do INSS.
+            """
+            return salary_rules_br.dias_salario_mes(
+                self.date_from,
+                self.date_to,
+                contrato.date_start,
+                contrato.date_end,
+                self._l10n_br_afastamentos_inss(contrato),
+            )
+
+        def salario_pago_mensal(contrato):
+            """Salário já pago em holerite mensal que se sobrepõe a este período."""
+            return self._l10n_br_salario_pago_mensal(contrato)
+
         def dias_dsr():
             return salary_rules_br.dias_dsr(competencia.year, competencia.month)
 
@@ -294,6 +362,10 @@ class HrPayslip(models.Model):
             calc_salario_familia=calc_salario_familia,
             # Dias de vigência do contrato no mês (verbas proporcionais).
             dias_trabalhados_mes=dias_trabalhados_mes,
+            # Dias de salário do mês (admissão, desligamento, afastamento).
+            dias_salario=dias_salario,
+            # Salário já pago no mensal do período (compensação na rescisão).
+            salario_pago_mensal=salario_pago_mensal,
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,

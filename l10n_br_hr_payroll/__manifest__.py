@@ -4,13 +4,14 @@
 {
     "name": "Folha de Pagamento Brasileira",
     "summary": "Folha de pagamento brasileira com INSS, IRRF, FGTS e verbas CLT",
-    "version": "18.0.1.0.0",
+    "version": "18.0.1.1.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
     "category": "Human Resources",
     "depends": [
         "payroll",
+        "hr_holidays",
         "l10n_br_hr",
         "l10n_br_hr_contract",
         # Fonte única do REGIME TRIBUTÁRIO na localização
@@ -36,6 +37,7 @@
         "views/hr_employee_views.xml",
         "views/hr_contract_views.xml",
         "views/hr_payslip_views.xml",
+        "views/hr_leave_type_views.xml",
     ],
     "demo": [
         "demo/resource_calendar_payroll_demo.xml",

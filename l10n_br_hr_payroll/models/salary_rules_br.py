@@ -8,6 +8,7 @@ independentemente com pytest puro (sem banco de dados).
 
 Injetadas no contexto das regras salariais via `tools.br.*`.
 """
+from datetime import timedelta
 from decimal import ROUND_HALF_UP, Decimal
 
 from dateutil.relativedelta import relativedelta
@@ -727,3 +728,71 @@ def dias_trabalhados_mes(date_from, date_to, data_admissao=None, data_demissao=N
     if fim < inicio:
         return 0
     return min((fim - inicio).days + 1, 30)
+
+
+# Dias de afastamento pagos pela empresa antes de a Previdência assumir
+# (Lei 8.213/91, art. 60, § 3º).
+DIAS_AFASTAMENTO_EMPRESA = 15
+
+
+def dias_salario_mes(
+    date_from,
+    date_to,
+    data_admissao=None,
+    data_demissao=None,
+    afastamentos_inss=(),
+):
+    """Dias de salário devidos no período do holerite (mês comercial de 30 dias).
+
+    - Mês inteiro de vigência do contrato: 30 dias (inclusive fevereiro).
+    - Admissão ou desligamento no mês: dias corridos de vigência (teto de 30).
+    - Afastamento previdenciário: a empresa paga os 15 primeiros dias; os dias
+      seguintes, dentro do período, saem do salário (são do INSS).
+
+    Args:
+        date_from: Início do período do holerite (date).
+        date_to: Fim do período do holerite (date).
+        data_admissao: Início do contrato (date) ou ``None``.
+        data_demissao: Fim do contrato (date) ou ``None``.
+        afastamentos_inss: Pares ``(inicio, fim)`` de afastamentos cujos dias
+            após o 15º são pagos pelo INSS. O 15º dia conta desde o início do
+            afastamento, ainda que anterior ao período.
+
+    Returns:
+        Dias de salário (int, 0..30).
+    """
+    vigencia = dias_trabalhados_mes(date_from, date_to, data_admissao, data_demissao)
+    if not vigencia:
+        return 0
+    inicio = max(date_from, data_admissao) if data_admissao else date_from
+    fim = min(date_to, data_demissao) if data_demissao else date_to
+    mes_inteiro = (
+        inicio == date_from
+        and fim == date_to
+        and date_from.day == 1
+        and (date_to + timedelta(days=1)).day == 1
+        and date_from.month == date_to.month
+        and date_from.year == date_to.year
+    )
+    dias = 30 if mes_inteiro else vigencia
+    # Dias civis do INSS dentro da vigência (conjunto: ausências sobrepostas
+    # não contam duas vezes).
+    dias_inss = set()
+    for a_inicio, a_fim in afastamentos_inss:
+        ini = max(a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), inicio)
+        fi = min(a_fim, fim)
+        for n in range((fi - ini).days + 1):
+            dias_inss.add(ini + timedelta(days=n))
+    if mes_inteiro:
+        # Mês inteiro: leva os dias civis do INSS à base comercial de 30 dias
+        # por CONTAGEM, sem fração/arredondamento. O dia 31 não tem
+        # correspondente comercial (não conta); o último dia de fevereiro
+        # vale também os dias 29 e 30 que faltam. Assim os 15 primeiros dias do
+        # afastamento são sempre da empresa, mês todo de INSS paga 0 e mês sem
+        # afastamento paga 30.
+        inss = len([d for d in dias_inss if d.day <= 30])
+        if date_to in dias_inss and date_to.day < 30:
+            inss += 30 - date_to.day
+    else:
+        inss = len(dias_inss)
+    return max(dias - inss, 0)
