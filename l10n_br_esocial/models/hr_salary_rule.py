@@ -1,7 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import ValidationError
 
 # Incidência INSS (Contribuição Previdenciária) — eSocial S-1.3
 ESOCIAL_COD_INC_CP = [
@@ -82,6 +83,24 @@ ESOCIAL_COD_INC_FGTS = [
 ]
 
 
+# Incidência INSS de salário-maternidade (21/22: pago pelo empregador;
+# 25/26: exclusiva do segurado). Rubrica com essa incidência é salário-maternidade
+# e tem natureza própria (4050 mensal, 4051 13º), nunca a 1000 de salário comum.
+COD_INC_CP_MATERNIDADE = ("21", "22", "25", "26")
+NATUREZAS_SALARIO_COMUM = ("1000",)
+NATUREZAS_SALARIO_MATERNIDADE = ("4050", "4051")
+
+# Campos que definem a rubrica no S-1010: regras com o mesmo código eSocial
+# (férias, 13º e rescisão repetem o código da mensal) precisam concordar neles.
+CAMPOS_DEFINICAO_RUBRICA = (
+    "l10n_br_esocial_nat_rubr_id",
+    "l10n_br_esocial_tp_rubr",
+    "l10n_br_esocial_cod_inc_cp",
+    "l10n_br_esocial_cod_inc_irrf",
+    "l10n_br_esocial_cod_inc_fgts",
+)
+
+
 class HrSalaryRule(models.Model):
     _inherit = "hr.salary.rule"
 
@@ -112,6 +131,16 @@ class HrSalaryRule(models.Model):
         help="Tipo da rubrica conforme eSocial.",
     )
 
+    l10n_br_esocial_regra_maternidade_id = fields.Many2one(
+        "hr.salary.rule",
+        string="Rubrica de Salário-Maternidade",
+        domain="[('l10n_br_esocial_nat_rubr_id.codigo', 'in', ('4050', '4051'))]",
+        help="Regra cuja rubrica eSocial (natureza 4050/4051) recebe, no S-1200, "
+        "a parte desta regra referente aos dias de licença-maternidade do "
+        "holerite. A regra de destino só define a rubrica no S-1010; não precisa "
+        "entrar em nenhuma estrutura salarial.",
+    )
+
     # Incidências tributárias
     l10n_br_esocial_cod_inc_cp = fields.Selection(
         ESOCIAL_COD_INC_CP,
@@ -128,3 +157,113 @@ class HrSalaryRule(models.Model):
         string="Incidência FGTS",
         help="Código de incidência tributária da rubrica para o FGTS.",
     )
+
+    def _esocial_chave_rubrica(self):
+        """Chave da rubrica no S-1010: (código, ID da tabela de rubricas)."""
+        self.ensure_one()
+        return (
+            self.l10n_br_esocial_cod_rubr,
+            self.l10n_br_esocial_ide_tab_rubr or "1",
+        )
+
+    def _esocial_definicao_rubrica(self):
+        self.ensure_one()
+        return (
+            self.l10n_br_esocial_nat_rubr_id.id,
+            self.l10n_br_esocial_tp_rubr or False,
+            self.l10n_br_esocial_cod_inc_cp or False,
+            self.l10n_br_esocial_cod_inc_irrf or False,
+            self.l10n_br_esocial_cod_inc_fgts or False,
+        )
+
+    @api.constrains(
+        "l10n_br_esocial_cod_rubr",
+        "l10n_br_esocial_ide_tab_rubr",
+        "active",
+        "company_id",
+        *CAMPOS_DEFINICAO_RUBRICA,
+    )
+    def _check_esocial_rubrica_unica(self):
+        """Um código de rubrica eSocial tem uma só definição por empregador.
+
+        O S-1010 declara cada código uma vez; duas regras com o mesmo código e
+        natureza ou incidências diferentes não cabem na mesma rubrica. Regras
+        de empresas diferentes são independentes; regra sem empresa vale para
+        todas.
+        """
+        for rule in self.filtered(lambda r: r.active and r.l10n_br_esocial_cod_rubr):
+            chave = rule._esocial_chave_rubrica()
+            outras = self.search(
+                [
+                    ("id", "!=", rule.id),
+                    ("l10n_br_esocial_cod_rubr", "=", chave[0]),
+                ]
+            ).filtered(
+                lambda r, chave=chave, rule=rule: r._esocial_chave_rubrica() == chave
+                and (
+                    not r.company_id
+                    or not rule.company_id
+                    or r.company_id == rule.company_id
+                )
+            )
+            for outra in outras:
+                if outra._esocial_definicao_rubrica() != (
+                    rule._esocial_definicao_rubrica()
+                ):
+                    raise ValidationError(
+                        _(
+                            "O código de rubrica eSocial '%(cod)s' já é usado pela "
+                            "regra '%(outra)s' com natureza ou incidências "
+                            "diferentes das da regra '%(regra)s'. Use um código "
+                            "único para cada rubrica."
+                        )
+                        % {
+                            "cod": chave[0],
+                            "outra": outra.display_name,
+                            "regra": rule.display_name,
+                        }
+                    )
+        # Mudar o código de uma regra com S-1010 pode repetir a chave de outro.
+        self.env["l10n_br.esocial.s1010"].search(
+            [("salary_rule_id", "in", self.ids)]
+        )._check_rubrica_unica()
+
+    @api.constrains("l10n_br_esocial_regra_maternidade_id")
+    def _check_esocial_regra_maternidade(self):
+        for rule in self.filtered("l10n_br_esocial_regra_maternidade_id"):
+            destino = rule.l10n_br_esocial_regra_maternidade_id
+            if (
+                destino.l10n_br_esocial_nat_rubr_id.codigo
+                not in NATUREZAS_SALARIO_MATERNIDADE
+            ):
+                raise ValidationError(
+                    _(
+                        "A rubrica de salário-maternidade da regra '%(regra)s' "
+                        "('%(destino)s') precisa ter a natureza 4050 ou 4051."
+                    )
+                    % {"regra": rule.display_name, "destino": destino.display_name}
+                )
+
+    @api.constrains("l10n_br_esocial_nat_rubr_id", "l10n_br_esocial_cod_inc_cp")
+    def _check_esocial_natureza_maternidade(self):
+        """Salário-maternidade não pode ir com a natureza de salário comum."""
+        for rule in self:
+            natureza = rule.l10n_br_esocial_nat_rubr_id
+            if (
+                natureza
+                and natureza.codigo in NATUREZAS_SALARIO_COMUM
+                and rule.l10n_br_esocial_cod_inc_cp in COD_INC_CP_MATERNIDADE
+            ):
+                raise ValidationError(
+                    _(
+                        "A regra '%(regra)s' tem incidência INSS de "
+                        "salário-maternidade (%(inc)s) com a natureza "
+                        "%(nat)s (salário comum). Use a natureza 4050 "
+                        "(salário-maternidade) ou 4051 (13º)."
+                    )
+                    % {
+                        "regra": rule.display_name,
+                        "inc": rule.l10n_br_esocial_cod_inc_cp,
+                        "nat": natureza.codigo,
+                    }
+                )

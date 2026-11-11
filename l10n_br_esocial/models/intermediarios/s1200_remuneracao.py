@@ -1,8 +1,18 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import logging
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
+
+# Categorias de regra que carregam verba ou desconto do trabalhador. Totais
+# (GROSS, NET), informativas, encargos do empregador e provisões não são
+# rubricas do S-1200 e não geram aviso.
+CATEGORIAS_DECLARAVEIS = ("BASIC", "ALW", "DED")
+NATUREZAS_SALARIO_COMUM = ("1000",)
 
 
 class ESocialS1200(models.Model):
@@ -50,6 +60,14 @@ class ESocialS1200(models.Model):
         "Obrigatório quando Indicativo de Retificação for 'Retificação'.",
     )
 
+    avisos = fields.Text(
+        string="Avisos da geração",
+        readonly=True,
+        copy=False,
+        help="Linhas do holerite que ficaram fora do XML por falta de "
+        "configuração eSocial na regra salarial.",
+    )
+
     @api.constrains("nr_recibo")
     def _check_nr_recibo(self):
         for rec in self:
@@ -85,25 +103,106 @@ class ESocialS1200(models.Model):
     def _build_itens_remun(self):
         """Build list of rubric items from payslip lines."""
         itens = []
+        sem_config = {}
+        extras = []
         for payslip in self.payslip_ids:
+            proporcao_mat = payslip._esocial_proporcao_maternidade()
             for line in payslip.line_ids:
                 rule = line.salary_rule_id
-                # Only lines with nat_rubr go to XML (ABGF rule)
-                if not rule.l10n_br_esocial_nat_rubr_id:
-                    continue
-                if not rule.l10n_br_esocial_cod_rubr:
-                    continue
                 # Skip zero-valued lines — they must not be reported.
                 if not line.total:
                     continue
-                itens.append(
-                    {
-                        "cod_rubr": rule.l10n_br_esocial_cod_rubr,
-                        "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
-                        "vr_rubr": str(abs(line.total)),
-                    }
-                )
+                # Only lines with nat_rubr go to XML (ABGF rule), mas a regra
+                # com valor e sem configuração é avisada, não calada.
+                if (
+                    not rule.l10n_br_esocial_nat_rubr_id
+                    or not rule.l10n_br_esocial_cod_rubr
+                ):
+                    if rule.category_id.code in CATEGORIAS_DECLARAVEIS:
+                        sem_config.setdefault(rule, []).append(line.total)
+                    continue
+                valor = abs(line.total)
+                destino = rule.l10n_br_esocial_regra_maternidade_id
+                if proporcao_mat and destino:
+                    if not (
+                        destino.l10n_br_esocial_cod_rubr
+                        and destino.l10n_br_esocial_nat_rubr_id
+                    ):
+                        raise UserError(
+                            _(
+                                "A rubrica de salário-maternidade '%(destino)s' da "
+                                "regra '%(regra)s' não tem código ou natureza "
+                                "eSocial."
+                            )
+                            % {
+                                "destino": destino.display_name,
+                                "regra": rule.display_name,
+                            }
+                        )
+                    parte = round(valor * proporcao_mat, 2)
+                    if parte:
+                        itens.append(self._item_remun(destino, parte))
+                    valor = round(valor - parte, 2)
+                elif (
+                    proporcao_mat
+                    and rule.l10n_br_esocial_nat_rubr_id.codigo
+                    in NATUREZAS_SALARIO_COMUM
+                ):
+                    extras.append(
+                        _(
+                            "Regra '%(regra)s' (%(code)s): o holerite tem dias de "
+                            "licença-maternidade e a regra não tem Rubrica de "
+                            "Salário-Maternidade; o salário desses dias segue com "
+                            "a natureza %(nat)s."
+                        )
+                        % {
+                            "regra": rule.name,
+                            "code": rule.code,
+                            "nat": rule.l10n_br_esocial_nat_rubr_id.codigo,
+                        }
+                    )
+                if valor:
+                    itens.append(self._item_remun(rule, valor))
+        self._registrar_avisos_sem_config(sem_config, extras)
         return itens
+
+    def _item_remun(self, rule, valor):
+        return {
+            "cod_rubr": rule.l10n_br_esocial_cod_rubr,
+            "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
+            "vr_rubr": str(valor),
+        }
+
+    def _registrar_avisos_sem_config(self, sem_config, extras=()):
+        """Avisa (log e campo ``avisos``) das regras que ficaram fora do XML."""
+        if not sem_config and not extras:
+            self.avisos = False
+            return
+        linhas = list(extras)
+        for rule, valores in sem_config.items():
+            faltando = []
+            if not rule.l10n_br_esocial_cod_rubr:
+                faltando.append(_("código da rubrica"))
+            if not rule.l10n_br_esocial_nat_rubr_id:
+                faltando.append(_("natureza da rubrica"))
+            linhas.append(
+                _(
+                    "Regra '%(regra)s' (%(code)s) com valor no holerite e sem "
+                    "%(faltando)s eSocial: %(n)d linha(s), total %(total).2f, "
+                    "fora do S-1200."
+                )
+                % {
+                    "regra": rule.name,
+                    "code": rule.code,
+                    "faltando": " e ".join(faltando),
+                    "n": len(valores),
+                    "total": sum(abs(v) for v in valores),
+                }
+            )
+        self.avisos = "\n".join(linhas)
+        _logger.warning(
+            "eSocial S-1200 %s (%s): %s", self.id, self.per_apur, self.avisos
+        )
 
     def _to_esociallib_dict(self):
         self.ensure_one()

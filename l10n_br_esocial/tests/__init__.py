@@ -17,3 +17,4 @@ from . import test_totalizadores
 from . import test_seguranca
 from . import test_migracao_aso
 from . import test_guarda_producao
+from . import test_rubricas_unicas
