@@ -413,6 +413,16 @@ enquanto houver evento da competência sem aceite.</li>
 reabertura (S-1298).</li>
 <li>Evento aceito por engano é desfeito com o S-3000.</li>
 </ol>
+<p>Ambiente de transmissão (trava de produção):</p>
+<ol class="arabic simple">
+<li>O ambiente padrão da empresa é <strong>2 - Produção Restrita</strong>.</li>
+<li>O ambiente <strong>1 - Produção</strong> fica bloqueado: a empresa não o aceita e o lote
+não transmite nem consulta com ele. Para liberar de propósito, um
+administrador define o parâmetro de sistema
+<tt class="docutils literal">l10n_br_esocial.permitir_producao</tt> como <tt class="docutils literal">True</tt>.</li>
+<li>Antes de transmitir e de consultar, o lote confere o ambiente da empresa e o
+<tt class="docutils literal">tpAmb</tt> do XML de cada evento; se divergirem, gere o evento de novo.</li>
+</ol>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>

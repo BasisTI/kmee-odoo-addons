@@ -3,6 +3,7 @@
 
 import base64
 import logging
+import re
 
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
@@ -126,9 +127,51 @@ class ESocialLote(models.Model):
             % {"company_name": company.name}
         )
 
+    def _check_ambiente_permitido(self):
+        """Guarda de produção: roda antes de transmitir e de consultar.
+
+        Confere o ambiente da empresa e o ``tpAmb`` do XML de cada evento.
+        Produção só passa com a configuração explícita
+        (``l10n_br_esocial.permitir_producao``); sem ela, qualquer lote que
+        aponte para o ambiente 1 é recusado. Com ela, o ``tpAmb`` do XML
+        precisa coincidir com o ambiente da empresa.
+        """
+        company_model = self.env["res.company"]
+        for lote in self:
+            tp_amb = lote.company_id.l10n_br_esocial_tp_amb or "2"
+            if tp_amb == "1" and not company_model._esocial_producao_permitida():
+                raise UserError(company_model._esocial_msg_producao_bloqueada())
+            for evento in lote.evento_ids:
+                match = re.search(r"<tpAmb>(\d)</tpAmb>", evento.xml_envio or "")
+                if not match or match.group(1) == tp_amb:
+                    continue
+                if match.group(1) == "1" and (
+                    not company_model._esocial_producao_permitida()
+                ):
+                    raise UserError(
+                        _("%(msg)s Evento %(evento)s gerado para produção.")
+                        % {
+                            "msg": company_model._esocial_msg_producao_bloqueada(),
+                            "evento": evento.display_name,
+                        }
+                    )
+                raise UserError(
+                    _(
+                        "O evento %(evento)s foi gerado para o ambiente "
+                        "%(xml)s, mas a empresa está no ambiente %(empresa)s. "
+                        "Gere o evento novamente."
+                    )
+                    % {
+                        "evento": evento.display_name,
+                        "xml": match.group(1),
+                        "empresa": tp_amb,
+                    }
+                )
+
     def action_transmitir(self):
         """Sign events and submit batch to eSocial."""
         self.ensure_one()
+        self._check_ambiente_permitido()
         if assinar is None or enviar_lote is None:
             raise UserError(
                 _("esociallib não está instalada. Execute: pip install esociallib")
@@ -233,6 +276,7 @@ class ESocialLote(models.Model):
     def action_consultar(self):
         """Query batch result from eSocial."""
         self.ensure_one()
+        self._check_ambiente_permitido()
         if consultar_lote is None:
             raise UserError(_("esociallib não está instalada."))
         if not self.protocolo:

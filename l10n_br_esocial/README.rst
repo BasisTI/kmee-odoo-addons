@@ -60,6 +60,16 @@ Ciclo de uma competência:
    reabertura (S-1298).
 #. Evento aceito por engano é desfeito com o S-3000.
 
+Ambiente de transmissão (trava de produção):
+
+#. O ambiente padrão da empresa é **2 - Produção Restrita**.
+#. O ambiente **1 - Produção** fica bloqueado: a empresa não o aceita e o lote
+   não transmite nem consulta com ele. Para liberar de propósito, um
+   administrador define o parâmetro de sistema
+   ``l10n_br_esocial.permitir_producao`` como ``True``.
+#. Antes de transmitir e de consultar, o lote confere o ambiente da empresa e o
+   ``tpAmb`` do XML de cada evento; se divergirem, gere o evento de novo.
+
 Bug Tracker
 ===========
 
