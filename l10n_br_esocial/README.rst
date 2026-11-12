@@ -82,13 +82,19 @@ Rubricas (S-1010 e S-1200):
    partir de um conjunto de regras.
 #. Salário-maternidade tem natureza própria (4050 mensal, 4051 13º). A
    incidência INSS 21, 22, 25 ou 26 com a natureza 1000 é recusada.
-#. Para o salário dos dias de licença-maternidade ir ao S-1200 como
-   salário-maternidade: marque **Licença-maternidade (eSocial)** no tipo de
-   afastamento; crie uma regra com natureza 4050 e incidência INSS 21 (ela só
-   define a rubrica no S-1010) e aponte-a em **Rubrica de Salário-Maternidade**
-   na regra do salário. O S-1200 divide o valor do holerite entre as duas
-   rubricas pelos dias de licença (mês comercial de 30 dias); sem essa
-   configuração o salário segue com a natureza 1000 e a geração avisa.
+#. O salário-maternidade tem rubrica própria no holerite (regra
+   ``SALARIO_MATERNIDADE`` do ``l10n_br_hr_payroll``), que o eSocial já traz
+   configurada com natureza 4050 e incidências INSS 21, IRRF 11 e FGTS 11. Marque
+   **Licença-maternidade** no tipo de afastamento; o S-1200 leva a rubrica pelo
+   valor do holerite, sem divisão por dias. Defina o **Código Rubrica eSocial**
+   (padrão ``SAL_MATERNIDADE``) se a sua tabela usar outro. A configuração antiga
+   (**Licença-maternidade (eSocial)** e **Rubrica de Salário-Maternidade**) foi
+   substituída por esta; as regras que tinham o vínculo aparecem no log da
+   atualização. A rubrica usa a tabela de rubricas que a empresa já tem e, onde
+   há S-1010, ganha o dela (gere e transmita-o antes do primeiro S-1200). Holerite
+   calculado antes da atualização, com dias de licença e sem a rubrica, é
+   recusado na geração do S-1200: volte-o para rascunho, recalcule e confirme.
+   A regra criada à mão com o mecanismo antigo deve ser desativada.
 #. Regra de provento ou desconto com valor no holerite e sem código ou natureza
    eSocial fica fora do S-1200; a geração registra um aviso no log e no campo
    **Avisos da geração** do S-1200.

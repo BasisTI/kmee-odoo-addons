@@ -1,7 +1,7 @@
 {
     "name": "eSocial - Integração com o Governo Federal",
     "summary": "Tabelas, eventos e transmissão eSocial S-1.3",
-    "version": "18.0.1.2.0",
+    "version": "18.0.1.3.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
@@ -80,9 +80,9 @@
         "data/l10n_br.esocial.motivo.afastamento.csv",
         "data/l10n_br.esocial.motivo.desligamento.csv",
         # Views
+        "data/hr_salary_rule_maternidade_data.xml",
         "views/esocial_tabelas_views.xml",
         "views/hr_salary_rule_views.xml",
-        "views/hr_leave_type_views.xml",
         "views/hr_employee_views.xml",
         "views/res_company_views.xml",
         "views/esocial_evento_views.xml",

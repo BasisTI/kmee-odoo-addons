@@ -8,6 +8,8 @@
             name="rule_ids"
             eval="[(6, 0, [
                 ref('hr_rule_salario_base'),
+                ref('hr_rule_salario_maternidade'),
+                ref('hr_rule_comp_salario_maternidade'),
                 ref('hr_rule_he_50'),
                 ref('hr_rule_he_100'),
                 ref('hr_rule_dsr_he'),
@@ -38,6 +40,7 @@
             name="rule_ids"
             eval="[(6, 0, [
                 ref('hr_rule_salario_base'),
+                ref('hr_rule_salario_maternidade'),
                 ref('hr_rule_gross'),
                 ref('hr_rule_contrib_rpps'),
                 ref('hr_rule_pensao_alimenticia'),

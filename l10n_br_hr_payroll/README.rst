@@ -154,6 +154,51 @@ que compõe férias, 13º e rescisão.
   feriados do calendário da folha), e a apuração só acrescenta os feriados que
   marcou nos dias que cobre.
 
+Salário-maternidade
+~~~~~~~~~~~~~~~~~~~
+
+Marque **Licença-maternidade** no tipo de afastamento. Os dias de licença
+aprovada saem do ``SALARIO_BASE`` e vão para a rubrica ``SALARIO_MATERNIDADE``
+(salário × dias ÷ 30), no mesmo conjunto de dias do salário: admissão,
+desligamento, afastamento do INSS e férias já pagas são descontados antes, e a
+soma das duas rubricas fecha com o salário dos dias. Em período maior que 30 dias
+(anual, 13º) a licença entra na proporção dos dias do período.
+
+* A rubrica está no bruto: entra nas bases de INSS, IRRF e FGTS.
+* ``COMP_SALARIO_MATERNIDADE`` (informativa, categoria INFO) é o valor a
+  compensar na guia previdenciária (Lei 8.213/91, art. 72, § 1º); não entra no
+  líquido nem nas bases.
+* CPP e RAT: o parâmetro **CPP e RAT sobre o salário-maternidade**, na aba
+  *Encargos da Folha* da empresa, vem marcado (incidem, como antes). Desmarcado,
+  o salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
+  terceiros seguem incidindo. A escolha é do DP/contabilidade.
+* O salário-maternidade é o salário contratual dos dias de licença; adicionais e
+  médias de verbas variáveis continuam nas suas próprias rubricas.
+* Em banco existente a atualização troca as fórmulas padrão de ``SALARIO_BASE``,
+  ``CPP`` e ``RAT`` (as personalizadas ficam como estão) e liga as rubricas novas
+  à estrutura CLT.
+
+Limites do salário-maternidade:
+
+* Só vale onde a rubrica está na estrutura: a CLT e a Estatutário a trazem. Em
+  estrutura própria com ``SALARIO_BASE`` e sem ``SALARIO_MATERNIDADE`` o salário
+  dos dias de licença segue inteiro no ``SALARIO_BASE`` (nada é descontado);
+  ligue a rubrica para pagá-lo na própria.
+* ``SALARIO_BASE`` personalizada: a atualização não liga a rubrica nova (pagaria o
+  salário em dobro) e avisa no log. Adapte a fórmula ao desconto dos dias de
+  licença (ver a fórmula padrão) e ligue a rubrica à estrutura.
+* Não há parcela de 13º de salário-maternidade (natureza 4051) nem a compensação
+  dela: o 13º segue o cálculo anterior.
+* Rescisão sem holerite mensal no mês paga os dias de licença no
+  ``SALDO_SALARIO``, como salário comum.
+* Férias sobrepostas à licença prevalecem: os dias de gozo já foram pagos no
+  recibo e não viram salário-maternidade.
+* ``COMP_SALARIO_MATERNIDADE`` é informativa: nenhuma guia do repositório a lê e
+  ela não gera lançamento contábil (o ``l10n_br_hr_payroll_account`` debita a
+  ``SALARIO_MATERNIDADE`` em despesa de salários, como o ``SALARIO_BASE``). A
+  dedução na guia é feita pelo usuário ou pelo sistema que gera a guia, a partir
+  do total desta rubrica.
+
 Bug Tracker
 ===========
 

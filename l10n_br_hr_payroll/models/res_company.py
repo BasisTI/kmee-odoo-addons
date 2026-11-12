@@ -50,6 +50,15 @@ SIMPLES_ANEXO = [
 class ResCompany(models.Model):
     _inherit = "res.company"
 
+    l10n_br_hr_patronal_sobre_salario_maternidade = fields.Boolean(
+        string="CPP e RAT sobre o salário-maternidade",
+        default=True,
+        help="Marcado, o salário-maternidade entra na base da CPP e do RAT "
+        "(comportamento anterior). Desmarcado, sai dessas duas bases, pelo "
+        "entendimento do STF (Tema 72). As contribuições a terceiros seguem "
+        "incidindo. A posição é do DP/contabilidade da empresa: o padrão "
+        "mantém o cálculo anterior até ela ser definida.",
+    )
     l10n_br_hr_rat = fields.Selection(
         selection=[
             ("1", "1% - risco leve"),

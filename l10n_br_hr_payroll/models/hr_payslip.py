@@ -310,6 +310,7 @@ class HrPayslip(models.Model):
         "CONTRIB_RPPS",
         "PENSAO_ALIMENTICIA",
         "BASE_IRRF",
+        "SALARIO_MATERNIDADE",
     )
 
     def _get_baselocaldict(self, contracts):
@@ -353,6 +354,10 @@ class HrPayslip(models.Model):
     # Estruturas MENSAIS (não férias/13º/rescisão) usadas como fonte da
     # média de verbas variáveis habituais (RF-18). Ver `_l10n_br_media_habitual`.
     _L10N_BR_STRUCT_CODES_MENSAIS = ("CLT", "ESTATUTO")
+    # Rubricas que pagam o SALÁRIO dos dias do mês: o salário base e, nos dias
+    # de licença-maternidade, o salário-maternidade (TG-87). A rescisão e a
+    # integridade com as férias contam as duas como "salário já pago".
+    _L10N_BR_CODIGOS_SALARIO_MENSAL = ("SALARIO_BASE", "SALARIO_MATERNIDADE")
 
     def _l10n_br_media_habitual(self, codes, janela_meses=12):
         """Média de `codes` nos holerites MENSAIS anteriores (RF-18).
@@ -530,7 +535,7 @@ class HrPayslip(models.Model):
         )
         return sum(
             mensais.mapped("line_ids")
-            .filtered(lambda ln: ln.code == "SALARIO_BASE")
+            .filtered(lambda ln: ln.code in self._L10N_BR_CODIGOS_SALARIO_MENSAL)
             .mapped("total")
         )
 
@@ -557,6 +562,62 @@ class HrPayslip(models.Model):
             )
         )
         return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
+
+    def _l10n_br_maternidade(self, contract):
+        """Licenças-maternidade aprovadas do empregado que tocam o período.
+
+        Pares ``(inicio, fim)`` dos afastamentos de tipo "Licença-maternidade".
+        Fonte única dos dias de salário-maternidade: ``dias_salario`` e
+        ``dias_maternidade`` leem daqui, no mesmo conjunto de dias.
+        """
+        self.ensure_one()
+        if not self.date_from or not self.date_to:
+            return []
+        leaves = (
+            self.env["hr.leave"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", contract.employee_id.id),
+                    ("state", "=", "validate"),
+                    ("holiday_status_id.l10n_br_salario_maternidade", "=", True),
+                    ("request_date_from", "<=", self.date_to),
+                    ("request_date_to", ">=", self.date_from),
+                ]
+            )
+        )
+        return [(lv.request_date_from, lv.request_date_to) for lv in leaves]
+
+    def _l10n_br_dias_maternidade(self, contract):
+        """Dias do período pagos como salário-maternidade (mês de 30 dias).
+
+        Do mesmo conjunto de dias de ``dias_salario``: o salário base paga
+        ``dias_salario - dias_maternidade``.
+        """
+        self.ensure_one()
+        return salary_rules_br.dias_maternidade_mes(
+            self.date_from,
+            self.date_to,
+            contract.date_start,
+            contract.date_end,
+            self._l10n_br_afastamentos_inss(contract),
+            self._l10n_br_ferias_gozadas(contract),
+            self._l10n_br_maternidade(contract),
+        )
+
+    def _l10n_br_dias_maternidade_na_estrutura(self, contract):
+        """Dias de maternidade que ESTE holerite paga na rubrica própria.
+
+        Só vale com a rubrica ``SALARIO_MATERNIDADE`` na estrutura do holerite:
+        sem ela, tirar os dias do ``SALARIO_BASE`` os faria sumir (estrutura
+        montada com a mesma regra de salário, como a ``ESTATUTO`` antiga ou a
+        de estágio). Sem a rubrica o salário segue inteiro no ``SALARIO_BASE``.
+        """
+        self.ensure_one()
+        regras = self._get_salary_rules()
+        if not any(r.code == "SALARIO_MATERNIDADE" for r in regras):
+            return 0
+        return self._l10n_br_dias_maternidade(contract)
 
     def _l10n_br_ferias_gozadas(self, contract):
         """Períodos ``(inicio, fim)`` de férias gozadas já pagas em recibo.
@@ -738,6 +799,8 @@ class HrPayslip(models.Model):
             dias_trabalhados_mes=dias_trabalhados_mes,
             # Dias de salário do mês (admissão, desligamento, afastamento).
             dias_salario=dias_salario,
+            # Dias de licença-maternidade (empresa paga; rubrica própria).
+            dias_maternidade=self._l10n_br_dias_maternidade_na_estrutura,
             inss_ferias_competencia=inss_ferias_competencia,
             # Salário já pago no mensal do período (compensação na rescisão).
             salario_pago_mensal=salario_pago_mensal,

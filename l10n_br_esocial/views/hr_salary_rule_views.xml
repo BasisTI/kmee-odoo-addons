@@ -13,7 +13,6 @@
                             <field name="l10n_br_esocial_ide_tab_rubr" />
                             <field name="l10n_br_esocial_nat_rubr_id" />
                             <field name="l10n_br_esocial_tp_rubr" />
-                            <field name="l10n_br_esocial_regra_maternidade_id" />
                         </group>
                         <group string="Incidências Tributárias">
                             <field name="l10n_br_esocial_cod_inc_cp" />

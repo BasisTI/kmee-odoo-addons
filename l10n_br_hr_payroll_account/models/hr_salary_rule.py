@@ -52,6 +52,7 @@ _ACCOUNT_SLOTS = {
 # competência o que só será desembolsado depois.
 _RULE_ACCOUNT_MAP = {
     "l10n_br_hr_payroll.hr_rule_salario_base": {"debit": "expense_salarios"},
+    "l10n_br_hr_payroll.hr_rule_salario_maternidade": {"debit": "expense_salarios"},
     "l10n_br_hr_payroll.hr_rule_inss": {"credit": "liability_inss"},
     "l10n_br_hr_payroll.hr_rule_irrf": {"credit": "liability_irrf"},
     "l10n_br_hr_payroll.hr_rule_fgts": {
