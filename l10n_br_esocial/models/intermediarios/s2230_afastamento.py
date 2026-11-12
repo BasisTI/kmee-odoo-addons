@@ -294,9 +294,7 @@ class ESocialS2230(models.Model):
         for outro in outros:
             if outro._codigo_motivo() == cod_mot:
                 ini = outro.dt_ini_afast
-                periodos.setdefault(
-                    ini, (ini, outro.dt_term_afast or leaves.get(ini))
-                )
+                periodos.setdefault(ini, (ini, outro.dt_term_afast or leaves.get(ini)))
         return [p for p in periodos.values() if p[0] < inicio]
 
     def _exige_info_mesmo_mtv(self, cod_mot):

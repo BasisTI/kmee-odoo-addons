@@ -216,6 +216,14 @@ Afastamento por doença (S-2230, MOS S-1.3 itens 3.1, 4.1 e 5):
    trabalho (S-2230 de motivo 01 no mesmo início) não soma com doença comum.
    Os demais motivos (maternidade, férias, licença remunerada etc.) não têm o
    limite de 15 dias.
+#. **Mesmo motivo do afastamento anterior** (``infoMesmoMtv``, leiaute S-1.3,
+   início a partir de 26/10/2026, só motivos 01 e 03): quando há outro
+   afastamento do mesmo motivo do empregado nos 60 dias anteriores ao início, o
+   evento informa **S** (mesma doença/acidente) ou **N**. O afastamento do Odoo
+   não tem CID, então o usuário preenche o campo **Mesmo motivo do afastamento
+   anterior** (``info_mesmo_mtv``) no S-2230; vazio, o evento é recusado com
+   mensagem clara. Sem anterior na janela, o campo não é exigido, e fora dos
+   motivos 01/03 ou antes da data de vigência ele não vai no XML.
 
 Pagamentos e informe de rendimentos (S-1210, leiaute S-1.3 - evtPgtos):
 
