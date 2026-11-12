@@ -17,6 +17,17 @@ RE_COMPETENCIA_ANUAL = re.compile(r"^\d{4}$")
 # Recibo de entrega do eSocial: 1.<dígito>.<19 dígitos> (TS_nrRecibo).
 RE_NR_RECIBO = re.compile(r"^1\.\d\.\d{19}$")
 
+# Categorias de trabalhador (Tabela 01) de cada grupo de eventos, conforme o
+# leiaute S-1.3 (NT 07/2026): o S-2200 vale para empregados e agentes públicos
+# com vínculo; o S-2300 para os trabalhadores sem vínculo de emprego/estatutário.
+CATEGORIAS_VINCULO = frozenset(
+    "101 102 103 104 105 106 107 108 111 301 302 303 306 307 309 310 312 314".split()
+)
+CATEGORIAS_SEM_VINCULO = frozenset(
+    "201 202 304 305 308 311 313 401 410 501 701 711 712 721 722 723 731 734 738 "
+    "741 751 761 771 781 901 902 903 904 906".split()
+)
+
 try:
     from esociallib import to_xml, validate_xsd
 except ImportError:
@@ -67,6 +78,84 @@ class ESocialBaseIntermediario(models.AbstractModel):
         if len(cnpj_limpo) == 14:
             return {"tp_insc": 1, "nr_insc": cnpj_limpo[:8]}
         return {"tp_insc": 2, "nr_insc": cnpj_limpo}
+
+    def _validar_categoria_evento(self, employee, categoria, evento):
+        """Recusa a categoria que não pertence ao grupo do evento.
+
+        ``evento`` é ``S-2200``/``S-2206``/``S-2299`` (vínculo) ou
+        ``S-2300``/``S-2306``/``S-2399`` (trabalhador sem vínculo).
+        """
+        sem_vinculo = evento in ("S-2300", "S-2306", "S-2399")
+        validas = CATEGORIAS_SEM_VINCULO if sem_vinculo else CATEGORIAS_VINCULO
+        if categoria.codigo in validas:
+            return
+        par = {"S-2200": "S-2300", "S-2206": "S-2306", "S-2299": "S-2399"}
+        par.update({v: k for k, v in list(par.items())})
+        raise UserError(
+            _(
+                "Trabalhador '%(name)s': a categoria %(cat)s não é válida no "
+                "%(evento)s; para ela o eSocial usa o %(outro)s."
+            )
+            % {
+                "name": employee.name,
+                "cat": categoria.display_name,
+                "evento": evento,
+                "outro": par[evento],
+            }
+        )
+
+    def _get_cpf_limpo(self, employee):
+        cpf = employee.cnpj_cpf
+        if not cpf:
+            raise UserError(
+                _("Empregado '%(name)s' não possui CPF configurado.")
+                % {"name": employee.name}
+            )
+        return "".join(c for c in cpf if c.isdigit())
+
+    def _erro_cadastro(self, mensagem, **valores):
+        raise UserError(mensagem % valores)
+
+    def _get_local_trabalho(self, employee, ide):
+        """Estabelecimento do empregador onde o empregado trabalha (CNPJ)."""
+        partner = employee.address_id
+        cnpj = self._so_digitos(partner.vat)
+        if len(cnpj) != 14:
+            self._erro_cadastro(
+                _(
+                    "Empregado '%(name)s': o Endereço de Trabalho precisa ser o "
+                    "estabelecimento do empregador, com CNPJ de 14 dígitos."
+                ),
+                name=employee.name,
+            )
+        if ide["tp_insc"] == 1 and cnpj[:8] != ide["nr_insc"]:
+            self._erro_cadastro(
+                _(
+                    "Empregado '%(name)s': o CNPJ do Endereço de Trabalho "
+                    "(%(cnpj)s) não pertence ao empregador (raiz %(raiz)s)."
+                ),
+                name=employee.name,
+                cnpj=cnpj,
+                raiz=ide["nr_insc"],
+            )
+        return cnpj
+
+    @staticmethod
+    def _coletar(erros, funcao, *args):
+        """Chama ``funcao``; se recusar, guarda a mensagem e devolve ``None``."""
+        try:
+            return funcao(*args)
+        except UserError as erro:
+            erros.append(erro.args[0])
+            return None
+
+    @staticmethod
+    def _filho(pai, tag, texto=None):
+        ns = etree.QName(pai).namespace
+        el = etree.SubElement(pai, "{%s}%s" % (ns, tag))
+        if texto is not None:
+            el.text = str(texto)
+        return el
 
     @api.model
     def _so_digitos(self, valor):

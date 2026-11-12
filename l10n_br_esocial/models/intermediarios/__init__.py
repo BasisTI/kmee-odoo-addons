@@ -10,8 +10,12 @@ from . import s1200_remuneracao
 from . import s1210_pagamentos
 from . import s1298_reabertura
 from . import s1299_fechamento
+from . import trabalhador_mixin
 from . import s2200_admissao
 from . import s2206_alt_contratual
 from . import s2230_afastamento
 from . import s2299_desligamento
+from . import s2300_tsv_inicio
+from . import s2306_tsv_alt_contratual
+from . import s2399_tsv_termino
 from . import s3000_exclusao

@@ -14,6 +14,7 @@
                             <field name="l10n_br_esocial_lotacao_id" />
                             <field name="l10n_br_esocial_cod_lotacao" />
                             <field name="l10n_br_esocial_processo_emissao" />
+                            <field name="l10n_br_esocial_dt_ini_nao_periodicos" />
                         </group>
                         <group string="Indicativos">
                             <field name="l10n_br_esocial_ind_coop" />

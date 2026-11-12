@@ -137,6 +137,27 @@
             name="domain_force"
         >['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
     </record>
+    <record id="rule_esocial_s2300_multi_company" model="ir.rule">
+        <field name="name">eSocial S2300: multi-empresa</field>
+        <field name="model_id" ref="model_l10n_br_esocial_s2300" />
+        <field
+            name="domain_force"
+        >['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="rule_esocial_s2306_multi_company" model="ir.rule">
+        <field name="name">eSocial S2306: multi-empresa</field>
+        <field name="model_id" ref="model_l10n_br_esocial_s2306" />
+        <field
+            name="domain_force"
+        >['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
+    <record id="rule_esocial_s2399_multi_company" model="ir.rule">
+        <field name="name">eSocial S2399: multi-empresa</field>
+        <field name="model_id" ref="model_l10n_br_esocial_s2399" />
+        <field
+            name="domain_force"
+        >['|', ('company_id', '=', False), ('company_id', 'in', company_ids)]</field>
+    </record>
     <record id="rule_esocial_s3000_multi_company" model="ir.rule">
         <field name="name">eSocial S3000: multi-empresa</field>
         <field name="model_id" ref="model_l10n_br_esocial_s3000" />
