@@ -114,6 +114,17 @@ salário do mês (mês comercial de 30 dias):
   ausência. A empresa paga os 15 primeiros dias e os seguintes, aprovados, saem do
   salário (são pagos pelo INSS).
 
+**Periculosidade e insalubridade nas bases**
+
+Os dois adicionais entram no bruto (``GROSS``) e, por ele, nas bases do INSS, do
+FGTS e do IRRF. Em férias, abono pecuniário, 13º (adiantamento, bruto e o da
+rescisão), aviso prévio indenizado, férias indenizadas e vencidas e saldo de
+salário (``l10n_br_hr_vacation``), o adicional entra na base pelo valor cheio do
+contrato (30% do salário; 10, 20 ou 40% do salário mínimo), não por média: é um
+percentual constante, e não uma parcela variável (CLT art. 142, § 5º; Súmulas 132
+e 139 do TST). No saldo de salário o adicional acompanha os dias de salário e
+desconta o que o holerite mensal do mesmo período já pagou.
+
 **Desconto de DSR por falta**
 
 A falta injustificada faz perder o repouso da semana em que ocorreu (Lei 605/49,

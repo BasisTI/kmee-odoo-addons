@@ -52,7 +52,7 @@
 ref = payslip.date_to.replace(month=12, day=31)
 avos = tools.br.calc_decimo_avos(contract.date_start, ref)
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media) * avos / 12 * 0.5)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * 0.5)
         </field>
     </record>
 
@@ -91,7 +91,7 @@ result = categories.BASIC + categories.ALW - categories.DED
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media) * avos / 12)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
         </field>
     </record>
 
@@ -283,7 +283,7 @@ result = payslip.l10n_br_tipo_rescisao != 'justa_causa'
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media) * avos / 12)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
         </field>
     </record>
 </odoo>

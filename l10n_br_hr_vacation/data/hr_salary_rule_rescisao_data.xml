@@ -126,7 +126,9 @@
 dias = tools.br.dias_salario(contract)
 # Compensa o que o holerite mensal do mesmo período já pagou de salário
 # (evita pagar os mesmos dias duas vezes); sem mensal, paga o saldo inteiro.
-saldo = (contract.wage / 30) * dias - tools.br.salario_pago_mensal(contract)
+# Periculosidade/insalubridade dos mesmos dias (TG-88), também compensadas.
+remuneracao = contract.wage + tools.br.adicionais_fixos(contract)
+saldo = (remuneracao / 30) * dias - tools.br.salario_pago_mensal(contract, True)
 result = tools.br.round_money(max(saldo, 0))
         </field>
     </record>
@@ -150,7 +152,7 @@ result = (
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_ferias
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media) * avos / 12)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
         </field>
     </record>
 
@@ -191,7 +193,7 @@ result = bool(payslip._l10n_br_ferias_vencidas_dados())
         <field name="amount_python_compute">
 # RF-18: também soma a média habitual, como qualquer verba de férias.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-salario_dia = (contract.wage + media) / 30
+salario_dia = (contract.wage + media + tools.br.adicionais_fixos(contract)) / 30
 result = tools.br.round_money(sum(
     salario_dia * periodo["dias"] * (2 if periodo["dobro"] else 1)
     for periodo in payslip._l10n_br_ferias_vencidas_dados()
@@ -236,7 +238,7 @@ result = payslip._l10n_br_aviso_indenizado_devido()
 dias = payslip._l10n_br_dias_aviso_previo()
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = 0.5 if payslip.l10n_br_tipo_rescisao == 'acordo' else 1.0
-result = tools.br.round_money((contract.wage + media) / 30 * dias * fator)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) / 30 * dias * fator)
         </field>
     </record>
 
