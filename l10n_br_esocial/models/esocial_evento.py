@@ -136,10 +136,33 @@ class ESocialEvento(models.Model):
                 parts.append(rec.id_evento)
             rec.name = " - ".join(parts)
 
+    def _esocial_slips_origem(self):
+        """Holerites que o evento declara (pelo intermediário de origem)."""
+        self.ensure_one()
+        if not self.origem_model or self.origem_model not in self.env:
+            return self.env["hr.payslip"]
+        origem = self.env[self.origem_model].browse(self.origem_id).exists()
+        if not origem or not hasattr(origem, "_esocial_slips"):
+            return self.env["hr.payslip"]
+        return origem._esocial_slips()
+
     def action_validate(self):
         for rec in self:
             if rec.state != "draft":
                 raise UserError(_("Apenas eventos em rascunho podem ser validados."))
+            fora = rec._esocial_slips_origem().filtered("l10n_br_fora_de_vigor")
+            if fora:
+                raise UserError(
+                    _(
+                        "O evento %(nome)s declara holerite fora de vigor (estorno "
+                        "ou estornado): %(slips)s. Descarte-o e gere o evento do "
+                        "holerite que o substitui."
+                    )
+                    % {
+                        "nome": rec.name,
+                        "slips": ", ".join(fora.mapped(lambda s: s.number or s.name)),
+                    }
+                )
             rec.state = "validated"
 
     def action_reset_draft(self):
@@ -236,6 +259,7 @@ class ESocialEvento(models.Model):
                 body=_("Estado forçado manualmente para SUCESSO por %(user)s.")
                 % {"user": self.env.user.name}
             )
+            rec._propagar_retificacao()
             _logger.info(
                 "eSocial evento %s: estado forçado para 'success' por %s (uid=%s).",
                 rec.id,

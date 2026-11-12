@@ -225,13 +225,23 @@ os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
 
 Holerite estornado: o estorno (Devolução) e o holerite que ele desfez ficam
 fora de vigor e não vão ao eSocial: a geração do S-1200, do S-1210 e do S-2299
-e a conferência da competência os ignoram e usam o holerite novo. O holerite
-estornado que já tem S-1200 ou S-1210 gerado mostra o aviso **eSocial a
-retificar**. Ao gerar o S-1200 (e o S-1210, quando o pagamento cai no mesmo mês)
-do holerite novo, o módulo gera o **retificador** (``indRetif`` = 2) com o recibo
-do evento aceito do estornado, levando também os holerites que continuam em
-vigor naquele evento; quando o retificador é aceito, o evento anterior passa a
-**Retificado**. Se o evento do estornado ainda não foi aceito (sem recibo), a
-geração espera o retorno do lote. Estorno sem holerite novo, ou pagamento do
-novo em outro mês, não se retifica sozinho: exclua o evento por S-3000 ou
-retifique o S-1210 daquele mês manualmente.
+e a conferência da competência (holerites e totalizadores) os ignoram e usam o
+holerite novo. O holerite estornado que já tem S-1200, S-1210 ou S-2299 gerado
+mostra o aviso **eSocial a retificar** (filtro e menu *Holerites a retificar*).
+
+Fluxo (MOS S-1.3, cap. I item 15.2 e S-1200 item 31):
+
+#. Se há **S-1210 transmitido** referenciando o S-1200 do estornado, exclua-o
+   antes por S-3000 (o eSocial só aceita o retificador depois); a geração do
+   S-1200 retificador recusa até lá.
+#. Gere o S-1200 do holerite novo: sai o **retificador** (``indRetif`` = 2) com
+   o recibo do evento aceito do estornado, levando também os holerites que
+   continuam em vigor naquele evento. Quando o retificador é aceito (ou forçado
+   como sucesso), o evento anterior passa a **Retificado**.
+#. Reenvie o S-1210 (selecione de novo os holerites pagos): sai como original.
+
+Se o evento do estornado ainda não foi aceito (sem recibo), a geração espera o
+retorno do lote. Evento em rascunho/validado do estornado volta a rascunho, sai
+do lote e não pode ser validado. Competência fechada (S-1299 sem S-1298 depois)
+recusa a geração. Estorno sem holerite novo, ou S-2299 de rescisão estornada
+(o módulo não gera retificador de S-2299): exclua o evento por S-3000.

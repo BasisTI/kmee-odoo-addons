@@ -16,10 +16,18 @@ class HrPayslip(models.Model):
         "l10n_br.esocial.s1200",
         string="S-1200 eSocial",
         readonly=True,
+        copy=False,
     )
     l10n_br_esocial_s1210_id = fields.Many2one(
         "l10n_br.esocial.s1210",
         string="S-1210 eSocial",
+        readonly=True,
+        copy=False,
+    )
+    l10n_br_esocial_s2299_ids = fields.One2many(
+        "l10n_br.esocial.s2299",
+        "payslip_id",
+        string="S-2299 eSocial",
         readonly=True,
     )
     l10n_br_esocial_data_pagamento = fields.Date(
@@ -33,9 +41,10 @@ class HrPayslip(models.Model):
     l10n_br_esocial_a_retificar = fields.Boolean(
         string="eSocial a retificar",
         compute="_compute_l10n_br_esocial_a_retificar",
-        help="Holerite fora de vigor (estornado) que ainda tem S-1200 ou S-1210 "
-        "gerado e não retificado nem excluído: o evento declara valores que a "
-        "folha desfez. Gere o S-1200/S-1210 do holerite que o substitui "
+        store=True,
+        help="Holerite fora de vigor (estornado) que ainda tem S-1200, S-1210 ou "
+        "S-2299 gerado e não retificado nem excluído: o evento declara valores "
+        "que a folha desfez. Gere o S-1200 do holerite que o substitui "
         "(retificação, com o recibo do evento aceito) ou exclua o evento por "
         "S-3000.",
     )
@@ -44,17 +53,110 @@ class HrPayslip(models.Model):
         "l10n_br_fora_de_vigor",
         "l10n_br_esocial_s1200_id.evento_id.state",
         "l10n_br_esocial_s1210_id.evento_id.state",
+        "l10n_br_esocial_s2299_ids.evento_id.state",
     )
     def _compute_l10n_br_esocial_a_retificar(self):
         for slip in self:
             eventos = (
                 slip.l10n_br_esocial_s1200_id.evento_id
                 | slip.l10n_br_esocial_s1210_id.evento_id
+                | slip.l10n_br_esocial_s2299_ids.evento_id
             )
             slip.l10n_br_esocial_a_retificar = bool(
                 slip.l10n_br_fora_de_vigor
                 and not slip.l10n_br_estorno
                 and eventos.filtered(lambda e: e.state in EVENTO_VIGENTE)
+            )
+
+    def refund_sheet(self):
+        """O estorno invalida os eventos ainda não transmitidos do estornado."""
+        res = super().refund_sheet()
+        self._esocial_invalidar_eventos_nao_transmitidos()
+        return res
+
+    def _esocial_invalidar_eventos_nao_transmitidos(self):
+        """Tira do lote o evento validado do holerite estornado e avisa.
+
+        Evento em rascunho ou validado ainda não foi ao governo, mas declara o
+        que a folha desfez. Volta a rascunho (e sai do lote); a validação passa a
+        recusá-lo enquanto o holerite estiver fora de vigor.
+        """
+        for slip in self.filtered("l10n_br_fora_de_vigor"):
+            eventos = (
+                slip.l10n_br_esocial_s1200_id.evento_id
+                | slip.l10n_br_esocial_s1210_id.evento_id
+                | slip.l10n_br_esocial_s2299_ids.evento_id
+            ).filtered(lambda e: e.state in ("draft", "validated"))
+            for evento in eventos:
+                evento.write({"state": "draft", "lote_id": False})
+                evento.message_post(
+                    body=_(
+                        "O holerite %(slip)s foi estornado antes da transmissão: "
+                        "este evento declara o que a folha desfez e não pode ser "
+                        "validado. Descarte-o e gere o do holerite que o substitui."
+                    )
+                    % {"slip": slip.number or slip.name}
+                )
+
+    def _esocial_competencia_fechada(self, company, per_apur):
+        """Competência com S-1299 aceito e sem S-1298 aceito depois dele."""
+        eventos = self.env["l10n_br.esocial.evento"]
+        base = [
+            ("company_id", "=", company.id),
+            ("per_apur", "=", per_apur),
+            ("state", "=", "success"),
+        ]
+        fechamento = eventos.search(
+            base + [("tipo", "=", "S-1299")], order="id desc", limit=1
+        )
+        if not fechamento:
+            return False
+        reabertura = eventos.search(
+            base + [("tipo", "=", "S-1298"), ("id", ">", fechamento.id)], limit=1
+        )
+        return not reabertura
+
+    def _esocial_exigir_competencia_aberta(self, company, per_apur):
+        """MOS S-1.3, S-1200 item 31.3: evento de movimento encerrado só após S-1298."""
+        if self._esocial_competencia_fechada(company, per_apur):
+            raise UserError(
+                _(
+                    "A competência %(per)s está fechada (S-1299 aceito, sem "
+                    "S-1298 depois). O eSocial só aceita evento periódico dela "
+                    "depois da reabertura (S-1298): reabra a competência antes de "
+                    "gerar o evento."
+                )
+                % {"per": per_apur}
+            )
+
+    def _esocial_exigir_sem_s1210_vigente(self, anterior):
+        """O S-1210 que referencia o demonstrativo a retificar sai antes (S-3000).
+
+        MOS S-1.3, cap. I item 15.2 (p. 44) e S-1200 item 31.1 (p. 158): a
+        retificação do S-1200 exige a prévia exclusão do S-1210 que o referencia,
+        salvo só inclusão de novo demonstrativo ou demonstrativo sem S-1210. Aqui
+        o demonstrativo do estornado é substituído, então o S-1210 sai antes e é
+        reenviado depois.
+        """
+        pagamentos = self.env["l10n_br.esocial.s1210.pagamento"].search(
+            [("s1200_id", "=", anterior.id)]
+        )
+        s1210s = pagamentos.s1210_id.filtered(
+            lambda s: s.evento_id.state in ("pending", "sent", "success")
+        )
+        if s1210s:
+            raise UserError(
+                _(
+                    "O S-1200 %(s1200)s a retificar tem S-1210 transmitido que "
+                    "referencia o demonstrativo dele (%(s1210)s). O eSocial só "
+                    "aceita o retificador depois da exclusão desse S-1210: gere o "
+                    "S-3000 dele, espere o aceite, gere o S-1200 retificador e "
+                    "reenvie o S-1210 (MOS S-1.3, item 15.2 do cap. I)."
+                )
+                % {
+                    "s1200": anterior.evento_id.name,
+                    "s1210": ", ".join(s1210s.mapped("evento_id.name")),
+                }
             )
 
     def _esocial_em_vigor(self):
@@ -151,6 +253,22 @@ class HrPayslip(models.Model):
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self._esocial_em_vigor()
+        # Segunda chamada não duplica o retificador: o holerite que já tem um
+        # retificador vigente fica como está.
+        pendentes = payslips.filtered(
+            lambda slip: slip.l10n_br_esocial_s1200_id.ind_retif == "2"
+            and slip.l10n_br_esocial_s1200_id.evento_id.state
+            in ("draft", "validated", "pending", "sent")
+        )
+        if pendentes == payslips:
+            raise UserError(
+                _(
+                    "O holerite já tem S-1200 retificador gerado (%(evento)s). "
+                    "Use o evento existente em vez de gerar outro."
+                )
+                % {"evento": pendentes[0].l10n_br_esocial_s1200_id.evento_id.name}
+            )
+        payslips -= pendentes
 
         # Group by employee + period
         groups = {}
@@ -162,6 +280,7 @@ class HrPayslip(models.Model):
         created_events = self.env["l10n_br.esocial.evento"]
         for (emp_id, per_apur), slips in groups.items():
             company = slips[0].company_id
+            self._esocial_exigir_competencia_aberta(company, per_apur)
             anterior = self._esocial_evento_anterior(
                 "l10n_br.esocial.s1200",
                 [
@@ -178,6 +297,7 @@ class HrPayslip(models.Model):
                 "company_id": company.id,
             }
             if anterior:
+                self._esocial_exigir_sem_s1210_vigente(anterior)
                 # O retificador substitui o evento inteiro da competência: leva
                 # também os holerites que continuam em vigor no evento anterior.
                 slips |= anterior.payslip_ids.filtered(
@@ -323,36 +443,19 @@ class HrPayslip(models.Model):
 
         eventos = self.env["l10n_br.esocial.evento"]
         for (employee_id, per_apur, company_id), slips in grupos.items():
-            anterior = self._esocial_evento_anterior(
-                "l10n_br.esocial.s1210",
-                [
-                    ("employee_id", "=", employee_id),
-                    ("per_apur", "=", per_apur),
-                    ("company_id", "=", company_id),
-                ],
+            self._esocial_exigir_competencia_aberta(
+                self.env["res.company"].browse(company_id), per_apur
             )
-            vals = {
-                "employee_id": employee_id,
-                "per_apur": per_apur,
-                "company_id": company_id,
-            }
-            if anterior:
-                # O retificador do S-1210 substitui os pagamentos do mês: leva
-                # também os que continuam em vigor no evento anterior.
-                slips |= anterior._esocial_slips().filtered(
-                    lambda slip: slip.state == "done"
-                    and not slip.l10n_br_fora_de_vigor
-                    and slip.l10n_br_esocial_data_pagamento
-                )
-                vals.update(
-                    ind_retif="2",
-                    nr_recibo=anterior.evento_id.nr_recibo,
-                    evento_retificado_id=anterior.evento_id.id,
-                )
-            vals["pagamento_ids"] = [
-                (0, 0, slip._esocial_dados_pagamento()) for slip in slips
-            ]
-            s1210 = self.env["l10n_br.esocial.s1210"].create(vals)
+            s1210 = self.env["l10n_br.esocial.s1210"].create(
+                {
+                    "employee_id": employee_id,
+                    "per_apur": per_apur,
+                    "company_id": company_id,
+                    "pagamento_ids": [
+                        (0, 0, slip._esocial_dados_pagamento()) for slip in slips
+                    ],
+                }
+            )
             eventos |= s1210.action_gerar_evento()
             slips.write({"l10n_br_esocial_s1210_id": s1210.id})
 
@@ -367,11 +470,19 @@ class HrPayslip(models.Model):
         projetada do aviso seguirem a folha. Data do desligamento = fim do
         período da rescisão; o motivo vem do contrato.
         """
-        payslips = self.filtered(
-            lambda slip: slip.state == "done"
-            and not slip.l10n_br_fora_de_vigor
-            and slip.struct_id.code == "RESCISAO"
+        rescisoes = self.filtered(
+            lambda slip: slip.state == "done" and slip.struct_id.code == "RESCISAO"
         )
+        payslips = rescisoes.filtered(lambda slip: not slip.l10n_br_fora_de_vigor)
+        if rescisoes and not payslips:
+            raise UserError(
+                _(
+                    "A rescisão selecionada está fora de vigor (estorno ou "
+                    "estornada) e não vai ao eSocial. O S-2299 já gerado do "
+                    "holerite estornado fica marcado como a retificar: exclua-o "
+                    "por S-3000 e gere o S-2299 da rescisão que o substitui."
+                )
+            )
         if not payslips:
             raise UserError(
                 _("Selecione holerites de rescisão confirmados (estado 'Feito').")

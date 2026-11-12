@@ -54,4 +54,33 @@
             </xpath>
         </field>
     </record>
+
+    <record id="view_hr_payslip_search_esocial" model="ir.ui.view">
+        <field name="name">hr.payslip.search.esocial</field>
+        <field name="model">hr.payslip</field>
+        <field name="arch" type="xml">
+            <search string="Holerites eSocial">
+                <field name="number" />
+                <field name="employee_id" />
+                <filter
+                    name="esocial_a_retificar"
+                    string="eSocial a retificar"
+                    domain="[('l10n_br_esocial_a_retificar', '=', True)]"
+                />
+                <filter
+                    name="esocial_fora_de_vigor"
+                    string="Fora de vigor (estorno)"
+                    domain="[('l10n_br_fora_de_vigor', '=', True)]"
+                />
+            </search>
+        </field>
+    </record>
+
+    <record id="action_hr_payslip_esocial_a_retificar" model="ir.actions.act_window">
+        <field name="name">Holerites a retificar no eSocial</field>
+        <field name="res_model">hr.payslip</field>
+        <field name="view_mode">list,form</field>
+        <field name="search_view_id" ref="view_hr_payslip_search_esocial" />
+        <field name="context">{'search_default_esocial_a_retificar': 1}</field>
+    </record>
 </odoo>

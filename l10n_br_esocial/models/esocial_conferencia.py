@@ -147,9 +147,14 @@ class ESocialConferencia(models.Model):
 
     def _dominio_totalizador(self, tipo=None):
         self.ensure_one()
+        # Só o totalizador do evento vigente: o do evento retificado ou excluído
+        # foi substituído pelo do retificador e somar os dois contaria em dobro.
         dominio = [
             ("company_id", "=", self.company_id.id),
             ("per_apur", "=", self.per_apur),
+            "|",
+            ("evento_id", "=", False),
+            ("evento_id.state", "not in", ("rectified", "excluded")),
         ]
         if tipo:
             dominio.append(("tipo", "=", tipo))
