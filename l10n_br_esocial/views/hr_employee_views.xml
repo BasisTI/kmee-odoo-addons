@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="hr_employee_view_form_esocial" model="ir.ui.view">
+        <field name="name">hr.employee.form.esocial</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='personal_information']" position="inside">
+                <group name="esocial" string="eSocial">
+                    <field name="l10n_br_esocial_matricula" />
+                    <field
+                        name="l10n_br_esocial_categoria_id"
+                        options="{'no_create': True}"
+                    />
+                    <field name="l10n_br_esocial_grau_instr" />
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="hr_employee_relative_view_tree_esocial" model="ir.ui.view">
+        <field name="name">hr.employee.relative.list.esocial</field>
+        <field name="model">hr.employee.relative</field>
+        <field
+            name="inherit_id"
+            ref="hr_employee_relative.hr_employee_relative_view_tree"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='notes']" position="before">
+                <field name="l10n_br_esocial_tp_dep_id" options="{'no_create': True}" />
+                <field name="l10n_br_esocial_cpf" />
+                <field name="l10n_br_esocial_dep_irrf" />
+                <field name="l10n_br_esocial_dep_sf" />
+                <field name="l10n_br_esocial_inc_trab" />
+                <field name="l10n_br_esocial_descr_dep" optional="hide" />
+            </xpath>
+        </field>
+    </record>
+
+    <record id="hr_contract_view_form_esocial" model="ir.ui.view">
+        <field name="name">hr.contract.form.esocial</field>
+        <field name="model">hr.contract</field>
+        <field
+            name="inherit_id"
+            ref="l10n_br_hr_contract.l10n_br_hr_contract_view_form"
+        />
+        <field name="arch" type="xml">
+            <xpath expr="//group[@name='union']" position="after">
+                <group name="esocial_jornada" string="eSocial - Jornada">
+                    <field name="l10n_br_esocial_tp_jornada" />
+                    <field name="l10n_br_esocial_tmp_parc" />
+                </group>
+            </xpath>
+        </field>
+    </record>
+</odoo>

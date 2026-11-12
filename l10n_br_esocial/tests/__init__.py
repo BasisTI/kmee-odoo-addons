@@ -19,3 +19,4 @@ from . import test_migracao_aso
 from . import test_guarda_producao
 from . import test_rubricas_unicas
 from . import test_tabelas_incidencia
+from . import test_s2200_cadastro

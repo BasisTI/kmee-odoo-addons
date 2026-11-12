@@ -36,6 +36,20 @@ class TestHoraExtra(PayrollCommon):
         divisor = contract._l10n_br_divisor_horas_mensais()
         self.assertAlmostEqualMoney(he, (3000.00 / divisor) * 1.5 * 10)
 
+    def test_hora_extra_50_calendario_padrao_do_odoo_divisor_200(self):
+        """Calendário padrão do Odoo (com almoço) = 40h: salário-hora 3000/200."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        contract.resource_calendar_id = self.env["resource.calendar"].create(
+            {"name": "Padrão Odoo 40h"}
+        )
+        self.assertAlmostEqual(contract._l10n_br_divisor_horas_mensais(), 200.0)
+        payslip = self._create_payslip(emp, contract)
+        payslip.write({"l10n_br_horas_extras_50": 10})
+        payslip.compute_sheet()
+        he = self._get_line_total(payslip, "HE_50")
+        self.assertAlmostEqualMoney(he, (3000.00 / 200.0) * 1.5 * 10)
+
     def test_hora_extra_100_porcento(self):
         """HE em domingo/feriado: 200% do salário-hora (divisor da jornada)."""
         emp = self._create_employee()

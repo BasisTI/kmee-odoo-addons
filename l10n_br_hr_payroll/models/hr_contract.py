@@ -46,8 +46,11 @@ class HrContract(models.Model):
         """Horas contratuais semanais derivadas do calendário de trabalho.
 
         Soma a jornada das linhas de presença (``attendance_ids``) de uma
-        semana. Em calendários de duas semanas (``two_weeks_calendar``) a soma
-        é dividida por 2 para obter a média semanal.
+        semana, sem as linhas de intervalo (``day_period = lunch``, que o Odoo
+        traz no calendário padrão, como ``12:00-13:00``) nem as seções do
+        calendário de duas semanas. Em calendários de duas semanas
+        (``two_weeks_calendar``) a soma é dividida por 2 para obter a média
+        semanal.
 
         Returns:
             Horas semanais (float); ``0.0`` se não houver calendário/jornada.
@@ -56,9 +59,11 @@ class HrContract(models.Model):
         calendar = self.resource_calendar_id
         if not calendar or not calendar.attendance_ids:
             return 0.0
-        attendances = calendar.attendance_ids
+        attendances = calendar.attendance_ids.filtered(
+            lambda a: not a.display_type and a.day_period != "lunch"
+        )
         total = sum(a.hour_to - a.hour_from for a in attendances)
-        if any(attendances.mapped("two_weeks_calendar")):
+        if calendar.two_weeks_calendar:
             total /= 2.0
         return total
 

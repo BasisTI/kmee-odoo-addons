@@ -221,6 +221,62 @@ class TestDivisorJornada(TransactionCase):
         contract = self._contract(self._calendar(40.0))
         self.assertAlmostEqual(contract._l10n_br_divisor_horas_mensais(), 200.0)
 
+    def test_calendario_padrao_do_odoo_com_intervalo_e_40h_e_200(self):
+        """O padrão do Odoo (08-12, 12-13 almoço, 13-17) tem 40h, não 45h."""
+        calendar = self.env["resource.calendar"].create({"name": "Padrão Odoo"})
+        self.assertTrue(
+            calendar.attendance_ids.filtered(lambda a: a.day_period == "lunch")
+        )
+        contract = self._contract(calendar)
+        self.assertAlmostEqual(contract._l10n_br_horas_semanais(), 40.0)
+        self.assertAlmostEqual(contract._l10n_br_divisor_horas_mensais(), 200.0)
+
+    def test_calendario_duas_semanas_com_intervalo_e_media(self):
+        """Duas semanas (36h e 24h) com almoço: média de 30h, sem seções."""
+        linhas = []
+        for semana, dias in (("0", (0, 2, 4)), ("1", (1, 3))):
+            linhas.append(
+                (
+                    0,
+                    0,
+                    {
+                        "name": "Semana",
+                        "display_type": "line_section",
+                        "week_type": semana,
+                        "hour_from": 0.0,
+                        "hour_to": 0.0,
+                    },
+                )
+            )
+            for dia in dias:
+                for periodo, ini, fim in (
+                    ("morning", 7.0, 13.0),
+                    ("lunch", 13.0, 14.0),
+                    ("afternoon", 14.0, 20.0 if semana == "0" else 14.0 + 0.0),
+                ):
+                    if fim <= ini:
+                        continue
+                    linhas.append(
+                        (
+                            0,
+                            0,
+                            {
+                                "name": periodo,
+                                "dayofweek": str(dia),
+                                "day_period": periodo,
+                                "week_type": semana,
+                                "hour_from": ini,
+                                "hour_to": fim,
+                            },
+                        )
+                    )
+        calendar = self.env["resource.calendar"].create(
+            {"name": "12x36", "two_weeks_calendar": True, "attendance_ids": linhas}
+        )
+        contract = self._contract(calendar)
+        # semana 0: 3 dias × 12h = 36h; semana 1: 2 dias × 6h = 12h → média 24h
+        self.assertAlmostEqual(contract._l10n_br_horas_semanais(), 24.0)
+
     def test_fallback_calendario_sem_jornada_e_220(self):
         """Calendário sem linhas de presença → divisor padrão de 220."""
         calendar = self.env["resource.calendar"].create(

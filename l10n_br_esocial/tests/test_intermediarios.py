@@ -27,6 +27,7 @@ class TestESocialIntermediarioBase(TransactionCase):
         # desenho; isso e esperado nestes testes.
         mute = mute_logger(
             "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario",
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2200_admissao",
             "odoo.addons.l10n_br_esocial.models.esocial_lote",
         )
         mute.__enter__()
@@ -58,9 +59,37 @@ class TestESocialIntermediarioBase(TransactionCase):
                 "l10n_br_esocial_categoria_id": cls.cat_101.id,
                 "gender": "male",
                 "birthday": "1990-05-15",
+                "ethnicity": cls.env.ref("l10n_br_hr.ethnicity_1").id,
+                "l10n_br_esocial_grau_instr": "07",
             }
         )
 
+        cls.sindicato = cls.env["res.partner"].create(
+            {
+                "name": "Sindicato dos Trabalhadores",
+                "vat": "11.222.333/0001-81",
+                "union_entity_code": "SIND001",
+            }
+        )
+        cls.calendario = cls.env["resource.calendar"].create(
+            {
+                "name": "Padrão 40h",
+                "attendance_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "name": "%s %s" % (dia, turno),
+                            "dayofweek": dia,
+                            "hour_from": ini,
+                            "hour_to": fim,
+                        },
+                    )
+                    for dia in ("0", "1", "2", "3", "4")
+                    for turno, ini, fim in (("manhã", 8.0, 12.0), ("tarde", 13.0, 17.0))
+                ],
+            }
+        )
         cls.contract = cls.env["hr.contract"].create(
             {
                 "name": "Contrato CLT Test",
@@ -68,6 +97,9 @@ class TestESocialIntermediarioBase(TransactionCase):
                 "wage": 5000.00,
                 "date_start": "2024-01-02",
                 "state": "open",
+                "partner_union": cls.sindicato.id,
+                "resource_calendar_id": cls.calendario.id,
+                "l10n_br_esocial_tp_jornada": "4",
             }
         )
 
