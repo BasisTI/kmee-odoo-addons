@@ -595,6 +595,86 @@ class TestS2230Devido(TestESocialIntermediarioBase):
         self._licenca("2024-03-01", "2024-03-20")
         self.assertEqual(self._gera(None, "2024-03-20")["dt_term_afast"], "2024-03-20")
 
+    # infoMesmoMtv (leiaute S-1.3, a partir de 2026-10-26), motivos 01 e 03
+    MSG_INFO = "Mesmo motivo do afastamento anterior"
+
+    def _recusa_info(self, *args, **kwargs):
+        with self.assertRaisesRegex(UserError, self.MSG_INFO):
+            self._gera(*args, **kwargs)
+
+    def _recaida(self):
+        """Dois afastamentos de 20 dias, o 2º a 10 dias do término do 1º."""
+        self._licenca("2026-11-01", "2026-11-20")
+        self._licenca("2026-11-30", "2026-12-19")
+
+    def test_recaida_sem_informar_e_recusada(self):
+        self._recaida()
+        self._recusa_info("2026-11-30", "2026-12-19")
+
+    def test_recaida_informada_vai_no_evento(self):
+        self._recaida()
+        for valor in ("S", "N"):
+            data = self._gera("2026-11-30", "2026-12-19", info_mesmo_mtv=valor)
+            self.assertEqual(data["info_mesmo_mtv"], valor)
+
+    def test_primeiro_afastamento_nao_leva_o_campo(self):
+        self._recaida()
+        self.assertNotIn("info_mesmo_mtv", self._gera("2026-11-01", "2026-11-20"))
+
+    def test_anterior_a_mais_de_60_dias_nao_exige(self):
+        self._licenca("2026-11-01", "2026-11-20")
+        self._licenca("2027-01-20", "2027-02-10")  # 61 dias após o término
+        self.assertNotIn("info_mesmo_mtv", self._gera("2027-01-20", "2027-02-10"))
+
+    def test_anterior_a_60_dias_exige(self):
+        self._licenca("2026-11-01", "2026-11-20")
+        self._licenca("2027-01-19", "2027-02-10")  # 60 dias após o término
+        self._recusa_info("2027-01-19", "2027-02-10")
+
+    def test_inicio_antes_de_26_10_2026_nao_leva_o_campo(self):
+        self._licenca("2026-09-01", "2026-09-20")
+        self._licenca("2026-10-10", "2026-10-25")
+        data = self._gera("2026-10-10", "2026-10-25", info_mesmo_mtv="S")
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_inicio_em_26_10_2026_ja_exige(self):
+        self._licenca("2026-10-01", "2026-10-20")
+        self._licenca("2026-10-26", "2026-11-15")
+        self._recusa_info("2026-10-26", "2026-11-15")
+
+    def test_outros_motivos_nao_levam_o_campo(self):
+        self._recaida()
+        data = self._gera(
+            "2026-11-30", "2026-12-19", self.mot_afast_16, info_mesmo_mtv="S"
+        )
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_acidente_do_trabalho_com_anterior_exige(self):
+        self._s2230("2026-11-01", "2026-11-03", self.mot_afast_01)
+        self._recusa_info("2026-11-20", "2026-11-22", self.mot_afast_01)
+        data = self._gera(
+            "2026-11-20", "2026-11-22", self.mot_afast_01, info_mesmo_mtv="N"
+        )
+        self.assertEqual(data["info_mesmo_mtv"], "N")
+
+    def test_acidente_do_trabalho_nao_conta_doenca_anterior(self):
+        self._licenca("2026-11-01", "2026-11-20")
+        data = self._gera("2026-11-30", "2026-12-02", self.mot_afast_01)
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_termino_nao_leva_o_campo(self):
+        self._recaida()
+        self.assertNotIn("info_mesmo_mtv", self._gera(None, "2026-12-19"))
+
+    def test_xml_traz_o_info_mesmo_mtv_apos_o_motivo(self):
+        if not HAS_ESOCIALLIB:
+            return
+        self._recaida()
+        xml = self._s2230("2026-11-30", "2026-12-19", info_mesmo_mtv="S")._gerar_xml()
+        self.assertRegex(
+            xml, r"<codMotAfast>03</codMotAfast>\s*<infoMesmoMtv>S</infoMesmoMtv>"
+        )
+
 
 class TestS2299(TestESocialIntermediarioBase):
     """Testes do intermediário S-2299 (Desligamento)."""
