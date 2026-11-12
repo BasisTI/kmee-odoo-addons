@@ -27,6 +27,7 @@ class TestESocialIntermediarioBase(TransactionCase):
         # desenho; isso e esperado nestes testes.
         mute = mute_logger(
             "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario",
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2200_admissao",
             "odoo.addons.l10n_br_esocial.models.esocial_lote",
         )
         mute.__enter__()

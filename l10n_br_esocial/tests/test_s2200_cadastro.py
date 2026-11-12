@@ -98,7 +98,12 @@ class TestS2200Cadastro(TestESocialIntermediarioBase):
         self.contract.partner_union = False
         with self.assertRaises(UserError):
             self.s2200._to_esociallib_dict()
-        self.sindicato.vat = "11.222.333/0001-82"  # dígito verificador errado
+        # Dígito verificador errado: o ORM não deixaria gravar, então vai por SQL.
+        self.env.cr.execute(
+            "UPDATE res_partner SET vat = %s WHERE id = %s",
+            ("11.222.333/0001-82", self.sindicato.id),
+        )
+        self.sindicato.invalidate_recordset(["vat"])
         self.contract.partner_union = self.sindicato
         with self.assertRaises(UserError):
             self.s2200._to_esociallib_dict()
