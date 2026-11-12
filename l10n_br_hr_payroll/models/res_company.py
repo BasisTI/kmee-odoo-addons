@@ -87,6 +87,15 @@ class ResCompany(models.Model):
         help="RAT x FAP: alíquota efetivamente devida sobre a remuneração. "
         "Declarada no eSocial S-1005 (aliqRatAjust).",
     )
+    l10n_br_hr_gilrat_ids = fields.One2many(
+        "l10n_br.hr.payroll.gilrat",
+        "company_id",
+        string="RAT/FAP por Estabelecimento",
+        help="RAT e FAP de matriz e filiais, com vigência. O estabelecimento é "
+        "o CNPJ do Endereço de Trabalho do empregado (o mesmo local de trabalho "
+        "do S-2200). Sem linha para o estabelecimento na competência, vale o "
+        "RAT e o FAP da empresa.",
+    )
     l10n_br_hr_fpas_padrao = fields.Char(
         string="Código FPAS Padrão",
         size=3,
@@ -211,8 +220,28 @@ class ResCompany(models.Model):
             competencia, decimo_terceiro=decimo_terceiro
         )
 
+    def _l10n_br_hr_rat_fap(self, competencia, estabelecimento=False):
+        """``(rat, fap)`` do estabelecimento na ``competencia``.
+
+        ``estabelecimento`` é o CNPJ (com ou sem pontuação) do local de
+        trabalho do contrato. Sem linha vigente em
+        ``l10n_br.hr.payroll.gilrat``, vale o valor da empresa.
+        """
+        self.ensure_one()
+        linha = self.env["l10n_br.hr.payroll.gilrat"]._vigente(
+            self, estabelecimento, competencia
+        )
+        if linha:
+            return float(linha.rat), linha.fap
+        return float(self.l10n_br_hr_rat or 0), self.l10n_br_hr_fap
+
     def _l10n_br_hr_aliquotas_patronais(
-        self, competencia, simples_anexo=False, aprendiz=False, decimo_terceiro=False
+        self,
+        competencia,
+        simples_anexo=False,
+        aprendiz=False,
+        decimo_terceiro=False,
+        estabelecimento=False,
     ):
         """Alíquotas patronais desta empresa na ``competencia``.
 
@@ -228,6 +257,8 @@ class ResCompany(models.Model):
                 diferente do anexo preponderante da empresa (atividade
                 concomitante do Simples, eixo independente da CPRB).
             aprendiz: Contrato de aprendizagem (FGTS 2%).
+            estabelecimento: CNPJ do local de trabalho do contrato; seleciona o
+                RAT/FAP vigente do estabelecimento (padrão: os da empresa).
             decimo_terceiro: Apuração do 13º salário. Afeta SOMENTE a CPP: a
                 dispensa da Lei 12.546/2011, art. 9º-A, §1º alcança apenas os
                 incisos I e III do art. 22 da Lei 8.212/91 - RAT e terceiros
@@ -238,11 +269,12 @@ class ResCompany(models.Model):
             Dicionário de frações (ver ``salary_rules_br.aliquotas_patronais``).
         """
         self.ensure_one()
+        rat, fap = self._l10n_br_hr_rat_fap(competencia, estabelecimento)
         return salary_rules_br.aliquotas_patronais(
             tax_framework=self.tax_framework,
             simples_anexo=simples_anexo or self.l10n_br_hr_simples_anexo,
-            rat=float(self.l10n_br_hr_rat or 0),
-            fap=self.l10n_br_hr_fap,
+            rat=rat,
+            fap=fap,
             perc_terceiros=self.l10n_br_hr_terceiros_padrao,
             aprendiz=aprendiz,
             cprb_perc_cpp=self._l10n_br_hr_cprb_perc_cpp(

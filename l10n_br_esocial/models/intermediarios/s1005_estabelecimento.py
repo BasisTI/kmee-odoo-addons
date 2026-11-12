@@ -67,6 +67,10 @@ class ESocialS1005(models.Model):
         help="CNPJ do responsável pela obra (uso com CNO).",
     )
     # ── GILRAT do estabelecimento (grupo aliqGilrat) ───────────────────────
+    # Só informe RAT/FAP quando o grupo aliqGilrat se aplica (leiaute S-1.3):
+    # processo judicial do FAP (procAdmJudFap), estabelecimento fora da tabela
+    # FAP, CNO sem cnpjResp. Fora desses casos o eSocial usa o valor oficial e o
+    # evento NÃO os declara; a tabela RAT/FAP da folha só alimenta o cálculo.
     # O S-1005 leva SOMENTE RAT/FAP. FPAS, código de terceiros e terceiros
     # suspensos são da LOTAÇÃO TRIBUTÁRIA (S-1020, grupo fpasLotacao) — ver
     # l10n_br.esocial.s1020.get_parametros_encargos().

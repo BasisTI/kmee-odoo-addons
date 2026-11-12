@@ -626,6 +626,23 @@ estorno até voltar a rascunho, como em qualquer outra alteração.</li>
 <li>Os eventos do eSocial já gerados (S-1200 e semelhantes) <strong>não</strong> são
 retificados pelo estorno: isso fica para o usuário.</li>
 </ul>
+<p><strong>RAT e FAP por estabelecimento</strong></p>
+<p>O RAT e o FAP da empresa são o valor padrão. Quando matriz e filiais têm FAP
+diferente (o FAP é publicado todo ano, por CNPJ), cadastre uma linha por
+estabelecimento em <em>Folha &gt; Tabelas fiscais &gt; RAT/FAP por Estabelecimento</em> (ou na
+aba <em>Encargos da Folha</em> da empresa): CNPJ, início e fim da vigência (mês cheio),
+RAT e FAP. A regra RAT usa a linha vigente na competência do holerite para o CNPJ
+do <strong>Endereço de Trabalho</strong> do empregado, o mesmo local de trabalho que o S-2200
+declara. Sem linha para o estabelecimento na competência, vale o RAT/FAP da
+empresa.</p>
+<p>A tabela é só fonte do cálculo da folha: o S-1005 <strong>não</strong> a copia. O evento só leva
+<tt class="docutils literal">aliqRat</tt>/<tt class="docutils literal">fap</tt> (grupo <tt class="docutils literal">aliqGilrat</tt>) quando o usuário os informa no próprio
+S-1005, o que o leiaute S-1.3 reserva a processo judicial do FAP
+(<tt class="docutils literal">procAdmJudFap</tt>), estabelecimento fora da tabela FAP e CNO sem <tt class="docutils literal">cnpjResp</tt>.</p>
+<p>Limite: o estabelecimento vem do Endereço de Trabalho <em>atual</em> do empregado e o
+módulo não guarda histórico de endereço. Ao transferir um empregado de filial,
+recalcular um holerite de competência anterior usa o RAT/FAP da filial nova, não
+o da filial onde ele estava na época; holerites confirmados não mudam.</p>
 </div>
 </div>
 <div class="section" id="bug-tracker">

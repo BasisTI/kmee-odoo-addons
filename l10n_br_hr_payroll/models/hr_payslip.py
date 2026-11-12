@@ -921,6 +921,10 @@ class HrPayslip(models.Model):
         def aliquotas_patronais(contrato, decimo_terceiro=False):
             """Alíquotas dos encargos patronais do contrato na competência.
 
+            O RAT e o FAP são os do estabelecimento do contrato (CNPJ do
+            Endereço de Trabalho do empregado) vigentes na competência; sem
+            linha, valem os da empresa.
+
             Resolve o regime tributário da empresa DO HOLERITE (não da empresa
             do usuário: em base multiempresa o mesmo salário custa valores
             diferentes por regime, que é justamente o que se quer mostrar), o
@@ -943,6 +947,9 @@ class HrPayslip(models.Model):
                     simples_anexo=contrato.l10n_br_hr_simples_anexo,
                     aprendiz=empregado.l10n_br_tipo_contrato == "aprendiz",
                     decimo_terceiro=decimo_terceiro,
+                    # RAT/FAP do estabelecimento: o mesmo local de trabalho
+                    # (CNPJ do Endereço de Trabalho) que o S-2200 declara.
+                    estabelecimento=empregado.address_id.vat,
                 )
             )
 

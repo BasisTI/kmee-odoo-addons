@@ -52,6 +52,21 @@
                             <field name="l10n_br_hr_prov_ferias_perc_indenizado" />
                         </group>
                     </group>
+                    <group
+                        string="RAT / FAP por Estabelecimento (eSocial S-1005)"
+                        groups="payroll.group_payroll_user"
+                    >
+                        <field name="l10n_br_hr_gilrat_ids" nolabel="1" colspan="2">
+                            <list editable="bottom">
+                                <field name="cnpj" />
+                                <field name="date_start" />
+                                <field name="date_end" />
+                                <field name="rat" />
+                                <field name="fap" />
+                                <field name="rat_ajustado" />
+                            </list>
+                        </field>
+                    </group>
                 </page>
             </xpath>
         </field>
