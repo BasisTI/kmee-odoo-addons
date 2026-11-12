@@ -56,6 +56,24 @@ class HrPayslip(models.Model):
         "uma vez por semana com falta; falta sem data conta numa semana própria.",
     )
 
+    l10n_br_fora_de_vigor = fields.Boolean(
+        string="Estorno ou estornado",
+        compute="_compute_l10n_br_fora_de_vigor",
+        store=True,
+        help="Marca o holerite de estorno (devolução) e o holerite original "
+        "que tem um estorno em vigor: o par se anula e nenhum dos dois conta "
+        "para período duplicado, DSR, médias, salário já pago ou integridade "
+        "entre holerites. Se o estorno é cancelado, o original volta a valer.",
+    )
+
+    @api.depends("credit_note", "refunded_id", "refunded_id.state")
+    def _compute_l10n_br_fora_de_vigor(self):
+        for slip in self:
+            slip.l10n_br_fora_de_vigor = bool(
+                slip.credit_note
+                or (slip.refunded_id and slip.refunded_id.state != "cancel")
+            )
+
     @api.constrains("l10n_br_faltas_injustificadas", "l10n_br_falta_ids")
     def _check_datas_faltas(self):
         for rec in self:
@@ -151,6 +169,8 @@ class HrPayslip(models.Model):
 
     _L10N_BR_CAMPOS_DSR = (
         "state",
+        "credit_note",
+        "refunded_id",
         "employee_id",
         "contract_id",
         "date_from",
@@ -199,6 +219,7 @@ class HrPayslip(models.Model):
                     [
                         ("employee_id", "=", empregado.id),
                         ("state", "!=", "cancel"),
+                        ("l10n_br_fora_de_vigor", "=", False),
                         "|",
                         ("l10n_br_falta_ids", "!=", False),
                         ("l10n_br_faltas_injustificadas", ">", 0),
@@ -433,6 +454,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("date_from", "<", referencia),
                 ("date_from", ">=", limite),
             ],
@@ -592,6 +614,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("date_from", "<=", self.date_to),
                 ("date_to", ">=", self.date_from),

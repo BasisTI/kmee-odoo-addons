@@ -208,3 +208,44 @@ class TestValidacaoFolha(PayrollCommon):
         payslip.compute_sheet()
         payslip.action_payslip_done()
         self.assertEqual(payslip.state, "done")
+
+    def test_estorno_nao_e_barrado_e_libera_o_periodo(self):
+        """TG-90: a devolução do confirmado não é "período duplicado" e o
+        período aceita um holerite novo, com o estornado e o estorno de fora."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        original = self.env["hr.payslip"].create(
+            self._create_payslip_vals(emp, contract, "Original")
+        )
+        original.compute_sheet()
+        original.action_payslip_done()
+        original.refund_sheet()
+        estorno = original.refunded_id
+        self.assertTrue(estorno.credit_note)
+        novo = self.env["hr.payslip"].create(
+            self._create_payslip_vals(emp, contract, "Novo")
+        )
+        novo.compute_sheet()
+        self.assertEqual(novo.state, "verify")
+        # O novo passa a valer: um segundo para o mesmo período segue barrado.
+        with self.assertRaises(ValidationError):
+            self.env["hr.payslip"].create(
+                self._create_payslip_vals(emp, contract, "Terceiro")
+            )
+
+    def test_estorno_cancelado_devolve_a_vigencia_ao_original(self):
+        """Cancelado o estorno, o original vale de novo: o período volta a
+        ser barrado para um novo holerite."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        original = self.env["hr.payslip"].create(
+            self._create_payslip_vals(emp, contract, "Original")
+        )
+        original.compute_sheet()
+        original.action_payslip_done()
+        original.refund_sheet()
+        original.refunded_id.write({"state": "cancel"})
+        with self.assertRaises(ValidationError):
+            self.env["hr.payslip"].create(
+                self._create_payslip_vals(emp, contract, "Novo")
+            )

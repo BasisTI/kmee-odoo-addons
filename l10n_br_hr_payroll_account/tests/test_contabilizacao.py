@@ -171,3 +171,26 @@ class TestContabilizacaoFolha(PayrollCommon):
             payslip.move_id,
             msg="Lançamento contábil deve ser removido ao reabrir folha",
         )
+
+    def test_estorno_gera_lancamento_inverso(self):
+        """TG-90: o estorno do holerite confirmado lança o inverso do original."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=5000.00)
+        original = self._create_payslip(emp, contract)
+        original.action_payslip_done()
+        estorno = original.refund_sheet() and original.refunded_id
+        self.assertTrue(estorno.credit_note)
+        self.assertTrue(estorno.move_id, "O estorno precisa do lançamento inverso")
+        despesa = self.rule_salario.account_debit
+        orig_despesa = original.move_id.line_ids.filtered(
+            lambda line: line.account_id == despesa
+        )
+        est_despesa = estorno.move_id.line_ids.filtered(
+            lambda line: line.account_id == despesa
+        )
+        self.assertAlmostEqual(
+            sum(est_despesa.mapped("credit")), sum(orig_despesa.mapped("debit")), 2
+        )
+        self.assertAlmostEqual(
+            sum(est_despesa.mapped("debit")), sum(orig_despesa.mapped("credit")), 2
+        )

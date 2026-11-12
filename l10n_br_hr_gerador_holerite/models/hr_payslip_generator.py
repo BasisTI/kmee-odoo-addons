@@ -98,6 +98,7 @@ class HrPayslipGenerator(models.TransientModel):
                 [
                     ("contract_id", "=", contract.id),
                     ("state", "!=", "cancel"),
+                    ("l10n_br_fora_de_vigor", "=", False),
                     ("date_from", "<=", date_to),
                     ("date_to", ">=", date_from),
                 ],
