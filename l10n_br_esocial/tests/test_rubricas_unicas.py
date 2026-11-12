@@ -154,7 +154,7 @@ class TestRubricasUnicas(TransactionCase):
 
     # --- aviso no S-1200 -------------------------------------------------
 
-    def _s1200_com_linhas(self, regras_valores):
+    def _s1200_com_linhas(self, regras_valores, estrutura=None):
         employee = self.env["hr.employee"].create(
             {
                 "name": "Trabalhador T105",
@@ -181,6 +181,7 @@ class TestRubricasUnicas(TransactionCase):
                 "contract_id": contract.id,
                 "date_from": "2024-03-01",
                 "date_to": "2024-03-31",
+                "struct_id": estrutura.id if estrutura else False,
             }
         )
         for regra, valor in regras_valores:
@@ -371,10 +372,71 @@ class TestRubricasUnicas(TransactionCase):
     def test_holerite_antigo_com_licenca_e_sem_a_rubrica_e_recusado(self):
         """Calculado antes da TG-87: só SALARIO_BASE; não sai calado como 1000."""
         self.regra_mensal.write(self._config())
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 6500.0)])
+        s1200 = self._s1200_com_linhas(
+            [(self.regra_mensal, 6500.0)],
+            self.env.ref("l10n_br_hr_payroll.structure_clt"),
+        )
         self._licenca_maternidade(s1200, date(2024, 3, 1), date(2024, 3, 31))
         with self.assertRaisesRegex(UserError, "SALARIO_MATERNIDADE"):
             s1200._build_itens_remun()
+
+    def _estrutura_sem_a_rubrica(self, codigo):
+        return self.env["hr.payroll.structure"].create(
+            {
+                "name": f"Estrutura {codigo} T87",
+                "code": codigo,
+                "rule_ids": [(6, 0, self.regra_mensal.ids)],
+            }
+        )
+
+    def test_13o_e_rescisao_com_licenca_nao_sao_recusados(self):
+        """Não têm a rubrica por desenho; o recálculo não a criaria (P013)."""
+        self.regra_mensal.write(self._config())
+        for codigo in ("13_1PARCELA", "13_2PARCELA", "RESCISAO", "FERIAS"):
+            estrutura = self._estrutura_sem_a_rubrica(codigo)
+            s1200 = self._s1200_com_linhas([(self.regra_mensal, 3250.0)], estrutura)
+            self._licenca_maternidade(s1200, date(2024, 3, 1), date(2024, 3, 31))
+            itens = s1200._build_itens_remun()
+            self.assertEqual([i["cod_rubr"] for i in itens], ["T105"], codigo)
+
+    def test_tabela_de_rubricas_so_conta_as_regras_da_empresa(self):
+        """Duas empresas novas, cada uma com a sua tabela: não se misturam."""
+        Rule = self.env["hr.salary.rule"]
+        empresa_a = self.env["res.company"].create({"name": "Empresa A T87"})
+        empresa_b = self.env["res.company"].create({"name": "Empresa B T87"})
+        base = {
+            "category_id": self.categoria.id,
+            "condition_select": "none",
+            "amount_select": "fix",
+            "amount_fix": 1.0,
+        }
+        for n in range(3):  # a empresa A usa muito a tabela "TAB_A"
+            Rule.create(
+                dict(
+                    base,
+                    name=f"A {n}",
+                    code=f"T87_A{n}",
+                    company_id=empresa_a.id,
+                    l10n_br_esocial_cod_rubr=f"T87A{n}",
+                    l10n_br_esocial_ide_tab_rubr="TAB_A",
+                )
+            )
+        Rule.create(
+            dict(
+                base,
+                name="B",
+                code="T87_B",
+                company_id=empresa_b.id,
+                l10n_br_esocial_cod_rubr="T87B",
+                l10n_br_esocial_ide_tab_rubr="TAB_B",
+            )
+        )
+        self.assertEqual(Rule._esocial_tabela_rubricas_da_empresa(empresa_a), "TAB_A")
+        self.assertEqual(Rule._esocial_tabela_rubricas_da_empresa(empresa_b), "TAB_B")
+        sem_regras = self.env["res.company"].create({"name": "Empresa C T87"})
+        self.assertNotIn(
+            Rule._esocial_tabela_rubricas_da_empresa(sem_regras), ("TAB_A", "TAB_B")
+        )
 
     def test_holerite_com_a_rubrica_nao_e_recusado(self):
         regra = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_maternidade")

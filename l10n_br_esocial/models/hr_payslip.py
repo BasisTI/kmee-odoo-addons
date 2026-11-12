@@ -29,6 +29,8 @@ class HrPayslip(models.Model):
     def _esocial_exigir_rubrica_maternidade(self):
         """Recusa o holerite com dias de licença-maternidade sem a rubrica própria.
 
+        Vale só para a estrutura que tem a rubrica (mensal CLT/Estatutário).
+
         Holerite calculado antes da TG-87 paga o salário da licença como salário
         comum (natureza 1000, incidência 11) e não tem ``SALARIO_MATERNIDADE``.
         Declará-lo assim faria a DCTFWeb perder, em silêncio, a dedução do
@@ -37,6 +39,11 @@ class HrPayslip(models.Model):
         """
         self.ensure_one()
         if not self.contract_id or not self.date_from or not self.date_to:
+            return
+        # Só a estrutura que paga o salário na rubrica própria (a mensal CLT e a
+        # Estatutário) exige a linha. 13º, rescisão, férias e estruturas sem a
+        # rubrica não a têm por desenho e o recálculo não a criaria.
+        if not any(r.code == "SALARIO_MATERNIDADE" for r in self.struct_id.rule_ids):
             return
         if not self._l10n_br_dias_maternidade(self.contract_id):
             return

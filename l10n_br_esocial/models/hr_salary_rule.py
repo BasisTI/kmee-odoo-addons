@@ -540,16 +540,19 @@ class HrSalaryRule(models.Model):
                 )
 
     @api.model
-    def _esocial_tabela_rubricas_da_empresa(self):
-        """ID da tabela de rubricas (``ideTabRubr``) que a empresa já usa.
+    def _esocial_tabela_rubricas_da_empresa(self, company=None):
+        """ID da tabela de rubricas (``ideTabRubr``) que a ``company`` já usa.
 
-        O mais frequente entre as regras com código eSocial; ``"1"`` se a
-        empresa ainda não configurou nenhuma.
+        O mais frequente entre as regras da empresa (ou sem empresa) com código
+        eSocial; ``"1"`` se ela ainda não configurou nenhuma. Regras de outras
+        empresas não contam: cada empresa tem a sua tabela.
         """
-        grupos = self.read_group(
+        company = company or self.env.company
+        grupos = self.sudo().read_group(
             [
                 ("l10n_br_esocial_cod_rubr", "!=", False),
                 ("l10n_br_esocial_ide_tab_rubr", "!=", False),
+                ("company_id", "in", [False, company.id]),
             ],
             ["l10n_br_esocial_ide_tab_rubr"],
             ["l10n_br_esocial_ide_tab_rubr"],
@@ -582,7 +585,9 @@ class HrSalaryRule(models.Model):
             return False
         padrao = {
             "l10n_br_esocial_cod_rubr": "SAL_MATERNIDADE",
-            "l10n_br_esocial_ide_tab_rubr": self._esocial_tabela_rubricas_da_empresa(),
+            "l10n_br_esocial_ide_tab_rubr": self._esocial_tabela_rubricas_da_empresa(
+                regra.company_id
+            ),
             "l10n_br_esocial_nat_rubr_id": natureza.id,
             "l10n_br_esocial_tp_rubr": "1",
             "l10n_br_esocial_cod_inc_cp": "21",
