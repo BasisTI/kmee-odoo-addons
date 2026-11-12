@@ -411,6 +411,12 @@ class HrPayslip(models.Model):
         calendário, é um feriado. Sem ausência cadastrada, devolve vazio e o
         repouso do mês são só os domingos.
 
+        Critério (``salary_rules_br.dia_feriado_da_ausencia``): ausência de UM
+        dia que cobre o expediente inteiro, lida no fuso do calendário do
+        contrato (sem calendário: o da empresa; sem ele, UTC) e NÃO no do
+        usuário que a lançou. Meio expediente e recesso de vários dias não
+        são feriado.
+
         Returns:
             ``set`` de ``date`` dentro do mês da competência.
         """
@@ -424,11 +430,13 @@ class HrPayslip(models.Model):
         calendario = contrato.resource_calendar_id if contrato else False
         empresa = self.company_id or contrato.company_id
         fuso = pytz.timezone(
-            (calendario and calendario.tz) or self.env.user.tz or "UTC"
+            (calendario and calendario.tz)
+            or (empresa and empresa.partner_id.tz)
+            or "UTC"
         )
-        # Folga de um dia nas pontas: as datas guardadas são UTC.
-        limite_ini = fields.Datetime.to_datetime(inicio - relativedelta(days=1))
-        limite_fim = fields.Datetime.to_datetime(fim + relativedelta(days=2))
+        # Folga de dois dias nas pontas: as datas guardadas são UTC.
+        limite_ini = fields.Datetime.to_datetime(inicio - relativedelta(days=2))
+        limite_fim = fields.Datetime.to_datetime(fim + relativedelta(days=3))
         ausencias = (
             self.env["resource.calendar.leaves"]
             .sudo()
@@ -442,15 +450,44 @@ class HrPayslip(models.Model):
                 ]
             )
         )
+
+        def janela(dia):
+            """Expediente do ``dia`` no calendário; sem ele, o dia inteiro."""
+            marcacoes = (
+                calendario.attendance_ids.filtered(
+                    lambda m: not m.display_type and int(m.dayofweek) == dia.weekday()
+                )
+                if calendario
+                else []
+            )
+            if not marcacoes:
+                return 0.0, 24.0
+            return min(marcacoes.mapped("hour_from")), max(marcacoes.mapped("hour_to"))
+
+        def local(valor):
+            return pytz.utc.localize(valor).astimezone(fuso).replace(tzinfo=None)
+
         feriados = set()
         for ausencia in ausencias:
-            dia = pytz.utc.localize(ausencia.date_from).astimezone(fuso).date()
-            ultimo = pytz.utc.localize(ausencia.date_to).astimezone(fuso).date()
-            while dia <= ultimo:
-                if inicio <= dia <= fim:
-                    feriados.add(dia)
-                dia += relativedelta(days=1)
+            dia = salary_rules_br.dia_feriado_da_ausencia(
+                local(ausencia.date_from), local(ausencia.date_to), janela
+            )
+            if dia and inicio <= dia <= fim:
+                feriados.add(dia)
         return feriados
+
+    def _l10n_br_dias_dsr_competencia(self):
+        """``(dias úteis, dias de repouso)`` do mês da competência.
+
+        Ponto único para o reflexo no DSR: outros módulos (ponto eletrônico)
+        sobrescrevem para informar os dias da própria apuração, sem criar uma
+        segunda rubrica de DSR.
+        """
+        self.ensure_one()
+        competencia = self._get_competencia()
+        return salary_rules_br.dias_dsr(
+            competencia.year, competencia.month, self._l10n_br_feriados_competencia()
+        )
 
     def _l10n_br_salario_pago_mensal(self, contract):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
@@ -625,11 +662,7 @@ class HrPayslip(models.Model):
             return self._l10n_br_semanas_com_falta(contrato)
 
         def dias_dsr():
-            return salary_rules_br.dias_dsr(
-                competencia.year,
-                competencia.month,
-                self._l10n_br_feriados_competencia(),
-            )
+            return self._l10n_br_dias_dsr_competencia()
 
         def dsr_reflexo(valor):
             """Reflexo de ``valor`` (horas extras, adicional noturno) no DSR."""

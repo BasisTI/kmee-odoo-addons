@@ -12,10 +12,7 @@ FORMULA_NET = (
     "result = categories.BASIC + categories.ALW + categories.IND - categories.DED"
 )
 
-REGRAS_NOVAS = (
-    "l10n_br_hr_payroll_attendance.hr_rule_dsr_he",
-    "l10n_br_hr_payroll_attendance.hr_rule_intervalo_suprimido",
-)
+REGRAS_NOVAS = ("l10n_br_hr_payroll_attendance.hr_rule_intervalo_suprimido",)
 
 
 def post_init_hook(env):
@@ -38,10 +35,6 @@ def _adiciona_regras_a_estrutura(env):
         )
         return
     novas = [env.ref(xmlid, raise_if_not_found=False) for xmlid in REGRAS_NOVAS]
-    # O l10n_br_hr_payroll já traz DSR_HE (TG-86): duas rubricas com o mesmo
-    # código pagariam o reflexo em dobro.
-    if "DSR_HE" in estrutura.rule_ids.mapped("code"):
-        novas = [regra for regra in novas if regra and regra.code != "DSR_HE"]
     faltantes = [
         regra.id for regra in novas if regra and regra not in estrutura.rule_ids
     ]

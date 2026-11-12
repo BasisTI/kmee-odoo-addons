@@ -553,6 +553,51 @@ def dias_dsr(ano, mes, feriados=()):
     return total - repouso, repouso
 
 
+def dia_feriado_da_ausencia(inicio, fim, janela_do_dia=None, tolerancia_min=1):
+    """Dia que uma ausência global cobre inteiro, ou ``None`` (não é feriado).
+
+    Critério de feriado para o DSR: o dia cujo expediente a ausência global
+    cobre por inteiro, lida no fuso do calendário (``inicio`` e ``fim`` já
+    chegam em hora local, sem fuso). Por isso:
+
+    * a ausência que termina exatamente à meia-noite local não toca o dia
+      seguinte, e uma sobra de poucas horas no dia seguinte não o torna
+      feriado;
+    * meio expediente (ex.: 08h às 12h) não é feriado;
+    * a ausência que cobre por inteiro DOIS ou mais dias (recesso coletivo,
+      férias coletivas) não é feriado: o repouso é o dia comemorativo, e a regra
+      para o recesso é decisão de negócio ainda em aberto, então fica de fora.
+
+    Args:
+        inicio: ``datetime`` local do início da ausência.
+        fim: ``datetime`` local do fim da ausência.
+        janela_do_dia: ``f(date) -> (hora_inicial, hora_final)`` do expediente
+            do dia no calendário (horas decimais; 24 = meia-noite). Sem ela, o
+            dia inteiro (0 a 24).
+        tolerancia_min: folga, em minutos, nas pontas (o Odoo grava o fim do
+            dia como 23:59:59).
+
+    Returns:
+        O ``date`` do feriado ou ``None``.
+    """
+    from datetime import datetime as _dt, time as _time
+
+    if fim <= inicio:
+        return None
+    folga = timedelta(minutes=tolerancia_min)
+    cobertos = []
+    dia = inicio.date()
+    while _dt.combine(dia, _time(0, 0)) < fim:
+        hora_ini, hora_fim = janela_do_dia(dia) if janela_do_dia else (0.0, 24.0)
+        meia_noite = _dt.combine(dia, _time(0, 0))
+        if inicio <= meia_noite + timedelta(hours=hora_ini) + folga and (
+            fim >= meia_noite + timedelta(hours=hora_fim) - folga
+        ):
+            cobertos.append(dia)
+        dia += timedelta(days=1)
+    return cobertos[0] if len(cobertos) == 1 else None
+
+
 def calc_dsr_reflexo(valor, dias_uteis, dias_repouso):
     """Reflexo de uma verba variável no DSR do mês (Lei 605/49, art. 7º, a).
 

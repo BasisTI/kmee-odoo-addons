@@ -2,11 +2,15 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """Testes da ponte ponto -> folha (RP-16 a RP-19)."""
 
+import importlib.util
 from datetime import date, datetime, timedelta
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
+from odoo.tools import file_path
+
+from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import dias_dsr
 
 
 @tagged("post_install", "-at_install")
@@ -269,7 +273,84 @@ class TestPonteFolha(TransactionCase):
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
         self._apurar_marco()
         holerite = self._holerite()
-        self.assertGreater(self._valor(holerite, "DSR_HE"), 0.0)
+        ponto = holerite._get_tools_dict()["ponto"]
+        valor_he = self._valor(holerite, "HE_50") + self._valor(holerite, "HE_100")
+        self.assertGreater(valor_he, 0.0)
+        self.assertGreater(ponto.dias_uteis, 0)
+        # Os dias vêm da apuração: HE / dias úteis x dias de repouso.
+        self.assertAlmostEqual(
+            self._valor(holerite, "DSR_HE"),
+            round(valor_he / ponto.dias_uteis * ponto.dias_repouso, 2),
+            places=2,
+        )
+
+    def test_uma_so_rubrica_dsr_he_e_e_a_da_folha(self):
+        """Banco novo e atualizado calculam igual: a rubrica é só a da folha."""
+        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
+        regras = estrutura.rule_ids.filtered(lambda r: r.code == "DSR_HE")
+        self.assertEqual(
+            regras, self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he"), "uma, a da folha"
+        )
+        self.assertFalse(
+            self.env.ref(
+                "l10n_br_hr_payroll_attendance.hr_rule_dsr_he",
+                raise_if_not_found=False,
+            )
+        )
+
+    def test_sem_apuracao_os_dias_sao_os_do_calendario_da_folha(self):
+        """Sem apuração no período, o ponto não muda os dias do reflexo."""
+        holerite = self.env["hr.payslip"].create(
+            {
+                "name": "Holerite Carlos 04/2026",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "struct_id": self.contract.struct_id.id,
+                "date_from": date(2026, 4, 1),
+                "date_to": date(2026, 4, 30),
+                "company_id": self.company.id,
+                "l10n_br_horas_extras_50": 10.0,
+            }
+        )
+        holerite.compute_sheet()
+        self.assertFalse(holerite.l10n_br_tem_apuracao)
+        uteis, repouso = holerite._l10n_br_dias_dsr_competencia()
+        self.assertEqual(
+            (uteis, repouso),
+            dias_dsr(2026, 4, holerite._l10n_br_feriados_competencia()),
+        )
+        valor_he = self._valor(holerite, "HE_50")
+        self.assertAlmostEqual(
+            self._valor(holerite, "DSR_HE"), round(valor_he / uteis * repouso, 2), 2
+        )
+
+    def test_migracao_troca_a_rubrica_do_ponto_pela_da_folha(self):
+        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
+        folha = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
+        antiga = folha.copy({"name": "DSR HE do ponto (antiga)"})
+        self.env["ir.model.data"].create(
+            {
+                "module": "l10n_br_hr_payroll_attendance",
+                "name": "hr_rule_dsr_he",
+                "model": "hr.salary.rule",
+                "res_id": antiga.id,
+            }
+        )
+        estrutura.write({"rule_ids": [(3, folha.id), (4, antiga.id)]})
+        caminho = file_path(
+            "l10n_br_hr_payroll_attendance/migrations/18.0.1.1.0/post-migration.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "post_migration_tg86_ponto", caminho
+        )
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.migrate(self.env.cr, "18.0.1.0.0")
+        modulo.migrate(self.env.cr, "18.0.1.0.0")
+        codigos = estrutura.rule_ids.mapped("code")
+        self.assertEqual(codigos.count("DSR_HE"), 1)
+        self.assertIn(folha, estrutura.rule_ids)
+        self.assertNotIn(antiga, estrutura.rule_ids)
 
     def test_totais_publicados_no_localdict(self):
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))

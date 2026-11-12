@@ -263,6 +263,21 @@ class HrPayslip(models.Model):
         tools["ponto"] = types.SimpleNamespace(**totais)
         return tools
 
+    def _l10n_br_dias_dsr_competencia(self):
+        """Dias úteis e de repouso: os da apuração, quando há apuração.
+
+        Há uma só rubrica ``DSR_HE`` (a do ``l10n_br_hr_payroll``); este módulo
+        só troca de onde ela tira os dias. Com apuração no período valem os dias
+        dela (jornada prevista e feriados do ponto); sem apuração, o calendário
+        da folha. O mesmo dado dá o mesmo valor em banco novo e atualizado.
+        """
+        self.ensure_one()
+        if self.l10n_br_apuracao_dia_ids:
+            totais = self._l10n_br_totais_apuracao(self.l10n_br_apuracao_dia_ids)
+            if totais["dias_uteis"] > 0:
+                return totais["dias_uteis"], totais["dias_repouso"]
+        return super()._l10n_br_dias_dsr_competencia()
+
     def compute_sheet(self):
         """Recalcula os campos de jornada antes de rodar as regras."""
         self._l10n_br_preencher_horas_da_apuracao()
