@@ -41,3 +41,59 @@ class HrContract(models.Model):
         default="0",
         help="Campo tmpParc do S-2200 (leiaute S-1.3).",
     )
+
+    l10n_br_esocial_nat_atividade = fields.Selection(
+        selection=[("1", "1 - Trabalho urbano"), ("2", "2 - Trabalho rural")],
+        string="Natureza da Atividade eSocial",
+        help="Campo natAtividade do S-2300/S-2306 (trabalhador sem vínculo). "
+        "Obrigatório nas categorias 201, 202, 401, 731, 734 e 738; o eSocial "
+        "não aceita nas categorias 721, 722, 771 e 901.",
+    )
+    l10n_br_esocial_nat_estagio = fields.Selection(
+        selection=[("O", "O - Obrigatório"), ("N", "N - Não obrigatório")],
+        string="Natureza do Estágio",
+        help="Campo natEstagio do S-2300/S-2306 (categorias 901 e 906). Não há "
+        "valor padrão: o evento é recusado enquanto estiver vazio.",
+    )
+    l10n_br_esocial_niv_estagio = fields.Selection(
+        selection=[
+            ("1", "1 - Fundamental"),
+            ("2", "2 - Médio"),
+            ("3", "3 - Formação profissional"),
+            ("4", "4 - Superior"),
+            ("8", "8 - Especial"),
+            ("9", "9 - Mãe social (Lei 7.644/1987)"),
+        ],
+        string="Nível do Estágio",
+        help="Campo nivEstagio do S-2300/S-2306. Obrigatório na categoria 901.",
+    )
+    l10n_br_esocial_area_atuacao = fields.Char(
+        string="Área de Atuação do Estágio",
+        size=100,
+    )
+    l10n_br_esocial_nr_apolice = fields.Char(
+        string="Apólice de Seguro do Estágio",
+        size=30,
+    )
+    l10n_br_esocial_inst_ensino_id = fields.Many2one(
+        "res.partner",
+        string="Instituição de Ensino",
+        help="Instituição de ensino do estagiário (S-2300/S-2306). Precisa ter "
+        "CNPJ: o módulo não gera o endereço de instituição estrangeira.",
+    )
+    l10n_br_esocial_age_integ_id = fields.Many2one(
+        "res.partner",
+        string="Agente de Integração",
+        help="Agente de integração do estágio, quando houver (CNPJ).",
+    )
+    l10n_br_esocial_supervisor_id = fields.Many2one(
+        "hr.employee",
+        string="Supervisor do Estágio",
+        help="Responsável pela supervisão do estagiário, quando informado "
+        "(precisa ter CPF).",
+    )
+    l10n_br_esocial_dt_opc_fgts = fields.Date(
+        string="Data de Opção pelo FGTS",
+        help="Campo dtOpcFGTS do S-2300 (leiaute S-1.3). Obrigatório na "
+        "categoria 721 (diretor não empregado, com FGTS).",
+    )

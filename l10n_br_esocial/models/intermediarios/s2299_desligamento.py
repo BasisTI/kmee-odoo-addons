@@ -65,6 +65,10 @@ class ESocialS2299(models.Model):
                 % {"name": employee.name}
             )
 
+        categoria = employee.l10n_br_esocial_categoria_id
+        if categoria:
+            self._validar_categoria_evento(employee, categoria, "S-2299")
+
         ide = self._get_ide_empregador()
         proc = self._get_proc_info()
 
