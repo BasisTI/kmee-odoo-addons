@@ -12,6 +12,8 @@ Cobertura:
 """
 from datetime import date
 
+from odoo import fields
+
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
 
 
@@ -194,3 +196,6 @@ class TestContabilizacaoFolha(PayrollCommon):
         self.assertAlmostEqual(
             sum(est_despesa.mapped("debit")), sum(orig_despesa.mapped("credit")), 2
         )
+        # A data do lançamento inverso é a do estorno, não a do original.
+        self.assertEqual(original.move_id.date, date(2024, 3, 31))
+        self.assertEqual(estorno.move_id.date, fields.Date.context_today(estorno))

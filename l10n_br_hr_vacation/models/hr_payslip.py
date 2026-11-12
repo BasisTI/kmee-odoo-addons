@@ -164,7 +164,7 @@ class HrPayslip(models.Model):
     # ------------------------------------------------------------------
     _L10N_BR_CAMPOS_PARTICIPACAO = (
         "state",
-        "credit_note",
+        "l10n_br_estorno",
         "refunded_id",
         "line_ids",
         "date_from",

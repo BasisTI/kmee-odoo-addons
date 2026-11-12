@@ -4,6 +4,8 @@
 
 from datetime import date
 
+from odoo.exceptions import UserError
+
 from .common import PayrollCommon
 
 
@@ -111,3 +113,47 @@ class TestEstornoHolerite(PayrollCommon):
         fev.action_payslip_done()
         self._estornar(fev)
         self.assertGreater(abs(self._get_line_total(mar, "DESC_DSR")), 0.0)
+
+    def test_duplicar_o_estornado_gera_holerite_comum(self):
+        """ "Duplicar" não leva o vínculo do estorno: a cópia vale."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        original = self._confirmado(contract)
+        self._estornar(original)
+        copia = original.copy()
+        self.assertFalse(copia.refunded_id)
+        self.assertFalse(copia.credit_note)
+        self.assertFalse(copia.l10n_br_fora_de_vigor)
+
+    def test_duplicar_o_estorno_nao_gera_estorno(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        estorno = self._estornar(self._confirmado(contract))
+        copia = estorno.copy()
+        self.assertFalse(copia.credit_note)
+        self.assertFalse(copia.l10n_br_estorno)
+        self.assertFalse(copia.l10n_br_fora_de_vigor)
+
+    def test_devolucao_repetida_e_recusada(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        original = self._confirmado(contract)
+        estorno = self._estornar(original)
+        with self.assertRaises(UserError):
+            original.refund_sheet()
+        self.assertEqual(original.refunded_id, estorno)
+
+    def test_estornar_o_estorno_e_recusado(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        estorno = self._estornar(self._confirmado(contract))
+        with self.assertRaises(UserError):
+            estorno.refund_sheet()
+        self.assertFalse(estorno.refunded_id)
+
+    def test_rascunho_com_credit_note_marcado_continua_em_vigor(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        slip = self._create_payslip(emp, contract)
+        slip.write({"credit_note": True})
+        self.assertFalse(slip.l10n_br_fora_de_vigor)

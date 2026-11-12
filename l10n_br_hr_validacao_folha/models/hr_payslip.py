@@ -16,7 +16,7 @@ class HrPayslip(models.Model):
         "date_to",
         "struct_id",
         "state",
-        "credit_note",
+        "l10n_br_estorno",
         "refunded_id",
     )
     def _check_payslip_duplicate_period(self):
