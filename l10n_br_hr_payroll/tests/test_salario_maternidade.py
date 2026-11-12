@@ -254,12 +254,28 @@ class TestHoleriteMaternidade(PayrollCommon):
         )
         self.assertAlmostEqualMoney(self._get_line_total(slip, "NET"), liquido)
 
-    def test_patronal_incide_por_padrao_como_antes(self):
+    def test_padrao_tira_cpp_e_rat_do_salario_maternidade(self):
+        """TG-87#P1 (STF, Tema 72): padrão desmarcado; terceiros seguem."""
         emp, contract = self._holerite()
         comum = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
         self._licenca(emp, OUT_INI, OUT_FIM)
         slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
-        self.assertTrue(self.env.company.l10n_br_hr_patronal_sobre_salario_maternidade)
+        empresa = self.env["res.company"].create({"name": "Empresa nova"})
+        self.assertFalse(empresa.l10n_br_hr_patronal_sobre_salario_maternidade)
+        self.assertFalse(self.env.company.l10n_br_hr_patronal_sobre_salario_maternidade)
+        self.assertFalse(self._get_line_total(slip, "CPP"))
+        self.assertFalse(self._get_line_total(slip, "RAT"))
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "TERCEIROS"),
+            self._get_line_total(comum, "TERCEIROS"),
+        )
+
+    def test_marcado_mantem_o_comportamento_anterior(self):
+        emp, contract = self._holerite()
+        comum = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
+        self._licenca(emp, OUT_INI, OUT_FIM)
+        self.env.company.l10n_br_hr_patronal_sobre_salario_maternidade = True
+        slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
         for codigo in ("CPP", "RAT", "TERCEIROS"):
             self.assertAlmostEqualMoney(
                 self._get_line_total(slip, codigo),
@@ -270,6 +286,7 @@ class TestHoleriteMaternidade(PayrollCommon):
     def test_parametro_da_empresa_tira_cpp_e_rat_e_mantem_terceiros(self):
         emp, contract = self._holerite()
         self._licenca(emp, OUT_INI, OUT_FIM)
+        self.env.company.l10n_br_hr_patronal_sobre_salario_maternidade = True
         padrao = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
         self.env.company.l10n_br_hr_patronal_sobre_salario_maternidade = False
         slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
@@ -279,6 +296,36 @@ class TestHoleriteMaternidade(PayrollCommon):
             self._get_line_total(slip, "TERCEIROS"),
             self._get_line_total(padrao, "TERCEIROS"),
         )
+
+    def _migrar_padrao_patronal(self):
+        caminho = file_path(
+            "l10n_br_hr_payroll/migrations/18.0.1.8.0/post-migration.py"
+        )
+        spec = importlib.util.spec_from_file_location("post_migration_tg87p1", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        with mute_logger("post_migration_tg87p1"):
+            modulo.migrate(self.env.cr, "18.0.1.7.1")
+
+    def test_migracao_desmarca_sem_historico_e_preserva_com_historico(self):
+        """18.0.1.8.0: novo padrão só onde não há holerite de maternidade."""
+        sem = self.env["res.company"].create(
+            {
+                "name": "Sem maternidade",
+                "l10n_br_hr_patronal_sobre_salario_maternidade": True,
+            }
+        )
+        com = self.env.company
+        com.l10n_br_hr_patronal_sobre_salario_maternidade = True
+        emp, contract = self._holerite()
+        self._licenca(emp, OUT_INI, OUT_FIM)
+        slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
+        self.assertTrue(self._get_line_total(slip, "SALARIO_MATERNIDADE"))
+        for _ in range(2):  # idempotente
+            self._migrar_padrao_patronal()
+            self.env.invalidate_all()
+            self.assertFalse(sem.l10n_br_hr_patronal_sobre_salario_maternidade)
+            self.assertTrue(com.l10n_br_hr_patronal_sobre_salario_maternidade)
 
     def test_parametro_so_tira_a_parte_da_maternidade(self):
         emp, contract = self._holerite(wage=3000.0)

@@ -528,6 +528,13 @@ vai de segunda a domingo.</p>
 traz a primeira falta dela.</li>
 <li>Falta justificada não entra na contagem.</li>
 </ul>
+<p><strong>Estrutura mensal e médias</strong></p>
+<p>As médias de férias, 13º e rescisão (e o salário já pago, que a rescisão não paga
+de novo) leem os holerites das estruturas <em>mensais</em>. Mensal é a estrutura que tem
+a rubrica <tt class="docutils literal">SALARIO_BASE</tt> (categoria BASIC) e nenhuma rubrica de férias, 13º ou
+rescisão (<tt class="docutils literal">FERIAS</tt>, <tt class="docutils literal">ADIANTAMENTO_13</tt>, <tt class="docutils literal">DECIMO_TERCEIRO_BRUTO</tt>,
+<tt class="docutils literal">SALDO_SALARIO</tt>). Vale pelas rubricas, não pelo código: uma estrutura própria
+(como a <tt class="docutils literal">CLT_BASIS</tt>) entra sem cadastro.</p>
 <p><strong>Reflexo no DSR de horas extras e adicional noturno</strong></p>
 <p>As horas extras e o adicional noturno do mês refletem no repouso semanal
 remunerado (Lei 605/49, art. 7º, a; Súmulas 172 e 60 do TST). As rubricas
@@ -566,9 +573,12 @@ soma das duas rubricas fecha com o salário dos dias. Em período maior que 30 d
 compensar na guia previdenciária (Lei 8.213/91, art. 72, § 1º); não entra no
 líquido nem nas bases.</li>
 <li>CPP e RAT: o parâmetro <strong>CPP e RAT sobre o salário-maternidade</strong>, na aba
-<em>Encargos da Folha</em> da empresa, vem marcado (incidem, como antes). Desmarcado,
-o salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
-terceiros seguem incidindo. A escolha é do DP/contabilidade.</li>
+<em>Encargos da Folha</em> da empresa, vem desmarcado: o
+salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
+terceiros seguem incidindo. Marcado, ele entra nas duas (comportamento
+anterior). Em banco existente, a atualização desmarca só a empresa que ainda
+não tem holerite com <tt class="docutils literal">SALARIO_MATERNIDADE</tt>; a que já tem fica como está. A
+escolha é do DP/contabilidade.</li>
 <li>O salário-maternidade é o salário contratual dos dias de licença; adicionais e
 médias de verbas variáveis continuam nas suas próprias rubricas.</li>
 <li>Em banco existente a atualização troca as fórmulas padrão de <tt class="docutils literal">SALARIO_BASE</tt>,

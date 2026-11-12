@@ -23,14 +23,14 @@ from .common import VacationCommon
 class TestMediaHabitual(VacationCommon):
     """Média de HE/adicional noturno compondo férias, 13º e rescisão."""
 
-    def _mensal_done(self, emp, contract, ano, mes, he_50=0.0):
+    def _mensal_done(self, emp, contract, ano, mes, he_50=0.0, estrutura=None):
         """Cria e confirma um holerite mensal (CLT) com HE_50 informado."""
         payslip = self.env["hr.payslip"].create(
             {
                 "name": f"Mensal {mes}/{ano}",
                 "employee_id": emp.id,
                 "contract_id": contract.id,
-                "struct_id": self.structure_clt.id,
+                "struct_id": (estrutura or self.structure_clt).id,
                 "date_from": date(ano, mes, 1),
                 "date_to": date(ano, mes, 1) + relativedelta(day=31),
                 "l10n_br_horas_extras_50": he_50,
@@ -111,6 +111,69 @@ class TestMediaHabitual(VacationCommon):
         self.assertAlmostEqualMoney(
             self._get_line_total(ferias, "FERIAS"), 3000.00 + media_esperada
         )
+
+    def test_estrutura_propria_entra_na_media(self):
+        """TG-89: a média vale pelas rubricas, não pelo código da estrutura.
+
+        Uma estrutura própria (``CLT_BASIS``, filha da ``CLT``: o salário vem do
+        pai), sem as rubricas de férias/13º/rescisão, é mensal: suas HE entram na
+        média das férias, igual à da estrutura ``CLT``.
+        """
+        propria = self.env["hr.payroll.structure"].create(
+            {
+                "name": "CLT Basis",
+                "code": "CLT_BASIS",
+                "parent_id": self.structure_clt.id,
+                "rule_ids": [(6, 0, [])],
+            }
+        )
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00, date_start=date(2023, 1, 1))
+        valores = []
+        for mes in range(1, 4):
+            mensal = self._mensal_done(
+                emp, contract, 2024, mes, he_50=10.0, estrutura=propria
+            )
+            valores.append(self._valor_variavel(mensal))
+        ferias = self.env["hr.payslip"].create(
+            {
+                "name": "Férias, mensais em estrutura própria",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_ferias.id,
+                "date_from": date(2024, 4, 1),
+                "date_to": date(2024, 4, 30),
+                "company_id": self.env.company.id,
+            }
+        )
+        ferias.compute_sheet()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(ferias, "FERIAS"), 3000.00 + self._media(valores)
+        )
+
+    def test_estruturas_mensais_pelas_rubricas(self):
+        """Mensal = tem SALARIO_BASE e nenhuma rubrica de férias/13º/rescisão."""
+        Estrutura = self.env["hr.payroll.structure"]
+        sem_salario = Estrutura.create(
+            {"name": "Sem salário", "code": "SEM_SAL", "rule_ids": [(6, 0, [])]}
+        )
+        mensais = self.env["hr.payslip"]._l10n_br_estruturas_mensais()
+        self.assertIn(self.structure_clt, mensais)
+        self.assertNotIn(self.structure_ferias, mensais)
+        self.assertNotIn(self.structure_rescisao, mensais)
+        self.assertNotIn(self.structure_13, mensais)
+        self.assertNotIn(sem_salario, mensais)
+        # Com o salário na própria estrutura (sem pai), também é mensal.
+        propria = Estrutura.create(
+            {
+                "name": "Própria",
+                "code": "PROPRIA",
+                "rule_ids": [
+                    (4, self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base").id)
+                ],
+            }
+        )
+        self.assertIn(propria, self.env["hr.payslip"]._l10n_br_estruturas_mensais())
 
     def test_media_ignora_holerites_nao_confirmados(self):
         """Holerites em rascunho (não confirmados) não entram na média."""

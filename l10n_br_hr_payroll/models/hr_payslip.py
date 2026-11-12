@@ -351,9 +351,19 @@ class HrPayslip(models.Model):
         """
         return self.date_to or self.date_from
 
-    # Estruturas MENSAIS (não férias/13º/rescisão) usadas como fonte da
-    # média de verbas variáveis habituais (RF-18). Ver `_l10n_br_media_habitual`.
-    _L10N_BR_STRUCT_CODES_MENSAIS = ("CLT", "ESTATUTO")
+    # Estrutura MENSAL (fonte da média de verbas habituais, RF-18, e do
+    # salário já pago): a que paga o salário (rubrica ``SALARIO_BASE``, da
+    # categoria BASIC, na estrutura ou na estrutura-pai) e não tem rubrica de
+    # férias, 13º ou rescisão. Vale pelas rubricas, não pelo código da
+    # estrutura: ``CLT_BASIS`` e qualquer estrutura própria entram sem
+    # cadastro (TG-89).
+    _L10N_BR_CODIGO_SALARIO_ESTRUTURA = "SALARIO_BASE"
+    _L10N_BR_CODIGOS_NAO_MENSAL = (
+        "FERIAS",
+        "ADIANTAMENTO_13",
+        "DECIMO_TERCEIRO_BRUTO",
+        "SALDO_SALARIO",
+    )
     # Rubricas que pagam o SALÁRIO dos dias do mês: o salário base e, nos dias
     # de licença-maternidade, o salário-maternidade (TG-87). A rescisão e a
     # integridade com as férias contam as duas como "salário já pago".
@@ -364,6 +374,30 @@ class HrPayslip(models.Model):
         "ADICIONAL_INSALUBRIDADE",
     )
 
+    @api.model
+    def _l10n_br_estruturas_mensais(self):
+        """Estruturas mensais: com a rubrica de salário e sem as de férias/13º/rescisão.
+
+        Conta também as rubricas da estrutura-pai: a estrutura própria que só
+        acrescenta rubricas à ``CLT`` (``parent_id``) herda o ``SALARIO_BASE``.
+        """
+        nao_mensal = set(self._L10N_BR_CODIGOS_NAO_MENSAL)
+        mensais = self.env["hr.payroll.structure"]
+        for estrutura in self.env["hr.payroll.structure"].search([]):
+            codigos = set(
+                estrutura.get_structure_with_parents().rule_ids.mapped("code")
+            )
+            if self._L10N_BR_CODIGO_SALARIO_ESTRUTURA in codigos and not (
+                codigos & nao_mensal
+            ):
+                mensais |= estrutura
+        return mensais
+
+    def _l10n_br_eh_mensal(self):
+        """``True`` se a estrutura do holerite é mensal (ver acima)."""
+        self.ensure_one()
+        return self.struct_id in self._l10n_br_estruturas_mensais()
+
     def _l10n_br_media_habitual(self, codes, janela_meses=12):
         """Média de `codes` nos holerites MENSAIS anteriores (RF-18).
 
@@ -371,7 +405,7 @@ class HrPayslip(models.Model):
         extras habituais, adicional noturno) integram férias, 13º e as
         verbas rescisórias pela média, não pelo valor do mês de referência.
 
-        Lê os holerites de estrutura MENSAL (CLT/Estatutário) do mesmo
+        Lê os holerites de estrutura MENSAL (pelas rubricas) do mesmo
         contrato, já CONFIRMADOS (``state == "done"`` - este motor de folha
         não usa um estado "paid" separado), com competência anterior à deste
         holerite, dentro da janela de `janela_meses` meses (ou desde o início
@@ -397,7 +431,7 @@ class HrPayslip(models.Model):
         payslips = self.env["hr.payslip"].search(
             [
                 ("contract_id", "=", contract.id),
-                ("struct_id.code", "in", self._L10N_BR_STRUCT_CODES_MENSAIS),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("state", "=", "done"),
                 ("date_from", "<", referencia),
                 ("date_from", ">=", limite),
@@ -558,7 +592,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "!=", "cancel"),
-                ("struct_id.code", "in", self._L10N_BR_STRUCT_CODES_MENSAIS),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("date_from", "<=", self.date_to),
                 ("date_to", ">=", self.date_from),
             ]
