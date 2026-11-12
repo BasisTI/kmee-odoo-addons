@@ -25,6 +25,14 @@ class HrPayslipFalta(models.Model):
         index=True,
     )
     date = fields.Date(string="Data da falta", required=True)
+    tardia = fields.Boolean(
+        string="Competência anterior",
+        help="Falta descoberta depois do fechamento da competência em que "
+        "ocorreu: o desconto de salário entra neste holerite (pela contagem de "
+        "faltas), mas a data é de antes do período. Serve para saber a semana: "
+        "se ela já foi descontada por falta de outro holerite, não se desconta "
+        "um segundo repouso.",
+    )
 
     _sql_constraints = [
         (
@@ -34,21 +42,40 @@ class HrPayslipFalta(models.Model):
         ),
     ]
 
-    @api.constrains("date", "payslip_id")
+    def _l10n_br_fora_do_periodo(self):
+        """A data não cabe onde deveria: no período, ou antes dele se for tardia."""
+        self.ensure_one()
+        slip = self.payslip_id
+        if not (slip.date_from and slip.date_to):
+            return False
+        if self.tardia:
+            return self.date >= slip.date_from
+        return not slip.date_from <= self.date <= slip.date_to
+
+    @api.constrains("date", "payslip_id", "tardia")
     def _check_date_no_periodo(self):
         for rec in self:
+            if not rec._l10n_br_fora_do_periodo():
+                continue
             slip = rec.payslip_id
-            if slip.date_from and slip.date_to:
-                if not slip.date_from <= rec.date <= slip.date_to:
-                    raise ValidationError(
-                        _(
-                            "A falta de %(dia)s está fora do período do holerite "
-                            "(%(ini)s a %(fim)s).",
-                            dia=rec.date,
-                            ini=slip.date_from,
-                            fim=slip.date_to,
-                        )
+            if rec.tardia:
+                raise ValidationError(
+                    _(
+                        "A falta tardia de %(dia)s deve ser de antes do início do "
+                        "período do holerite (%(ini)s).",
+                        dia=rec.date,
+                        ini=slip.date_from,
                     )
+                )
+            raise ValidationError(
+                _(
+                    "A falta de %(dia)s está fora do período do holerite "
+                    "(%(ini)s a %(fim)s).",
+                    dia=rec.date,
+                    ini=slip.date_from,
+                    fim=slip.date_to,
+                )
+            )
 
     @api.constrains("payslip_id", "date")
     def _check_datas_ate_faltas(self):
@@ -106,7 +133,7 @@ class HrPayslipFalta(models.Model):
         )
 
     def write(self, vals):
-        if not {"date", "payslip_id"} & set(vals):
+        if not {"date", "payslip_id", "tardia"} & set(vals):
             return super().write(vals)
         self._l10n_br_exigir_aberto(self.payslip_id)
         slips = self.payslip_id | self.env["hr.payslip"].browse(

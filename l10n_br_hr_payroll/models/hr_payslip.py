@@ -3,6 +3,7 @@
 
 import logging
 import types
+from datetime import timedelta
 
 import pytz
 from dateutil.relativedelta import relativedelta
@@ -173,9 +174,7 @@ class HrPayslip(models.Model):
         """Datas das faltas dentro do período (que pode ser alterado depois)."""
         for rec in self:
             fora = rec.l10n_br_falta_ids.filtered(
-                lambda f: rec.date_from
-                and rec.date_to
-                and not rec.date_from <= f.date <= rec.date_to
+                lambda f: f._l10n_br_fora_do_periodo()
             )
             if fora:
                 raise ValidationError(
@@ -265,7 +264,7 @@ class HrPayslip(models.Model):
     )
 
     def _l10n_br_faltas_validas(self):
-        """Datas de falta que valem: as que não caem em férias nem afastamento."""
+        """Faltas que valem: as que não caem em férias nem afastamento."""
         self.ensure_one()
         contrato = self.contract_id
         periodos = []
@@ -273,11 +272,9 @@ class HrPayslip(models.Model):
             periodos = list(self._l10n_br_afastamentos_inss(contrato)) + list(
                 self._l10n_br_ferias_gozadas(contrato)
             )
-        return [
-            f.date
-            for f in self.l10n_br_falta_ids
-            if not any(ini <= f.date <= fim for ini, fim in periodos)
-        ]
+        return self.l10n_br_falta_ids.filtered(
+            lambda f: not any(ini <= f.date <= fim for ini, fim in periodos)
+        )
 
     @api.model
     def _l10n_br_dsr_participacao(self, empregados):
@@ -306,24 +303,34 @@ class HrPayslip(models.Model):
                 )
             )
             validas = {slip.id: slip._l10n_br_faltas_validas() for slip in slips}
+            # A falta tardia (de competência já fechada, lançada no mês
+            # seguinte) só é dona da semana se nenhuma falta comum a tem: o
+            # repouso não é descontado duas vezes.
             primeira = {}
             for slip in slips:
-                for dia in validas[slip.id]:
-                    sem = salary_rules_br.inicio_semana(dia)
-                    chave = (dia, slip.id)
+                for falta in validas[slip.id]:
+                    sem = salary_rules_br.inicio_semana(falta.date)
+                    chave = (falta.tardia, falta.date, slip.id)
                     if sem not in primeira or chave < primeira[sem]:
                         primeira[sem] = chave
             for slip in slips:
-                proprias = {salary_rules_br.inicio_semana(d) for d in validas[slip.id]}
-                donas = frozenset(s for s in proprias if primeira[s][1] == slip.id)
+                proprias = {
+                    salary_rules_br.inicio_semana(f.date) for f in validas[slip.id]
+                }
+                donas = frozenset(s for s in proprias if primeira[s][2] == slip.id)
                 sem_data = max(
                     slip.l10n_br_faltas_injustificadas - len(slip.l10n_br_falta_ids), 0
                 )
                 if slip.date_from and slip.date_to:
-                    livres = salary_rules_br.semanas_do_periodo(
-                        slip.date_from, slip.date_to
-                    ) - len(proprias)
-                    sem_data = min(sem_data, max(livres, 0))
+                    # Semanas do período que nenhuma falta datada (deste ou de
+                    # outro holerite) já ocupa: só nelas cabe falta sem data.
+                    semanas = set()
+                    dia = salary_rules_br.inicio_semana(slip.date_from)
+                    while dia <= slip.date_to:
+                        semanas.add(dia)
+                        dia += timedelta(days=7)
+                    livres = len(semanas - set(primeira))
+                    sem_data = min(sem_data, livres)
                 res[slip.id] = (donas, sem_data)
         return res
 
@@ -339,10 +346,10 @@ class HrPayslip(models.Model):
         if fechados:
             raise UserError(
                 _(
-                    "Não é possível alterar este holerite ou falta: %(fechados)s, "
-                    "do mesmo empregado, já está confirmado e o desconto de DSR "
-                    "da semana depende dele. Volte o confirmado para rascunho "
-                    "primeiro.",
+                    "Não é possível alterar este holerite, falta, recibo de férias "
+                    "ou afastamento: %(fechados)s, do mesmo empregado, já está "
+                    "confirmado e o desconto de DSR da semana depende dele. Volte "
+                    "o confirmado para rascunho primeiro.",
                     fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
                 )
             )
@@ -365,6 +372,20 @@ class HrPayslip(models.Model):
     def action_payslip_cancel(self):
         self._l10n_br_recusar_cancelar_estorno()
         return super().action_payslip_cancel()
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        # Criar um holerite (o recibo de férias que cobre o dia de uma falta)
+        # também muda o que os outros holerites do empregado descontam de DSR.
+        if self.env.context.get("l10n_br_dsr_reconciliando"):
+            return super().create(vals_list)
+        empregados = self.env["hr.employee"].browse(
+            [v["employee_id"] for v in vals_list if v.get("employee_id")]
+        )
+        antes = self._l10n_br_dsr_participacao(empregados)
+        slips = super().create(vals_list)
+        self._l10n_br_dsr_reconciliar(antes, empregados | slips.employee_id, slips)
+        return slips
 
     def write(self, vals):
         if vals.get("state") == "cancel":

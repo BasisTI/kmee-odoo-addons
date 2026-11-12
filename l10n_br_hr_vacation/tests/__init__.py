@@ -14,3 +14,4 @@ from . import test_ferias_folha_mensal
 from . import test_integridade_ferias
 from . import test_adicionais_fixos_bases
 from . import test_estorno_medias
+from . import test_dsr_ferias
