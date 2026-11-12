@@ -515,6 +515,37 @@ class HrSalaryRule(models.Model):
             )
         return codigo
 
+    def _esocial_irrf_vencimento_sem_escolha(self):
+        """Regras de vencimento (``tpRubr`` 1) com a incidência de IRRF em branco.
+
+        Em vencimento, o 09 ("verba de natureza diversa de rendimento") tira o
+        rendimento da base de IRRF e o governo aceita o evento sem aviso; por isso
+        a escolha tem de ser explícita. Desconto e informativa seguem com o 09.
+        """
+        return self.filtered(
+            lambda r: r.l10n_br_esocial_tp_rubr == "1"
+            and not r.l10n_br_esocial_cod_inc_irrf
+        )
+
+    def _esocial_check_irrf_vencimento(self):
+        """Recusa, numa mensagem só, as regras de vencimento sem incidência de IRRF."""
+        pendentes = self._esocial_irrf_vencimento_sem_escolha()
+        if not pendentes:
+            return
+        raise UserError(
+            _(
+                "Regra de vencimento (tipo de rubrica 1) sem Incidência IRRF: o "
+                "S-1010 não é gerado até a escolha explícita. Preencha a "
+                "Incidência IRRF na aba eSocial de cada regra: 11 a 14 se o "
+                "rendimento é tributável, 70 a 79 ou 700 a 704 se é isento, ou 09 "
+                "se não é rendimento de IRRF. Regras: %s.",
+                ", ".join(
+                    f"'{r.display_name}' ({r.l10n_br_esocial_cod_rubr or r.code})"
+                    for r in pendentes
+                ),
+            )
+        )
+
     def _esocial_chave_rubrica(self):
         """Chave da rubrica no S-1010: (código, ID da tabela de rubricas)."""
         self.ensure_one()

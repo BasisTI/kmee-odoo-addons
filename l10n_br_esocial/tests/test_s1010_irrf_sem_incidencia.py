@@ -98,3 +98,58 @@ class TestS1010IrrfSemIncidencia(TransactionCase):
         with self.assertLogs(migracao.__name__, level="WARNING") as log:
             migracao.migrate(self.env.cr, "18.0.1.4.0")
         self.assertTrue(any("rótulo" in linha for linha in log.output))
+
+
+class TestS1010IrrfVencimento(TestS1010IrrfSemIncidencia):
+    """TG-131: vencimento (tpRubr 1) sem incidência de IRRF exige escolha."""
+
+    def _tipo(self, tipo):
+        self.rule.l10n_br_esocial_tp_rubr = tipo
+
+    def test_vencimento_sem_incidencia_recusa_e_lista_as_regras(self):
+        self._tipo("1")
+        with self.assertRaises(UserError) as erro:
+            self._s1010()._to_esociallib_dict()
+        mensagem = str(erro.exception)
+        self.assertIn("11 a 14", mensagem)
+        self.assertIn("700 a 704", mensagem)
+        self.assertIn("DESC_CONVENIO", mensagem)
+
+    def test_desconto_e_informativa_seguem_com_09(self):
+        for tipo in ("2", "3", "4"):
+            self._tipo(tipo)
+            s1010 = self._s1010()
+            self.assertEqual(s1010._to_esociallib_dict()["cod_inc_irrf"], 9)
+            s1010.unlink()
+
+    def test_vencimento_com_escolha_gera(self):
+        self._tipo("1")
+        for codigo, esperado in (("11", 11), ("70", 70), ("09", 9)):
+            self.rule.l10n_br_esocial_cod_inc_irrf = codigo
+            s1010 = self._s1010()
+            self.assertEqual(s1010._to_esociallib_dict()["cod_inc_irrf"], esperado)
+            s1010.unlink()
+
+    def test_criar_para_regras_lista_todas_de_uma_vez(self):
+        self._tipo("1")
+        outra = self.env["hr.salary.rule"].search([("id", "!=", self.rule.id)], limit=1)
+        outra.write(
+            {
+                "l10n_br_esocial_cod_rubr": "OUTRA_VENC",
+                "l10n_br_esocial_tp_rubr": "1",
+                "l10n_br_esocial_cod_inc_irrf": False,
+            }
+        )
+        with self.assertRaises(UserError) as erro:
+            self.env["l10n_br.esocial.s1010"].criar_para_regras(
+                self.rule | outra, "2024-01"
+            )
+        mensagem = str(erro.exception)
+        self.assertIn("DESC_CONVENIO", mensagem)
+        self.assertIn("OUTRA_VENC", mensagem)
+
+    def test_exclusao_nao_exige_incidencia(self):
+        self._tipo("1")
+        s1010 = self._s1010()
+        s1010.operacao = "exclusao"
+        self.assertNotIn("cod_inc_irrf", s1010._to_esociallib_dict())
