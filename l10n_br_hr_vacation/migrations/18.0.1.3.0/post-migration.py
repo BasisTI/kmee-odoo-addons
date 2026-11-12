@@ -1,5 +1,6 @@
 # Copyright 2026 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
+# flake8: noqa: B950
 """TG-88: periculosidade e insalubridade na base de férias, 13º e rescisão.
 
 As regras são ``noupdate="1"``: o ``-u`` não troca a fórmula de bancos

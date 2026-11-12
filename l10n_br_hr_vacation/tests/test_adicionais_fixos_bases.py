@@ -6,9 +6,11 @@ Adicional contratual fixo não varia mês a mês: entra pelo valor CHEIO do
 contrato (30% do salário; 10/20/40% do salário mínimo), não por média
 (CLT art. 142, § 5º; Súmulas 132 e 139 do TST).
 """
+import importlib.util
 from datetime import date
 
 from odoo.tests import tagged
+from odoo.tools import file_path
 
 from .common import VacationCommon
 
@@ -195,3 +197,35 @@ class TestAdicionaisFixosBases(VacationCommon):
         self._create_payslip(emp, contract, date(2025, 9, 1), date(2025, 9, 30))
         rescisao = self._rescisao(emp, contract)
         self.assertAlmostEqualMoney(self._get_line_total(rescisao, "SALDO_SALARIO"), 0)
+
+
+@tagged("post_install", "-at_install")
+class TestMigracaoAdicionaisFixos(VacationCommon):
+    """Migração 18.0.1.3.0: fórmula antiga trocada, personalizada preservada."""
+
+    def _migrar(self):
+        arquivo = file_path(
+            "l10n_br_hr_vacation/migrations/18.0.1.3.0/post-migration.py"
+        )
+        spec = importlib.util.spec_from_file_location("migracao_tg88", arquivo)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        modulo.migrate(self.env.cr, "18.0.1.2.0")
+        self.env.invalidate_all()
+        return modulo
+
+    def test_troca_a_antiga_preserva_a_personalizada_e_e_idempotente(self):
+        ferias = self.env.ref("l10n_br_hr_vacation.hr_rule_ferias")
+        saldo = self.env.ref("l10n_br_hr_vacation.hr_rule_saldo_salario")
+        modulo = self._migrar()
+        nova_ferias = ferias.amount_python_compute
+        self.assertIn("adicionais_fixos", nova_ferias)
+        # Antiga volta ao padrão antigo; personalizada fica como está.
+        ferias.amount_python_compute = modulo.FORMULAS_ANTIGAS["hr_rule_ferias"]
+        saldo.amount_python_compute = "result = 123.0"
+        self._migrar()
+        self.assertEqual(ferias.amount_python_compute.strip(), nova_ferias.strip())
+        self.assertEqual(saldo.amount_python_compute, "result = 123.0")
+        # Repetir não muda nada.
+        self._migrar()
+        self.assertEqual(ferias.amount_python_compute.strip(), nova_ferias.strip())
