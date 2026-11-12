@@ -634,8 +634,11 @@ aba <em>Encargos da Folha</em> da empresa): CNPJ, início e fim da vigência (m�
 RAT e FAP. A regra RAT usa a linha vigente na competência do holerite para o CNPJ
 do <strong>Endereço de Trabalho</strong> do empregado, o mesmo local de trabalho que o S-2200
 declara. Sem linha para o estabelecimento na competência, vale o RAT/FAP da
-empresa. No S-1005, ao criar o estabelecimento sem informar RAT/FAP, o evento
-traz os valores da mesma tabela (ou da empresa).</p>
+empresa.</p>
+<p>A tabela é só fonte do cálculo da folha: o S-1005 <strong>não</strong> a copia. O evento só leva
+<tt class="docutils literal">aliqRat</tt>/<tt class="docutils literal">fap</tt> (grupo <tt class="docutils literal">aliqGilrat</tt>) quando o usuário os informa no próprio
+S-1005, o que o leiaute S-1.3 reserva a processo judicial do FAP
+(<tt class="docutils literal">procAdmJudFap</tt>), estabelecimento fora da tabela FAP e CNO sem <tt class="docutils literal">cnpjResp</tt>.</p>
 <p>Limite: o estabelecimento vem do Endereço de Trabalho <em>atual</em> do empregado e o
 módulo não guarda histórico de endereço. Ao transferir um empregado de filial,
 recalcular um holerite de competência anterior usa o RAT/FAP da filial nova, não

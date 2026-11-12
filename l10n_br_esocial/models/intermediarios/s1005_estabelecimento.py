@@ -1,8 +1,6 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from datetime import date
-
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
@@ -69,6 +67,10 @@ class ESocialS1005(models.Model):
         help="CNPJ do responsável pela obra (uso com CNO).",
     )
     # ── GILRAT do estabelecimento (grupo aliqGilrat) ───────────────────────
+    # Só informe RAT/FAP quando o grupo aliqGilrat se aplica (leiaute S-1.3):
+    # processo judicial do FAP (procAdmJudFap), estabelecimento fora da tabela
+    # FAP, CNO sem cnpjResp. Fora desses casos o eSocial usa o valor oficial e o
+    # evento NÃO os declara; a tabela RAT/FAP da folha só alimenta o cálculo.
     # O S-1005 leva SOMENTE RAT/FAP. FPAS, código de terceiros e terceiros
     # suspensos são da LOTAÇÃO TRIBUTÁRIA (S-1020, grupo fpasLotacao) — ver
     # l10n_br.esocial.s1020.get_parametros_encargos().
@@ -125,47 +127,6 @@ class ESocialS1005(models.Model):
             "Já existe um S-1005 para este estabelecimento nesta validade.",
         ),
     ]
-
-    def _gilrat_padrao(self, company, nr_insc_estab, ini_valid):
-        """``(aliq_rat, fap)`` do estabelecimento na validade, ou ``None``.
-
-        Vêm de ``l10n_br.hr.payroll.gilrat`` (a mesma tabela que a regra RAT
-        usa) e, sem linha, do RAT/FAP da empresa: o S-1005 declara o que a
-        folha calcula. ``None`` quando faltam dados para resolver.
-        """
-        try:
-            ano, mes = (int(p) for p in (ini_valid or "").split("-"))
-            competencia = date(ano, mes, 1)
-        except ValueError:
-            return None
-        if not company or not self._so_digitos(nr_insc_estab):
-            return None
-        rat, fap = company._l10n_br_hr_rat_fap(competencia, nr_insc_estab)
-        return str(int(rat)) if rat else False, fap
-
-    @api.onchange("company_id", "nr_insc_estab", "ini_valid")
-    def _onchange_gilrat_padrao(self):
-        padrao = self._gilrat_padrao(
-            self.company_id, self.nr_insc_estab, self.ini_valid
-        )
-        if padrao:
-            self.aliq_rat, self.fap = padrao
-
-    @api.model_create_multi
-    def create(self, vals_list):
-        """Sem RAT/FAP informados, vale o da folha (tabela do estabelecimento)."""
-        for vals in vals_list:
-            if "aliq_rat" in vals or "fap" in vals:
-                continue
-            company = self.env["res.company"].browse(
-                vals.get("company_id") or self.env.company.id
-            )
-            padrao = self._gilrat_padrao(
-                company, vals.get("nr_insc_estab"), vals.get("ini_valid")
-            )
-            if padrao:
-                vals["aliq_rat"], vals["fap"] = padrao
-        return super().create(vals_list)
 
     @api.depends("nr_insc_estab", "ini_valid")
     def _compute_name(self):

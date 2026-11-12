@@ -160,7 +160,36 @@ class TestS1005Estabelecimento(ESocialCicloCommon):
         )[:8]
         self.assertEqual(valores["nrInsc"], [raiz_empregador, "02546716000146"])
 
-    # ── RAT/FAP do estabelecimento (TG-122) ────────────────────────────────
+    # ── RAT/FAP do estabelecimento (TG-122#P1) ─────────────────────────────
+
+    def test_s1005_nao_preenche_rat_fap_da_folha_por_padrao(self):
+        """A tabela de RAT/FAP da folha só alimenta o cálculo; o evento não a copia."""
+        self.company.write({"l10n_br_hr_rat": "2", "l10n_br_hr_fap": 1.2262})
+        self.env["l10n_br.hr.payroll.gilrat"].create(
+            {
+                "company_id": self.company.id,
+                "cnpj": self._cnpj_com_raiz(
+                    "".join(c for c in self.company.partner_id.vat if c.isdigit())[:8],
+                    "0006",
+                ),
+                "date_start": "2026-01-01",
+                "rat": "3",
+                "fap": 1.5289,
+            }
+        )
+        s1005 = self.env["l10n_br.esocial.s1005"].create(
+            {
+                "nr_insc_estab": "02546716000629",
+                "ini_valid": "2026-01",
+                "cnae_prep": "4751201",
+                "company_id": self.company.id,
+            }
+        )
+        self.assertFalse(s1005.aliq_rat)
+        self.assertFalse(s1005.fap)
+        data = s1005._to_esociallib_dict()
+        self.assertNotIn("aliq_rat", data)
+        self.assertNotIn("fap", data)
 
     @staticmethod
     def _cnpj_com_raiz(raiz, ordem):
@@ -173,44 +202,3 @@ class TestS1005Estabelecimento(ESocialCicloCommon):
             resto = sum(int(d) * p for d, p in zip(base, pesos)) % 11
             base += "0" if resto < 2 else str(11 - resto)
         return base
-
-    def test_s1005_sem_rat_fap_usa_tabela_do_estabelecimento(self):
-        """Sem RAT/FAP informados, o S-1005 leva os da tabela da folha."""
-        self.company.write({"l10n_br_hr_rat": "2", "l10n_br_hr_fap": 1.2262})
-        raiz = "".join(c for c in self.company.partner_id.vat if c.isdigit())[:8]
-        filial = self._cnpj_com_raiz(raiz, "0006")
-        self.env["l10n_br.hr.payroll.gilrat"].create(
-            {
-                "company_id": self.company.id,
-                "cnpj": filial,
-                "date_start": "2026-01-01",
-                "date_end": "2026-12-31",
-                "rat": "3",
-                "fap": 1.5289,
-            }
-        )
-        filial = self.env["l10n_br.esocial.s1005"].create(
-            {
-                "nr_insc_estab": filial,
-                "ini_valid": "2026-01",
-                "cnae_prep": "4751201",
-                "company_id": self.company.id,
-            }
-        )
-        self.assertEqual(filial.aliq_rat, "3")
-        self.assertAlmostEqual(filial.fap, 1.5289, places=4)
-        self.assertAlmostEqual(filial.aliq_rat_ajust, 4.5867, places=4)
-        self.assertEqual(filial._to_esociallib_dict()["fap"], "1.5289")
-
-    def test_s1005_sem_linha_na_tabela_usa_a_empresa(self):
-        self.company.write({"l10n_br_hr_rat": "2", "l10n_br_hr_fap": 1.2262})
-        matriz = self.env["l10n_br.esocial.s1005"].create(
-            {
-                "nr_insc_estab": "12345678000157",
-                "ini_valid": "2026-01",
-                "cnae_prep": "4751201",
-                "company_id": self.company.id,
-            }
-        )
-        self.assertEqual(matriz.aliq_rat, "2")
-        self.assertAlmostEqual(matriz.fap, 1.2262, places=4)
