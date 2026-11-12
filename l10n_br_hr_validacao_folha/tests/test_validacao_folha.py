@@ -11,7 +11,7 @@ Cobertura:
 """
 from datetime import date
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
 
@@ -233,9 +233,9 @@ class TestValidacaoFolha(PayrollCommon):
                 self._create_payslip_vals(emp, contract, "Terceiro")
             )
 
-    def test_estorno_cancelado_devolve_a_vigencia_ao_original(self):
-        """Cancelado o estorno, o original vale de novo: o período volta a
-        ser barrado para um novo holerite."""
+    def test_estorno_nao_pode_ser_cancelado_e_o_periodo_aceita_holerite_novo(self):
+        """TG-90#P2: o estorno não se cancela; o par fica fora de vigor e o
+        período aceita um holerite novo, calculado do zero."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00)
         original = self.env["hr.payslip"].create(
@@ -244,8 +244,9 @@ class TestValidacaoFolha(PayrollCommon):
         original.compute_sheet()
         original.action_payslip_done()
         original.refund_sheet()
-        original.refunded_id.write({"state": "cancel"})
-        with self.assertRaises(ValidationError):
-            self.env["hr.payslip"].create(
-                self._create_payslip_vals(emp, contract, "Novo")
-            )
+        with self.assertRaises(UserError):
+            original.refunded_id.write({"state": "cancel"})
+        novo = self.env["hr.payslip"].create(
+            self._create_payslip_vals(emp, contract, "Novo")
+        )
+        self.assertTrue(novo)

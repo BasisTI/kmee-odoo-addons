@@ -29,8 +29,8 @@ class HrPayslip(models.Model):
         (``date_from <= other.date_to AND date_to >= other.date_from``).
 
         O estorno (devolução) e o holerite que ele estornou ficam de fora: o
-        par se anula e o período volta a aceitar um holerite novo. Se o estorno
-        é cancelado, o original volta a valer e a conferência o alcança de novo.
+        par se anula e o período volta a aceitar um holerite novo. O estorno não
+        pode ser cancelado (TG-90#P2).
         """
         for rec in self:
             if rec.state == "cancel" or rec.l10n_br_fora_de_vigor:
