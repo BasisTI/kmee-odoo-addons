@@ -84,9 +84,12 @@ soma das duas rubricas fecha com o salário dos dias. Em período maior que 30 d
   compensar na guia previdenciária (Lei 8.213/91, art. 72, § 1º); não entra no
   líquido nem nas bases.
 * CPP e RAT: o parâmetro **CPP e RAT sobre o salário-maternidade**, na aba
-  *Encargos da Folha* da empresa, vem marcado (incidem, como antes). Desmarcado,
-  o salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
-  terceiros seguem incidindo. A escolha é do DP/contabilidade.
+  *Encargos da Folha* da empresa, vem desmarcado: o
+  salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
+  terceiros seguem incidindo. Marcado, ele entra nas duas (comportamento
+  anterior). Em banco existente, a atualização desmarca só a empresa que ainda
+  não tem holerite com ``SALARIO_MATERNIDADE``; a que já tem fica como está. A
+  escolha é do DP/contabilidade.
 * O salário-maternidade é o salário contratual dos dias de licença; adicionais e
   médias de verbas variáveis continuam nas suas próprias rubricas.
 * Em banco existente a atualização troca as fórmulas padrão de ``SALARIO_BASE``,
