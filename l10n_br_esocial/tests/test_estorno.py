@@ -119,7 +119,11 @@ class TestEstornoEsocial(ESocialCicloCommon):
         if not HAS_ESOCIALLIB:
             self.skipTest("esociallib não instalada")
         a = self._criar_payslip()
-        b = self._criar_payslip()
+        # Mesma estrutura e período não convivem (validação de período); o
+        # segundo holerite, em outra estrutura, vai no mesmo S-1200 da competência.
+        base = a.struct_id or self.env["hr.payroll.structure"].search([], limit=1)
+        outra = base.copy({"name": "Estrutura B (estorno eSocial)"})
+        b = self._criar_payslip(struct_id=outra.id)
         (a | b).action_esocial_gerar_s1200()
         s1200_orig = a.l10n_br_esocial_s1200_id
         self.assertEqual(s1200_orig.payslip_ids, a | b)
