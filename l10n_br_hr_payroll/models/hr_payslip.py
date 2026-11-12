@@ -358,6 +358,11 @@ class HrPayslip(models.Model):
     # de licença-maternidade, o salário-maternidade (TG-87). A rescisão e a
     # integridade com as férias contam as duas como "salário já pago".
     _L10N_BR_CODIGOS_SALARIO_MENSAL = ("SALARIO_BASE", "SALARIO_MATERNIDADE")
+    # Adicionais contratuais fixos pagos no mensal (TG-88).
+    _L10N_BR_CODIGOS_ADICIONAIS_FIXOS = (
+        "ADICIONAL_PERICULOSIDADE",
+        "ADICIONAL_INSALUBRIDADE",
+    )
 
     def _l10n_br_media_habitual(self, codes, janela_meses=12):
         """Média de `codes` nos holerites MENSAIS anteriores (RF-18).
@@ -513,7 +518,32 @@ class HrPayslip(models.Model):
             competencia.year, competencia.month, self._l10n_br_feriados_competencia()
         )
 
-    def _l10n_br_salario_pago_mensal(self, contract):
+    def _l10n_br_adicionais_fixos(self, contract):
+        """Periculosidade e insalubridade MENSAIS CHEIAS do contrato (TG-88).
+
+        Adicionais contratuais fixos: percentual constante do salário (30% da
+        periculosidade; 10/20/40% do salário mínimo na insalubridade), sem
+        proporcionalidade por dias. Integram a remuneração que serve de base
+        a férias, 13º, aviso prévio e demais verbas rescisórias (CLT art. 142,
+        § 5º; Súmulas 132 e 139 do TST), ao lado da média das variáveis.
+        Não acumulam (Súmula 364 TST), mas cada flag é lida de forma
+        independente, como nas rubricas do holerite mensal.
+        """
+        self.ensure_one()
+        total = 0.0
+        if contract.l10n_br_periculosidade:
+            total += contract.wage * 0.30
+        if contract.l10n_br_insalubridade:
+            salario_minimo = self.env["l10n_br.hr.payroll.inss.faixa"]._salario_minimo(
+                self._get_competencia()
+            )
+            percentuais = {"minimo": 0.10, "medio": 0.20, "maximo": 0.40}
+            total += salario_minimo * percentuais.get(
+                contract.l10n_br_grau_insalubridade, 0.10
+            )
+        return salary_rules_br.round_money(total)
+
+    def _l10n_br_salario_pago_mensal(self, contract, com_adicionais=False):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
 
         Usado pela rescisão para não pagar de novo, no saldo de salário, os
@@ -533,9 +563,12 @@ class HrPayslip(models.Model):
                 ("date_to", ">=", self.date_from),
             ]
         )
+        codigos = self._L10N_BR_CODIGOS_SALARIO_MENSAL
+        if com_adicionais:
+            codigos += self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS
         return sum(
             mensais.mapped("line_ids")
-            .filtered(lambda ln: ln.code in self._L10N_BR_CODIGOS_SALARIO_MENSAL)
+            .filtered(lambda ln: ln.code in codigos)
             .mapped("total")
         )
 
@@ -733,9 +766,9 @@ class HrPayslip(models.Model):
             """``(base, retido)`` de INSS nos recibos de férias da competência."""
             return self._l10n_br_inss_ferias_competencia(contrato)
 
-        def salario_pago_mensal(contrato):
+        def salario_pago_mensal(contrato, com_adicionais=False):
             """Salário já pago em holerite mensal que se sobrepõe a este período."""
-            return self._l10n_br_salario_pago_mensal(contrato)
+            return self._l10n_br_salario_pago_mensal(contrato, com_adicionais)
 
         def semanas_com_falta(contrato):
             """Semanas com falta injustificada: repousos a descontar (DSR)."""
@@ -804,6 +837,8 @@ class HrPayslip(models.Model):
             inss_ferias_competencia=inss_ferias_competencia,
             # Salário já pago no mensal do período (compensação na rescisão).
             salario_pago_mensal=salario_pago_mensal,
+            # Adicionais fixos na remuneração-base das verbas (TG-88).
+            adicionais_fixos=self._l10n_br_adicionais_fixos,
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,

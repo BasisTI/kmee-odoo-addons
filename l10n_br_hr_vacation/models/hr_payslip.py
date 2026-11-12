@@ -547,9 +547,9 @@ class HrPayslip(models.Model):
         extras habituais, adicional noturno) integram pela MÉDIA dos
         últimos meses. Adicionais CONTRATUAIS fixos (periculosidade,
         insalubridade) são um percentual constante do salário - não variam
-        mês a mês - e por isso ficam FORA desta lista; sua integração às
-        apurações separadas é uma lacuna distinta (fora desta onda),
-        documentada no relatório.
+        mês a mês - e por isso ficam FORA desta lista: entram na base das
+        apurações separadas pelo valor CHEIO do contrato
+        (``tools.br.adicionais_fixos``, TG-88), não por média.
 
         O reflexo dessas verbas no DSR (``DSR_HE``, ``DSR_NOTURNO``) integra
         a média junto com elas (Súmulas 172 e 60 do TST).
