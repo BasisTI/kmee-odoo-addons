@@ -222,8 +222,15 @@ Afastamento por doença (S-2230, MOS S-1.3 itens 3.1, 4.1 e 5):
    evento informa **S** (mesma doença/acidente) ou **N**. O afastamento do Odoo
    não tem CID, então o usuário preenche o campo **Mesmo motivo do afastamento
    anterior** (``info_mesmo_mtv``) no S-2230; vazio, o evento é recusado com
-   mensagem clara. Sem anterior na janela, o campo não é exigido, e fora dos
-   motivos 01/03 ou antes da data de vigência ele não vai no XML.
+   mensagem clara. Sem anterior na janela, o campo não é exigido (``S`` não vai,
+   só ``N``), e fora dos motivos 01/03 ou antes da data de vigência ele não vai
+   no XML (com aviso no log). O anterior conta por contrato e por motivo
+   (acidente e doença não são anteriores um do outro); o término dele vem do
+   próprio S-2230, do S-2230 só de término que o segue ou do afastamento
+   registrado. Doença anterior sem S-2230 só conta quando era de informação
+   obrigatória. Se o anterior não foi informado ao eSocial, use ``N``. A ação
+   ``action_gerar_recaida_pendente`` recebe ``info_mesmo_mtv`` e recusa sem ele
+   quando algum pendente exige o campo.
 
 Pagamentos e informe de rendimentos (S-1210, leiaute S-1.3 - evtPgtos):
 

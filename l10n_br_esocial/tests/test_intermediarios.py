@@ -675,6 +675,112 @@ class TestS2230Devido(TestESocialIntermediarioBase):
             xml, r"<codMotAfast>03</codMotAfast>\s*<infoMesmoMtv>S</infoMesmoMtv>"
         )
 
+    def test_acidente_com_termino_em_registro_separado_fecha_o_anterior(self):
+        """Fluxo do CAT: início num S-2230, término noutro, sem prazo em aberto."""
+        self._s2230("2026-11-01", None, self.mot_afast_01)
+        self._s2230(None, "2026-11-05")
+        # 60 dias após o término (05/11) exige; 61 não.
+        self._recusa_info("2027-01-04", "2027-01-06", self.mot_afast_01)
+
+    def test_acidente_a_61_dias_do_termino_em_registro_separado_nao_exige(self):
+        self._s2230("2026-11-01", None, self.mot_afast_01)
+        self._s2230(None, "2026-11-05")
+        data = self._gera("2027-01-05", "2027-01-07", self.mot_afast_01)
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_acidente_meses_depois_do_termino_em_registro_separado_nao_exige(self):
+        self._s2230("2026-11-01", None, self.mot_afast_01)
+        self._s2230(None, "2026-11-05")
+        data = self._gera("2027-08-01", "2027-08-03", self.mot_afast_01)
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_acidente_com_termino_pelo_afastamento_registrado(self):
+        """CAT grava o último dia trabalhado; o afastamento começa no dia seguinte."""
+        self._s2230("2026-11-01", None, self.mot_afast_01)
+        self._licenca("2026-11-02", "2026-11-05")
+        data = self._gera("2027-08-01", "2027-08-03", self.mot_afast_01)
+        self.assertNotIn("info_mesmo_mtv", data)
+        self._recusa_info("2027-01-04", "2027-01-06", self.mot_afast_01)
+
+    def test_acidente_sem_nenhum_termino_segue_em_aberto(self):
+        self._s2230("2026-11-01", None, self.mot_afast_01)
+        self._recusa_info("2027-08-01", "2027-08-03", self.mot_afast_01)
+
+    def test_s_sem_anterior_nao_vai_e_n_vai(self):
+        self._licenca("2026-11-01", "2026-11-20")
+        data = self._gera("2026-11-01", "2026-11-20", info_mesmo_mtv="S")
+        self.assertNotIn("info_mesmo_mtv", data)
+        data = self._gera("2026-11-01", "2026-11-20", info_mesmo_mtv="N")
+        self.assertEqual(data["info_mesmo_mtv"], "N")
+
+    def test_conta_por_contrato(self):
+        self._licenca("2026-11-01", "2026-11-20")
+        self.contract.write({"date_end": "2026-11-25", "state": "close"})
+        self.env["hr.contract"].create(
+            {
+                "name": "Novo contrato",
+                "employee_id": self.employee.id,
+                "wage": 3000.0,
+                "date_start": "2026-12-01",
+                "state": "open",
+            }
+        )
+        self._licenca("2026-12-10", "2026-12-30")
+        data = self._gera("2026-12-10", "2026-12-30")
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_acidente_nao_e_anterior_de_doenca_e_vice_versa(self):
+        # Acidente com último dia trabalhado em 31/10 e afastamento de 01 a 10/11.
+        self._licenca("2026-11-01", "2026-11-10")
+        self._s2230("2026-10-31", "2026-11-10", self.mot_afast_01)
+        self._licenca("2026-11-20", "2026-12-10")
+        data = self._gera("2026-11-20", "2026-12-10")
+        self.assertNotIn("info_mesmo_mtv", data)
+        # E a doença anterior não é anterior do acidente.
+        self._s2230("2026-12-20", "2026-12-22", self.mot_afast_03, info_mesmo_mtv="N")
+        data = self._gera("2027-02-15", "2027-02-16", self.mot_afast_01)
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_anterior_curto_da_cadeia_exige_mesmo_sem_s2230(self):
+        """3 dias + 23 dias é recaída (soma acima de 15): o anterior é devido."""
+        self._licenca("2026-11-01", "2026-11-03")
+        self._licenca("2026-12-01", "2026-12-23")
+        self._recusa_info("2026-12-01", "2026-12-23")
+
+    def test_anterior_curto_fora_de_cadeia_nao_conta(self):
+        """3 dias opcionais, sem S-2230, a mais de 60 dias do seguinte."""
+        self._licenca("2026-11-01", "2026-11-03")
+        self._licenca("2027-02-01", "2027-02-23")
+        data = self._gera("2027-02-01", "2027-02-23")
+        self.assertNotIn("info_mesmo_mtv", data)
+
+    def test_anterior_curto_com_s2230_exige(self):
+        self._licenca("2026-11-01", "2026-11-03")
+        self._s2230("2026-11-01", "2026-11-03", informar_opcional=True)
+        self._licenca("2026-12-01", "2026-12-23")
+        self._recusa_info("2026-12-01", "2026-12-23")
+
+    def test_pendentes_da_recaida_pedem_o_s_n_na_acao(self):
+        self._licenca("2026-11-01", "2026-11-10")
+        self._licenca("2026-11-20", "2026-11-29")
+        self._licenca("2026-12-10", "2026-12-19")
+        ultimo = self._s2230("2026-12-10", "2026-12-19", info_mesmo_mtv="S")
+        criados = ultimo.action_gerar_recaida_pendente(info_mesmo_mtv="N")
+        self.assertEqual(
+            sorted(criados.mapped("dt_ini_afast")),
+            [date(2026, 11, 1), date(2026, 11, 20)],
+        )
+        segundo = criados.filtered(lambda r: r.dt_ini_afast == date(2026, 11, 20))
+        self.assertEqual(segundo._to_esociallib_dict()["info_mesmo_mtv"], "N")
+
+    def test_acao_de_pendentes_sem_s_n_recusa(self):
+        self._licenca("2026-11-01", "2026-11-10")
+        self._licenca("2026-11-20", "2026-11-29")
+        self._licenca("2026-12-10", "2026-12-19")
+        ultimo = self._s2230("2026-12-10", "2026-12-19", info_mesmo_mtv="S")
+        with self.assertRaisesRegex(UserError, "info_mesmo_mtv='S' ou 'N'"):
+            ultimo.action_gerar_recaida_pendente()
+
 
 class TestS2299(TestESocialIntermediarioBase):
     """Testes do intermediário S-2299 (Desligamento)."""
