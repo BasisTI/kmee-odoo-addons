@@ -126,14 +126,14 @@ class TestDiasMaternidade(PayrollCommon):
         própria função: (período, licença, admissão, dias de salário, maternidade).
         """
         casos = [
-            # admitida 08/10 (23 dias); licença 03 a 19/10: só 08 a 19 = 12 dias
-            (OUT_INI, OUT_FIM, (date(2026, 10, 3), date(2026, 10, 19)), 12, 23),
+            # admitida 08/10 (24 dias); licença 03 a 19/10: só 08 a 19 = 12 dias
+            (OUT_INI, OUT_FIM, (date(2026, 10, 3), date(2026, 10, 19)), 12, 24),
             # licença de 1 dia
-            (OUT_INI, OUT_FIM, (date(2026, 10, 20), date(2026, 10, 20)), 1, 23),
+            (OUT_INI, OUT_FIM, (date(2026, 10, 20), date(2026, 10, 20)), 1, 24),
             # licença antes da admissão: não conta
-            (OUT_INI, OUT_FIM, (date(2026, 10, 1), date(2026, 10, 7)), 0, 23),
-            # licença até o fim do mês: 08 a 31/10 vale 23 dias comerciais
-            (OUT_INI, OUT_FIM, (date(2026, 10, 8), date(2026, 10, 31)), 23, 23),
+            (OUT_INI, OUT_FIM, (date(2026, 10, 1), date(2026, 10, 7)), 0, 24),
+            # licença até o fim do mês: admitida 08/10, são 24 dias corridos (08 a 31)
+            (OUT_INI, OUT_FIM, (date(2026, 10, 8), date(2026, 10, 31)), 24, 24),
         ]
         for ini, fim, licenca, esperado_mat, esperado_total in casos:
             sal, mat = _mat(*licenca, (ini, fim), data_admissao=date(2026, 10, 8))
