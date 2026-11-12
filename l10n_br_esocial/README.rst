@@ -188,6 +188,28 @@ Trabalhador sem vínculo - estagiário e demais categorias (S-2300, S-2306, S-23
    cadastro, e o XML é conferido contra o XSD do leiaute S-1.3 quando os
    schemas estão na ``esociallib``.
 
+Afastamento por doença (S-2230, MOS S-1.3 itens 3.1, 4.1 e 5):
+
+#. **Acidente/doença do trabalho (motivo 01)**: informado desde o 1º dia,
+   qualquer que seja a duração. O Odoo não aplica limite.
+#. **Doença não relacionada ao trabalho (motivo 03)**: obrigatória acima de 15
+   dias, na recaída pela mesma doença em até 60 dias (soma acima de 15 dias,
+   com a janela contada do término do primeiro afastamento) e em até 60 dias do
+   retorno de um afastamento acima de 15 dias. Na recaída, cada afastamento da
+   cadeia vai no seu evento, com a própria data de início.
+#. Doença curta fora de recaída é **opcional**: o Odoo não gera o evento, e a
+   recusa informa isso. Marque **Informar mesmo sem obrigatoriedade** para
+   gerar assim mesmo. O término de um início já gerado vai sempre.
+#. Quando o evento atual fecha uma recaída, os afastamentos anteriores da
+   cadeia que ainda não têm S-2230 não são gerados sozinhos (o prazo do MOS é
+   de envio individual, em atraso): use a ação
+   ``action_gerar_recaida_pendente`` do evento para criá-los.
+#. O critério usa os afastamentos validados de tipo **Afastamento
+   Previdenciário** (``l10n_br_afastamento_inss``) do empregado. Acidente do
+   trabalho (S-2230 de motivo 01 no mesmo início) não soma com doença comum.
+   Os demais motivos (maternidade, férias, licença remunerada etc.) não têm o
+   limite de 15 dias.
+
 Bug Tracker
 ===========
 

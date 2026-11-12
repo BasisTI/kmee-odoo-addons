@@ -541,6 +541,28 @@ S-2306, o trabalhador é identificado só por CPF e matrícula.</li>
 cadastro, e o XML é conferido contra o XSD do leiaute S-1.3 quando os
 schemas estão na <tt class="docutils literal">esociallib</tt>.</li>
 </ol>
+<p>Afastamento por doença (S-2230, MOS S-1.3 itens 3.1, 4.1 e 5):</p>
+<ol class="arabic simple">
+<li><strong>Acidente/doença do trabalho (motivo 01)</strong>: informado desde o 1º dia,
+qualquer que seja a duração. O Odoo não aplica limite.</li>
+<li><strong>Doença não relacionada ao trabalho (motivo 03)</strong>: obrigatória acima de 15
+dias, na recaída pela mesma doença em até 60 dias (soma acima de 15 dias,
+com a janela contada do término do primeiro afastamento) e em até 60 dias do
+retorno de um afastamento acima de 15 dias. Na recaída, cada afastamento da
+cadeia vai no seu evento, com a própria data de início.</li>
+<li>Doença curta fora de recaída é <strong>opcional</strong>: o Odoo não gera o evento, e a
+recusa informa isso. Marque <strong>Informar mesmo sem obrigatoriedade</strong> para
+gerar assim mesmo. O término de um início já gerado vai sempre.</li>
+<li>Quando o evento atual fecha uma recaída, os afastamentos anteriores da
+cadeia que ainda não têm S-2230 não são gerados sozinhos (o prazo do MOS é
+de envio individual, em atraso): use a ação
+<tt class="docutils literal">action_gerar_recaida_pendente</tt> do evento para criá-los.</li>
+<li>O critério usa os afastamentos validados de tipo <strong>Afastamento
+Previdenciário</strong> (<tt class="docutils literal">l10n_br_afastamento_inss</tt>) do empregado. Acidente do
+trabalho (S-2230 de motivo 01 no mesmo início) não soma com doença comum.
+Os demais motivos (maternidade, férias, licença remunerada etc.) não têm o
+limite de 15 dias.</li>
+</ol>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
