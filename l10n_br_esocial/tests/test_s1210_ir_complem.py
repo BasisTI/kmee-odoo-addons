@@ -52,17 +52,36 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
             )
         return self.regras[chave]
 
-    def _holerite(self, descontos=(), irrf=False, gerar=True):
-        """Holerite pago em 2024-04 com os descontos ``(cod_inc_irrf, valor)``."""
+    def _estrutura(self, codigo):
+        return self.env["hr.payroll.structure"].create(
+            {"name": "Estrutura %s" % codigo, "code": codigo}
+        )
+
+    def _holerite(
+        self,
+        descontos=(),
+        irrf=False,
+        gerar=True,
+        estrutura=None,
+        codigo_irrf="IRRF",
+    ):
+        """Holerite pago em 2024-04 com os descontos ``(cod_inc_irrf, valor[, code])``.
+
+        ``estrutura`` é o código da estrutura salarial (``13_2PARCELA``,
+        ``FERIAS``...); ``codigo_irrf`` é o código da linha de IRRF retido.
+        """
         payslip = self._criar_payslip(data_pagamento="2024-04-05")
-        for cod, valor in descontos:
+        if estrutura:
+            payslip.struct_id = self._estrutura(estrutura)
+        for desconto in descontos:
+            cod, valor = desconto[:2]
             regra = self._regra(cod)
             self.env["hr.payslip.line"].create(
                 {
                     "slip_id": payslip.id,
                     "salary_rule_id": regra.id,
                     "name": regra.name,
-                    "code": regra.code,
+                    "code": desconto[2] if len(desconto) > 2 else regra.code,
                     "employee_id": self.employee.id,
                     "contract_id": self.contract.id,
                     "quantity": 1,
@@ -76,7 +95,7 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
                     "slip_id": payslip.id,
                     "salary_rule_id": self.rule.id,
                     "name": "IRRF",
-                    "code": "IRRF",
+                    "code": codigo_irrf,
                     "employee_id": self.employee.id,
                     "contract_id": self.contract.id,
                     "quantity": 1,
@@ -111,6 +130,34 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         vals.update(extra)
         return self._parente(**vals)
 
+    @staticmethod
+    def _cr(ir, tp_cr="056107"):
+        return ir["cr"][tp_cr]
+
+    def _s1210_de(self, *slips):
+        """S-1210 sem gerar evento, com um pagamento por holerite."""
+        return self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2024-04",
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2024-04-05",
+                            "per_ref": "2024-03",
+                            "ide_dm_dev": "DEM%03d" % n,
+                            "vr_liq": 1.0,
+                            "payslip_id": slip.id,
+                        },
+                    )
+                    for n, slip in enumerate(slips)
+                ],
+            }
+        )
+
     def _xml(self, s1210):
         xml = s1210.evento_id.xml_envio
         return etree.fromstring(xml.encode("utf-8"))
@@ -125,8 +172,8 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         """O alimentando sem tipo de dependente é declarado em ``infoDep``."""
         self._parente(l10n_br_esocial_pensao_alimenticia=True)
         ir = self._holerite(descontos=[("51", 620.0)])._info_ir_complem()
-        self.assertEqual(ir["tp_cr"], "056107")
-        self.assertEqual(ir["pen_alim"], {("11", CPF_FILHA): 620.0})
+        self.assertEqual(list(ir["cr"]), ["056107"])
+        self.assertEqual(self._cr(ir)["pen"], {("11", CPF_FILHA): 620.0})
         self.assertEqual(
             ir["info_dep"],
             [
@@ -144,14 +191,14 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         self.employee.l10n_br_irrf_dependentes = 1
         ir = self._holerite(descontos=[("52", 300.0)])._info_ir_complem()
         self.assertEqual(ir["info_dep"], [])
-        self.assertEqual(ir["pen_alim"], {("11", CPF_FILHA): 300.0})
+        self.assertEqual(self._cr(ir)["pen"], {("11", CPF_FILHA): 300.0})
 
     def test_pensao_sem_beneficiario_e_recusada(self):
         payslip = self._holerite(descontos=[("51", 620.0)], gerar=False)
         with self.assertRaisesRegex(UserError, "Beneficiário da Pensão"):
             payslip.action_esocial_gerar_s1210()
 
-    def test_pensao_com_dois_beneficiarios_e_recusada(self):
+    def test_pensao_com_dois_alimentandos_sem_valor_e_recusada(self):
         self._parente(l10n_br_esocial_pensao_alimenticia=True)
         self._parente(
             name="Filho de Teste",
@@ -159,7 +206,7 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
             l10n_br_esocial_pensao_alimenticia=True,
         )
         payslip = self._holerite(descontos=[("51", 620.0)], gerar=False)
-        with self.assertRaisesRegex(UserError, "2 beneficiários"):
+        with self.assertRaisesRegex(UserError, "valor fixo"):
             payslip.action_esocial_gerar_s1210()
 
     def test_pensao_sem_cpf_do_alimentando_e_recusada(self):
@@ -179,7 +226,7 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         valor = self.env["l10n_br.hr.payroll.irrf.dependente"]._valor("2024-03-31")
         ir = s1210._info_ir_complem()
         self.assertEqual(
-            ir["ded_dependentes"],
+            self._cr(ir)["ded"],
             {("11", CPF_FILHA): valor, ("11", CPF_FILHO): valor},
         )
         self.assertEqual(ir["info_dep"], [])
@@ -238,7 +285,7 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         self.contract.l10n_br_esocial_cnpj_prev_compl = "11.444.777/0001-61"
         s1210 = self._holerite(descontos=[("46", 150.0), ("62", 80.0), ("64", 40.0)])
         self.assertEqual(
-            s1210._info_ir_complem()["previd"],
+            self._cr(s1210._info_ir_complem())["previd"],
             {
                 ("1", CNPJ_ENTIDADE): {"mensal": 150.0, "decimo": 0.0},
                 ("2", CNPJ_ENTIDADE): {"mensal": 80.0, "decimo": 0.0},
@@ -251,22 +298,235 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         with self.assertRaisesRegex(UserError, "Previdência Complementar"):
             payslip.action_esocial_gerar_s1210()
 
-    # --- 13º salário -----------------------------------------------------
-    def test_decimo_terceiro_usa_tp_rend_12(self):
-        s1210 = self._holerite()
-        pagamento = s1210.pagamento_ids
-        self.assertEqual(s1210._tp_rend(pagamento), "11")
-        pagamento.per_ref = "2024"
-        self.assertEqual(s1210._tp_rend(pagamento), "12")
+    # --- tipo de rendimento pelo holerite (13º, férias) ------------------
+    def test_tp_rend_pela_estrutura_do_holerite(self):
+        slip = self._criar_payslip()
+        self.assertEqual(slip._esocial_tp_rend(), "11")
+        for codigo, esperado in (
+            ("13_1PARCELA", "12"),
+            ("13_2PARCELA", "12"),
+            ("13_SALARIO", "12"),
+            ("FERIAS", "13"),
+            ("CLT", "11"),
+        ):
+            slip.struct_id = self._estrutura(codigo)
+            self.assertEqual(slip._esocial_tp_rend(), esperado, codigo)
 
-    # --- categoria / código de receita -----------------------------------
-    def test_codigo_de_receita_por_categoria(self):
-        s1210 = self._holerite()
-        self.assertEqual(s1210._tp_cr(), "056107")
-        s1210.employee_id.l10n_br_esocial_categoria_id = self.env.ref(
-            "l10n_br_esocial.cat_trab_104"
+    def test_rescisao_separa_a_linha_do_13_na_apuracao(self):
+        slip = self._criar_payslip()
+        slip.struct_id = self._estrutura("RESCISAO")
+        linha = slip.line_ids[:1]
+        self.assertEqual(slip._esocial_tp_rend(linha), "11")
+        linha.code = "IRRF_13"
+        self.assertEqual(slip._esocial_tp_rend(linha), "12")
+
+    def test_decimo_terceiro_deduz_dependentes_e_pensao_com_tp_rend_12(self):
+        """O 13º usa IRRF_13 e PENSAO 52; sai tpRend 12, não 11."""
+        self._dependente_irrf()
+        self._dependente_irrf(name="Filho de Teste", l10n_br_esocial_cpf=CPF_FILHO)
+        self.employee.l10n_br_irrf_dependentes = 2
+        self._parente(
+            name="Alimentando",
+            l10n_br_esocial_cpf="39053344705",
+            l10n_br_esocial_pensao_alimenticia=True,
         )
-        self.assertEqual(s1210._tp_cr(), "056108")
+        s1210 = self._holerite(
+            descontos=[("52", 900.0)],
+            irrf=True,
+            gerar=False,
+            estrutura="13_2PARCELA",
+            codigo_irrf="IRRF_13",
+        )
+        s1210 = self._s1210_de(s1210)
+        valor = self.env["l10n_br.hr.payroll.irrf.dependente"]._valor("2024-03-31")
+        grupo = self._cr(s1210._info_ir_complem())
+        self.assertEqual(
+            grupo["ded"], {("12", CPF_FILHA): valor, ("12", CPF_FILHO): valor}
+        )
+        self.assertEqual(grupo["pen"], {("12", "39053344705"): 900.0})
+
+    def test_ferias_usam_tp_rend_13_e_nao_somam_com_o_mensal(self):
+        """Férias e mensal no mesmo mês: chaves distintas, valor unitário."""
+        self._dependente_irrf()
+        self.employee.l10n_br_irrf_dependentes = 1
+        mensal = self._holerite(irrf=True, gerar=False)
+        ferias = self._holerite(irrf=True, gerar=False, estrutura="FERIAS")
+        outro_mensal = self._holerite(irrf=True, gerar=False)
+        valor = self.env["l10n_br.hr.payroll.irrf.dependente"]._valor("2024-03-31")
+        ir = self._s1210_de(mensal, ferias, outro_mensal)._info_ir_complem()
+        self.assertEqual(
+            self._cr(ir)["ded"],
+            {("11", CPF_FILHA): valor, ("13", CPF_FILHA): valor},
+        )
+
+    # --- folha deduz e o cadastro está vazio ------------------------------
+    def test_folha_deduz_dependentes_e_cadastro_vazio_e_recusado(self):
+        self.employee.l10n_br_irrf_dependentes = 2
+        slip = self._holerite(irrf=True, gerar=False)
+        with self.assertRaisesRegex(UserError, "deduz 2 dependente"):
+            self._s1210_de(slip)._info_ir_complem()
+
+    # --- desconto simplificado ---------------------------------------------
+    def test_desconto_simplificado_nao_leva_dedepen(self):
+        """Incidência 68 (desconto simplificado) substitui as deduções legais."""
+        self._dependente_irrf()
+        self.employee.l10n_br_irrf_dependentes = 1
+        slip = self._holerite(descontos=[("68", 564.8)], irrf=True, gerar=False)
+        self.assertFalse(self._s1210_de(slip)._info_ir_complem())
+
+    # --- valor zero ----------------------------------------------------------
+    def test_plano_e_previdencia_com_valor_zero_nao_geram_grupo(self):
+        self.contract.write(
+            {
+                "l10n_br_esocial_cnpj_oper_saude": CNPJ_OPERADORA,
+                "l10n_br_esocial_cnpj_prev_compl": CNPJ_ENTIDADE,
+            }
+        )
+        slip = self._holerite(descontos=[("67", 0.0), ("46", 0.0)], gerar=False)
+        self.assertFalse(self._s1210_de(slip)._info_ir_complem())
+
+    # --- código de receita ---------------------------------------------------
+    def _com_categoria(self, codigo):
+        categoria = self.env["l10n_br.esocial.categoria.trabalhador"].search(
+            [("codigo", "=", codigo)], limit=1
+        )
+        self.assertTrue(categoria, codigo)
+        self.employee.l10n_br_esocial_categoria_id = categoria
+        return self._s1210_de(self._holerite(gerar=False))
+
+    def test_codigo_de_receita_por_categoria(self):
+        """S-5002 (vlrRendTrib): 721 -> 056107; 201 -> 058806; 104 mensal -> 056108."""
+        for categoria, tp_rend, esperado in (
+            ("101", "11", "056107"),
+            ("721", "11", "056107"),
+            ("201", "11", "058806"),
+            ("104", "11", "056108"),
+            ("104", "13", "056108"),
+            ("104", "12", "056110"),
+        ):
+            s1210 = self._com_categoria(categoria)
+            self.assertEqual(
+                s1210._tp_cr(s1210.pagamento_ids, tp_rend), esperado, categoria
+            )
+
+    def test_codigo_de_receita_do_domestico_na_rescisao_e_do_segurado_especial(self):
+        s1210 = self._com_categoria("104")
+        s1210.pagamento_ids.tp_pgto = "2"
+        self.assertEqual(s1210._tp_cr(s1210.pagamento_ids, "12"), "056109")
+        s1210 = self._com_categoria("101")
+        classe = self.env["l10n_br.esocial.classificacao.tributaria"].search(
+            [("codigo", "=", "22")], limit=1
+        )
+        self.company.l10n_br_esocial_class_trib_id = classe
+        self.assertEqual(s1210._tp_cr(s1210.pagamento_ids, "11"), "056111")
+        self.assertEqual(s1210._tp_cr(s1210.pagamento_ids, "12"), "056112")
+        s1210.pagamento_ids.tp_pgto = "2"
+        self.assertEqual(s1210._tp_cr(s1210.pagamento_ids, "12"), "056113")
+
+    def test_categoria_sem_codigo_de_receita_e_recusada(self):
+        s1210 = self._com_categoria("101")
+        self.employee.l10n_br_esocial_categoria_id = self.env[
+            "l10n_br.esocial.categoria.trabalhador"
+        ].search([("codigo", "=", "901")], limit=1)
+        self.assertEqual(s1210._tp_cr(s1210.pagamento_ids, "11"), "056107")
+        self.employee.l10n_br_esocial_categoria_id = False
+        with self.assertRaisesRegex(UserError, "código de receita"):
+            s1210._tp_cr(s1210.pagamento_ids, "11")
+
+    def test_dois_codigos_de_receita_viram_dois_infoircr(self):
+        """Doméstico: férias/mensal (056108) e 13º (056110) em infoIRCR separados."""
+        self._com_categoria("104")
+        self.contract.l10n_br_esocial_cnpj_prev_compl = CNPJ_ENTIDADE
+        mensal = self._holerite(descontos=[("46", 100.0)], gerar=False)
+        decimo = self._holerite(
+            descontos=[("47", 50.0)], gerar=False, estrutura="13_2PARCELA"
+        )
+        ir = self._s1210_de(mensal, decimo)._info_ir_complem()
+        self.assertEqual(list(ir["cr"]), ["056108", "056110"])
+        self.assertEqual(
+            self._cr(ir, "056110")["previd"],
+            {("1", CNPJ_ENTIDADE): {"mensal": 0.0, "decimo": 50.0}},
+        )
+
+    # --- pensão com vários alimentandos -------------------------------------
+    def _alimentandos(self):
+        a = self._parente(
+            l10n_br_esocial_pensao_alimenticia=True,
+            l10n_br_esocial_pensao_valor=400.0,
+        )
+        b = self._parente(
+            name="Filho de Teste",
+            l10n_br_esocial_cpf=CPF_FILHO,
+            l10n_br_esocial_pensao_alimenticia=True,
+            l10n_br_esocial_pensao_percentual=10.0,
+        )
+        return a, b
+
+    def test_pensao_repartida_entre_alimentandos(self):
+        """GROSS = 3000: 400 fixos + 10% (300) = 700 descontados."""
+        self._alimentandos()
+        slip = self._holerite(descontos=[("51", 700.0)], gerar=False)
+        ir = self._s1210_de(slip)._info_ir_complem()
+        self.assertEqual(
+            self._cr(ir)["pen"],
+            {("11", CPF_FILHA): 400.0, ("11", CPF_FILHO): 300.0},
+        )
+
+    def test_pensao_dos_alimentandos_que_nao_fecha_com_o_desconto_e_recusada(self):
+        self._alimentandos()
+        slip = self._holerite(descontos=[("51", 650.0)], gerar=False)
+        with self.assertRaisesRegex(UserError, "soma 700.00"):
+            self._s1210_de(slip)._info_ir_complem()
+
+    # --- infoProcRet ---------------------------------------------------------
+    def test_rubrica_9xxx_com_valor_exige_info_proc_ret_e_e_recusada(self):
+        slip = self._holerite(descontos=[("9011", 120.0)], gerar=False)
+        with self.assertRaisesRegex(UserError, "infoProcRet"):
+            self._s1210_de(slip)._info_ir_complem()
+
+    def test_rubrica_9xxx_sem_valor_e_o_9067_nao_exigem_info_proc_ret(self):
+        self.contract.l10n_br_esocial_cnpj_oper_saude = CNPJ_OPERADORA
+        slip = self._holerite(descontos=[("9011", 0.0), ("9067", 80.0)], gerar=False)
+        ir = self._s1210_de(slip)._info_ir_complem()
+        self.assertEqual(ir["plano"]["titular"], 80.0)
+
+    # --- tpPgto: migração ----------------------------------------------------
+    def test_migracao_renumera_o_tp_pgto_antigo(self):
+        import importlib.util
+        import os
+
+        caminho = os.path.join(
+            os.path.dirname(os.path.dirname(__file__)),
+            "migrations",
+            "18.0.1.4.0",
+            "post-migration.py",
+        )
+        spec = importlib.util.spec_from_file_location("mig_tp_pgto", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        slip = self._holerite(gerar=False)
+        s1210 = self._s1210_de(slip)
+        antigos = ("1", "2", "3", "4", "5")
+        s1210.pagamento_ids.unlink()
+        pagamentos = self.env["l10n_br.esocial.s1210.pagamento"].create(
+            [
+                {
+                    "s1210_id": s1210.id,
+                    "dt_pgto": "2024-04-05",
+                    "per_ref": "2024-03",
+                    "ide_dm_dev": "DEM%s" % tp,
+                    "vr_liq": 1.0,
+                    "tp_pgto": tp,
+                }
+                for tp in antigos
+            ]
+        )
+        modulo.migrate(self.env.cr, "18.0.1.3.0")
+        pagamentos.invalidate_recordset()
+        self.assertEqual(
+            {p.ide_dm_dev[-1]: p.tp_pgto for p in pagamentos},
+            {"1": "1", "2": "4", "3": "5", "4": "2", "5": "3"},
+        )
 
     # --- XML -------------------------------------------------------------
     def test_xml_na_ordem_do_leiaute(self):

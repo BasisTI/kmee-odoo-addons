@@ -693,6 +693,36 @@ class TestS2299(TestESocialIntermediarioBase):
         with self.assertRaisesRegex(UserError, "anterior ao desligamento"):
             s2299._to_esociallib_dict()
 
+    def test_s2299_gerado_a_partir_do_holerite_de_rescisao_liga_o_holerite(self):
+        """TG-106: a ação do holerite cria o S-2299 com ``payslip_id`` e o aviso."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        slip = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "date_from": "2024-12-01",
+                "date_to": "2024-12-31",
+                "state": "done",
+                "struct_id": self.env["hr.payroll.structure"]
+                .create({"name": "Rescisão", "code": "RESCISAO"})
+                .id,
+            }
+        )
+        with self.assertRaisesRegex(UserError, "Motivo Desligamento"):
+            slip.action_esocial_gerar_s2299()
+        self.contract.l10n_br_esocial_motivo_deslig_id = self.mot_deslig_02
+        with self._com_aviso_da_folha(True):
+            slip.action_esocial_gerar_s2299()
+        s2299 = self.env["l10n_br.esocial.s2299"].search([("payslip_id", "=", slip.id)])
+        self.assertEqual(len(s2299), 1)
+        self.assertEqual(str(s2299.dt_deslig), "2024-12-31")
+        self.assertIn("<indPagtoAPI>S</indPagtoAPI>", s2299.evento_id.xml_envio)
+        self.assertIn(
+            "<dtProjFimAPI>2025-02-02</dtProjFimAPI>", s2299.evento_id.xml_envio
+        )
+
     def test_s2299_gerar_xml(self):
         """Deve gerar XML via esociallib."""
         if not HAS_ESOCIALLIB:

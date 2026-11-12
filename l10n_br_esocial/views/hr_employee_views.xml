@@ -33,6 +33,8 @@
                 <field name="l10n_br_esocial_dep_sf" />
                 <field name="l10n_br_esocial_inc_trab" />
                 <field name="l10n_br_esocial_pensao_alimenticia" optional="hide" />
+                <field name="l10n_br_esocial_pensao_valor" optional="hide" />
+                <field name="l10n_br_esocial_pensao_percentual" optional="hide" />
                 <field name="l10n_br_esocial_vlr_saude" optional="hide" />
                 <field name="l10n_br_esocial_descr_dep" optional="hide" />
             </xpath>

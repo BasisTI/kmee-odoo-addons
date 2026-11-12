@@ -44,10 +44,26 @@ COD_IRRF_PREV_COMPL = (
 )
 NAT_RUBR_PLANO_SAUDE = "9219"
 
-# Código de receita (TS_CR_IR) do IRRF retido, por categoria do trabalhador.
-TP_CR_PADRAO = "056107"  # trabalho assalariado (mensal, 13º e férias)
-TP_CR_DOMESTICO = "056108"
-TP_CR_SEM_VINCULO = "058806"
+# Código de receita do IRRF (TS_CR_IR) por categoria do trabalhador. Fonte: leiaute
+# S-1.3 (NT 07/2026 rev. 20/10/2026), S-5002, campos vlrRendTrib e vlrRendTrib13
+# (agrupamento do CRMen): 056107 para 101-103, 105-108, 111, 301-314, 401, 410, 501,
+# 721-723, 761 e 901-906 (classTrib diferente de 22); 056111/056112/056113 para
+# 101-103, 105-108 e 111 com classTrib 22 (mensal, 13º, 13º rescisório); 056108
+# (mensal e férias), 056110 (13º) e 056109 (13º rescisório, S-2299) para o 104;
+# 058806 para 201, 202, 701, 711, 712, 731, 734, 738, 741, 751, 771 e 781.
+CATEG_TP_CR_056107 = frozenset(
+    "101 102 103 105 106 107 108 111 301 302 303 304 305 306 307 308 309 310 311 "
+    "312 313 314 401 410 501 721 722 723 761 901 902 903 904 906".split()
+)
+CATEG_RURAL = frozenset("101 102 103 105 106 107 108 111".split())
+CATEG_TP_CR_058806 = frozenset(
+    "201 202 701 711 712 731 734 738 741 751 771 781".split()
+)
+CLASS_TRIB_RURAL = "22"
+# codIncIRRF 68: desconto simplificado mensal (Tabela 21), que substitui as
+# deduções legais (dependentes, pensão, previdência) na base do IRRF.
+COD_IRRF_SIMPLIFICADO = "68"
+CODIGOS_IRRF_RETIDO = ("IRRF", "IRRF_13")
 
 
 class ESocialS1210(models.Model):
@@ -193,19 +209,41 @@ class ESocialS1210(models.Model):
     # (descDep, cnpjEntPrevid, vlrDedPrevid, planSaude/infoDep, sem dedDepen
     # nem tpRend): o módulo o gera conforme o evtPgtos.xsd do S-1.3.
 
-    def _tp_cr(self):
-        categoria = self.employee_id.l10n_br_esocial_categoria_id.codigo or ""
-        if categoria == "104":
-            return TP_CR_DOMESTICO
-        if categoria[:1] == "7":
-            return TP_CR_SEM_VINCULO
-        return TP_CR_PADRAO
+    def _tp_cr(self, pagamento, tp_rend):
+        """Código de receita (tpCR) pela categoria, tipo de rendimento e evento."""
+        employee = self.employee_id
+        categ = employee.l10n_br_esocial_categoria_id.codigo or ""
+        decimo = tp_rend == "12"
+        rescisorio = pagamento.tp_pgto in ("2", "3")
+        if categ == "104":
+            if not decimo:
+                return "056108"
+            return "056109" if pagamento.tp_pgto == "2" else "056110"
+        if categ in CATEG_RURAL:
+            classe = self.company_id.l10n_br_esocial_class_trib_id.codigo
+            if classe == CLASS_TRIB_RURAL:
+                if not decimo:
+                    return "056111"
+                return "056113" if rescisorio else "056112"
+        if categ in CATEG_TP_CR_056107:
+            return "056107"
+        if categ in CATEG_TP_CR_058806:
+            return "058806"
+        raise UserError(
+            _(
+                "'%(name)s': a categoria eSocial '%(categ)s' não tem código de "
+                "receita do IRRF (tpCR) no leiaute S-1.3. Informe a categoria do "
+                "trabalhador no cadastro."
+            )
+            % {"name": employee.name, "categ": categ or _("(vazia)")}
+        )
 
     @staticmethod
     def _linhas_desconto(payslip, codigos=(), natureza=None):
-        """Descontos (tpRubr 2) do holerite com a incidência IRRF dada."""
-        linhas = payslip.line_ids.filtered(
+        """Descontos (tpRubr 2) do holerite com a incidência IRRF dada e valor."""
+        return payslip.line_ids.filtered(
             lambda linha: linha.salary_rule_id.l10n_br_esocial_tp_rubr == "2"
+            and abs(linha.total) > 0.004
             and (
                 linha.salary_rule_id.l10n_br_esocial_cod_inc_irrf in codigos
                 or (
@@ -215,23 +253,6 @@ class ESocialS1210(models.Model):
                 )
             )
         )
-        return linhas
-
-    def _parentes_ir(self, erros):
-        """Parentes do empregado que entram no complemento de IR."""
-        employee = self.employee_id
-        parentes = employee.relative_ids
-        pensao = parentes.filtered("l10n_br_esocial_pensao_alimenticia")
-        if len(pensao) > 1:
-            erros.append(
-                _(
-                    "'%(name)s' tem %(n)s beneficiários da pensão alimentícia "
-                    "marcados, mas a folha desconta um valor único: o S-1210 "
-                    "não tem como repartir. Deixe um só."
-                )
-                % {"name": employee.name, "n": len(pensao)}
-            )
-        return parentes, pensao
 
     def _cpf_parente(self, rel, finalidade, erros):
         cpf = self._so_digitos(rel.l10n_br_esocial_cpf)
@@ -264,15 +285,44 @@ class ESocialS1210(models.Model):
         return cnpj
 
     @staticmethod
-    def _tp_rend(pagamento):
-        """11 = remuneração mensal; 12 = 13º salário (competência anual)."""
-        return "12" if len(pagamento.per_ref or "") == 4 else "11"
+    def _grupo_cr(acc, tp_cr):
+        return acc["cr"].setdefault(
+            tp_cr, {"ded": OrderedDict(), "pen": OrderedDict(), "previd": OrderedDict()}
+        )
 
-    def _ir_dependentes(self, pagamento, slip, dedutivel, acc):
-        """Dedução do rendimento por dependente declarado para IRRF."""
+    def _ir_processos(self, slip, erros):
+        """Rubrica 9XXX (exceto 9067) com valor exige infoProcRet (não gerado)."""
+        for linha in slip.line_ids:
+            cod = linha.salary_rule_id.l10n_br_esocial_cod_inc_irrf or ""
+            if cod.startswith("9") and cod not in COD_IRRF_PLANO_SAUDE:
+                if abs(linha.total) > 0.004:
+                    erros.append(
+                        _(
+                            "Holerite %(slip)s: a rubrica '%(rubr)s' tem incidência "
+                            "IRRF %(cod)s (exigibilidade suspensa) com valor, e o "
+                            "leiaute S-1.3 então exige o grupo infoProcRet (processo "
+                            "e código de suspensão), que o módulo ainda não "
+                            "informa. Não gere o S-1210 deste holerite por aqui."
+                        )
+                        % {
+                            "slip": slip.number or slip.display_name,
+                            "rubr": linha.salary_rule_id.display_name,
+                            "cod": cod,
+                        }
+                    )
+                    return
+
+    def _ir_dependentes(self, slip, dedutivel, acc):
+        """Dedução do rendimento por dependente, por tipo de rendimento do holerite.
+
+        Vale o valor unitário por ``{tpRend, cpfDep}`` (o leiaute limita ``vlrDedDep``
+        ao unitário): holerites do mesmo tipo no mês não somam. Com desconto
+        simplificado (incidência 68) as deduções legais não valem e o grupo não sai.
+        """
         employee = self.employee_id
         erros = acc["erros"]
-        if not (dedutivel and slip.line_ids.filtered(lambda ln: ln.code == "IRRF")):
+        retidos = slip.line_ids.filtered(lambda ln: ln.code in CODIGOS_IRRF_RETIDO)
+        if not retidos or self._linhas_incidencia(slip, COD_IRRF_SIMPLIFICADO):
             return
         folha = employee.l10n_br_irrf_dependentes
         if folha != len(dedutivel):
@@ -286,28 +336,79 @@ class ESocialS1210(models.Model):
                 % {"name": employee.name, "folha": folha, "dep": len(dedutivel)}
             )
             return
-        valor = self.env["l10n_br.hr.payroll.irrf.dependente"]._valor(slip.date_to)
-        for rel in dedutivel:
-            cpf = self._cpf_parente(rel, _("dependente para IRRF"), erros)
-            if cpf:
-                chave = (self._tp_rend(pagamento), cpf)
-                acc["ded_dependentes"][chave] = (
-                    acc["ded_dependentes"].get(chave, 0.0) + valor
-                )
-                acc["usados"] |= rel
-
-    def _ir_pensao(self, pagamento, slip, pensao, acc):
-        linhas = self._linhas_desconto(slip, COD_IRRF_PENSAO)
-        if not linhas:
+        if not folha:
             return
-        total = sum(abs(ln.total) for ln in linhas)
-        if len(pensao) == 1:
-            cpf = self._cpf_parente(pensao, _("pensão alimentícia"), acc["erros"])
-            if cpf:
-                chave = (self._tp_rend(pagamento), cpf)
-                acc["pen_alim"][chave] = acc["pen_alim"].get(chave, 0.0) + total
-                acc["usados"] |= pensao
-        elif not pensao:
+        valor = self.env["l10n_br.hr.payroll.irrf.dependente"]._valor(slip.date_to)
+        for linha in retidos:
+            tp_rend = slip._esocial_tp_rend(linha)
+            tp_cr = self._tp_cr(acc["pagamento"][slip.id], tp_rend)
+            for rel in dedutivel:
+                cpf = self._cpf_parente(rel, _("dependente para IRRF"), erros)
+                if cpf:
+                    self._grupo_cr(acc, tp_cr)["ded"][(tp_rend, cpf)] = valor
+                    acc["usados"] |= rel
+
+    @staticmethod
+    def _linhas_incidencia(slip, cod):
+        return slip.line_ids.filtered(
+            lambda ln: ln.salary_rule_id.l10n_br_esocial_cod_inc_irrf == cod
+            and abs(ln.total) > 0.004
+        )
+
+    def _ir_partes_pensao(self, slip, tp_rend, total, alimentandos, erros):
+        """Reparte o desconto de pensão entre os alimentandos: ``[(parente, valor)]``.
+
+        Um alimentando recebe tudo. Com vários, cada um declara valor fixo e/ou
+        percentual do rendimento bruto (como a regra da folha), e a soma precisa
+        fechar com o descontado.
+        """
+        if len(alimentandos) == 1:
+            return [(alimentandos, total)]
+        bruto = sum(
+            slip.line_ids.filtered(lambda ln: ln.code == "GROSS").mapped("total")
+        )
+        partes = []
+        for rel in alimentandos:
+            fixo = rel.l10n_br_esocial_pensao_valor
+            perc = rel.l10n_br_esocial_pensao_percentual
+            if not (fixo or perc):
+                erros.append(
+                    _(
+                        "Alimentando '%(dep)s' de '%(name)s': informe o valor fixo "
+                        "ou o percentual da pensão (há mais de um alimentando)."
+                    )
+                    % {"dep": rel.name, "name": self.employee_id.name}
+                )
+                return []
+            partes.append((rel, round(fixo + perc / 100.0 * bruto, 2)))
+        soma = sum(valor for _rel, valor in partes)
+        if abs(soma - total) > 0.05:
+            erros.append(
+                _(
+                    "'%(name)s': a pensão dos alimentandos soma %(soma).2f, mas o "
+                    "holerite %(slip)s descontou %(total).2f (tpRend %(rend)s). "
+                    "Acerte o valor ou o percentual de cada alimentando."
+                )
+                % {
+                    "name": self.employee_id.name,
+                    "soma": soma,
+                    "slip": slip.number or slip.display_name,
+                    "total": total,
+                    "rend": tp_rend,
+                }
+            )
+            return []
+        return partes
+
+    def _ir_pensao(self, slip, alimentandos, acc):
+        linhas = self._linhas_desconto(slip, COD_IRRF_PENSAO)
+        totais = OrderedDict()
+        for linha in linhas:
+            tp_rend = slip._esocial_tp_rend(linha)
+            totais[tp_rend] = totais.get(tp_rend, 0.0) + abs(linha.total)
+        if not totais:
+            return
+        if not alimentandos:
             acc["erros"].append(
                 _(
                     "'%(name)s' tem desconto de pensão alimentícia no holerite "
@@ -319,8 +420,21 @@ class ESocialS1210(models.Model):
                     "slip": slip.number or slip.display_name,
                 }
             )
+            return
+        for tp_rend, total in totais.items():
+            tp_cr = self._tp_cr(acc["pagamento"][slip.id], tp_rend)
+            partes = self._ir_partes_pensao(
+                slip, tp_rend, total, alimentandos, acc["erros"]
+            )
+            for rel, valor in partes:
+                cpf = self._cpf_parente(rel, _("pensão alimentícia"), acc["erros"])
+                if cpf:
+                    chave = (tp_rend, cpf)
+                    pen = self._grupo_cr(acc, tp_cr)["pen"]
+                    pen[chave] = pen.get(chave, 0.0) + valor
+                    acc["usados"] |= rel
 
-    def _ir_previdencia(self, pagamento, slip, contrato, acc):
+    def _ir_previdencia(self, slip, contrato, acc):
         for linha in self._linhas_desconto(slip, COD_IRRF_PREV_COMPL):
             cod = linha.salary_rule_id.l10n_br_esocial_cod_inc_irrf
             if cod in COD_IRRF_PREV_PRIVADA:
@@ -336,11 +450,12 @@ class ESocialS1210(models.Model):
                 acc["erros"],
             )
             if cnpj:
-                item = acc["previd"].setdefault(
+                tp_rend = slip._esocial_tp_rend(linha)
+                tp_cr = self._tp_cr(acc["pagamento"][slip.id], tp_rend)
+                item = self._grupo_cr(acc, tp_cr)["previd"].setdefault(
                     (tp_prev, cnpj), {"mensal": 0.0, "decimo": 0.0}
                 )
-                decimo = self._tp_rend(pagamento) == "12"
-                item["decimo" if decimo else "mensal"] += abs(linha.total)
+                item["decimo" if tp_rend == "12" else "mensal"] += abs(linha.total)
 
     def _ir_plano_saude(self, slip, parentes, acc):
         linhas = self._linhas_desconto(slip, COD_IRRF_PLANO_SAUDE, NAT_RUBR_PLANO_SAUDE)
@@ -400,30 +515,34 @@ class ESocialS1210(models.Model):
         """Dados do infoIRComplem (``None`` se nenhum holerite o exige).
 
         Fontes: descontos dos holerites pagos neste evento, classificados pela
-        incidência IRRF da rubrica; dependentes, beneficiário da pensão e
-        valor do plano de saúde por parente, operadora e entidade no contrato.
+        incidência IRRF da rubrica e pelo tipo de rendimento do holerite
+        (``hr.payslip._esocial_tp_rend``); dependentes, alimentandos e valor do
+        plano de saúde por parente, operadora e entidade no contrato.
         """
         self.ensure_one()
         contrato = self.pagamento_ids.mapped("payslip_id.contract_id")[:1]
+        parentes = self.employee_id.relative_ids
+        alimentandos = parentes.filtered("l10n_br_esocial_pensao_alimenticia")
+        dedutivel = parentes.filtered(
+            lambda rel: rel.l10n_br_esocial_tp_dep_id and rel.l10n_br_esocial_dep_irrf
+        )
         acc = {
             "erros": [],
-            "ded_dependentes": OrderedDict(),
-            "pen_alim": OrderedDict(),
-            "previd": OrderedDict(),
+            "cr": OrderedDict(),
+            "pagamento": {
+                pg.payslip_id.id: pg for pg in self.pagamento_ids if pg.payslip_id
+            },
             "tem_plano": False,
             "plano_titular": 0.0,
             "plano_deps": OrderedDict(),
             "usados": self.env["hr.employee.relative"],
         }
-        parentes, pensao = self._parentes_ir(acc["erros"])
-        dedutivel = parentes.filtered(
-            lambda rel: rel.l10n_br_esocial_tp_dep_id and rel.l10n_br_esocial_dep_irrf
-        )
         for pagamento in self.pagamento_ids.filtered("payslip_id"):
             slip = pagamento.payslip_id
-            self._ir_dependentes(pagamento, slip, dedutivel, acc)
-            self._ir_pensao(pagamento, slip, pensao, acc)
-            self._ir_previdencia(pagamento, slip, contrato, acc)
+            self._ir_processos(slip, acc["erros"])
+            self._ir_dependentes(slip, dedutivel, acc)
+            self._ir_pensao(slip, alimentandos, acc)
+            self._ir_previdencia(slip, contrato, acc)
             self._ir_plano_saude(slip, parentes, acc)
         cnpj_oper = None
         if acc["tem_plano"]:
@@ -435,12 +554,12 @@ class ESocialS1210(models.Model):
             )
         if acc["erros"]:
             raise UserError("\n".join(dict.fromkeys(acc["erros"])))
-        if not (
-            acc["ded_dependentes"]
-            or acc["pen_alim"]
-            or acc["previd"]
-            or acc["tem_plano"]
-        ):
+        grupos = OrderedDict(
+            (cr, g)
+            for cr, g in acc["cr"].items()
+            if g["ded"] or g["pen"] or g["previd"]
+        )
+        if not (grupos or acc["tem_plano"]):
             return None
         plano = None
         if acc["tem_plano"]:
@@ -451,17 +570,37 @@ class ESocialS1210(models.Model):
                 "dependentes": acc["plano_deps"],
             }
         return {
-            "tp_cr": self._tp_cr(),
             "info_dep": self._ir_info_dep(acc["usados"]),
-            "ded_dependentes": acc["ded_dependentes"],
-            "pen_alim": acc["pen_alim"],
-            "previd": acc["previd"],
+            "cr": grupos,
             "plano": plano,
         }
 
     @staticmethod
     def _valor(numero):
         return "%.2f" % numero
+
+    def _xml_info_ir_cr(self, grupo, tp_cr, dados):
+        filho = self._filho
+        cr = filho(grupo, "infoIRCR")
+        filho(cr, "tpCR", tp_cr)
+        for (tp_rend, cpf), valor in dados["ded"].items():
+            el = filho(cr, "dedDepen")
+            filho(el, "tpRend", tp_rend)
+            filho(el, "cpfDep", cpf)
+            filho(el, "vlrDedDep", self._valor(valor))
+        for (tp_rend, cpf), valor in dados["pen"].items():
+            el = filho(cr, "penAlim")
+            filho(el, "tpRend", tp_rend)
+            filho(el, "cpfDep", cpf)
+            filho(el, "vlrDedPenAlim", self._valor(valor))
+        for (tp_prev, cnpj), valores in dados["previd"].items():
+            el = filho(cr, "previdCompl")
+            filho(el, "tpPrev", tp_prev)
+            filho(el, "cnpjEntidPC", cnpj)
+            if valores["mensal"]:
+                filho(el, "vlrDedPC", self._valor(valores["mensal"]))
+            if valores["decimo"]:
+                filho(el, "vlrDedPC13", self._valor(valores["decimo"]))
 
     def _xml_info_ir_complem(self, ide_benef, ir):
         """Acrescenta o ``infoIRComplem`` ao ``ideBenef`` (ordem do XSD)."""
@@ -474,27 +613,8 @@ class ESocialS1210(models.Model):
             filho(el, "nome", dep["nome"])
             # depIRRF só admite "S" (TS_depIRRF_IR): quem só recebe pensão ou
             # plano de saúde não é dependente para dedução e fica sem ele.
-        if ir["ded_dependentes"] or ir["pen_alim"] or ir["previd"]:
-            cr = filho(grupo, "infoIRCR")
-            filho(cr, "tpCR", ir["tp_cr"])
-            for (tp_rend, cpf), valor in ir["ded_dependentes"].items():
-                el = filho(cr, "dedDepen")
-                filho(el, "tpRend", tp_rend)
-                filho(el, "cpfDep", cpf)
-                filho(el, "vlrDedDep", self._valor(valor))
-            for (tp_rend, cpf), valor in ir["pen_alim"].items():
-                el = filho(cr, "penAlim")
-                filho(el, "tpRend", tp_rend)
-                filho(el, "cpfDep", cpf)
-                filho(el, "vlrDedPenAlim", self._valor(valor))
-            for (tp_prev, cnpj), valores in ir["previd"].items():
-                el = filho(cr, "previdCompl")
-                filho(el, "tpPrev", tp_prev)
-                filho(el, "cnpjEntidPC", cnpj)
-                if valores["mensal"]:
-                    filho(el, "vlrDedPC", self._valor(valores["mensal"]))
-                if valores["decimo"]:
-                    filho(el, "vlrDedPC13", self._valor(valores["decimo"]))
+        for tp_cr, dados in ir["cr"].items():
+            self._xml_info_ir_cr(grupo, tp_cr, dados)
         plano = ir["plano"]
         if plano:
             el = filho(grupo, "planSaude")
