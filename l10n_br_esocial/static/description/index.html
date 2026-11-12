@@ -431,6 +431,13 @@ Regra antiga que ainda guarda um código expirado mostra um aviso na aba
 eSocial e o S-1010 recusa a geração até a incidência ser trocada. Para listar
 as regras nessa situação, filtre por <tt class="docutils literal">l10n_br_esocial_cod_inc_irrf_expirado</tt>
 (campo calculado, pesquisável).</li>
+<li>Regra de <strong>vencimento</strong> (tipo de rubrica 1) sem <strong>Incidência IRRF</strong> não gera o
+S-1010: o 09 tiraria o rendimento da base de IRRF e o governo aceitaria o
+evento sem aviso. A geração é recusada, com a lista das regras, até a escolha
+explícita: 11 a 14 (tributável), 70 a 79 ou 700 a 704 (isento) ou 09. Desconto
+e informativa continuam saindo com o 09. As regras padrão do
+<tt class="docutils literal">l10n_br_hr_payroll</tt> não trazem dados eSocial; preencha a incidência ao
+configurar cada rubrica.</li>
 <li>O <strong>Código Rubrica eSocial</strong> identifica a rubrica. Regras de estruturas
 diferentes (mensal, férias, 13º, rescisão) podem repetir o código desde que
 tenham a mesma natureza, o mesmo tipo e as mesmas incidências; com definição

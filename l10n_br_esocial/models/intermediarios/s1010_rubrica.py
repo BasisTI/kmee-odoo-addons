@@ -44,6 +44,8 @@ class ESocialS1010(models.Model):
         Regras de estruturas diferentes (mensal, férias, 13º, rescisão) repetem
         o código eSocial; o governo recusa a rubrica declarada duas vezes.
         """
+        if operacao in ("inclusao", "alteracao"):
+            regras.filtered("l10n_br_esocial_cod_rubr")._esocial_check_irrf_vencimento()
         criados = self.browse()
         vistos = set()
         company = self.env.company
@@ -116,6 +118,9 @@ class ESocialS1010(models.Model):
             )
         if not rule.l10n_br_esocial_tp_rubr:
             raise UserError(f"Regra '{rule.name}' não possui Tipo de Rubrica eSocial.")
+
+        if self.operacao in ("inclusao", "alteracao"):
+            rule._esocial_check_irrf_vencimento()
 
         ide = self._get_ide_empregador()
         proc = self._get_proc_info()
