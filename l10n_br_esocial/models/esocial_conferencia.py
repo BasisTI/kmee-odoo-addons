@@ -156,7 +156,11 @@ class ESocialConferencia(models.Model):
         return dominio
 
     def _buscar_payslips(self):
-        """Holerites confirmados da competência (fonte da folha calculada)."""
+        """Holerites confirmados e em vigor da competência (folha calculada).
+
+        O par estornado (estorno e original) fica de fora: se anula e somar
+        qualquer dos dois distorceria a conferência.
+        """
         self.ensure_one()
         if not self.per_apur:
             return self.env["hr.payslip"]
@@ -172,6 +176,7 @@ class ESocialConferencia(models.Model):
             [
                 ("company_id", "=", self.company_id.id),
                 ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("date_from", ">=", inicio),
                 ("date_from", "<=", fim),
             ]

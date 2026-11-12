@@ -102,6 +102,13 @@ class ESocialEvento(models.Model):
         ondelete="set null",
         help="Preenchido nos eventos S-3000: aponta o evento que a exclusão " "desfaz.",
     )
+    evento_retificado_id = fields.Many2one(
+        "l10n_br.esocial.evento",
+        string="Evento Retificado",
+        ondelete="set null",
+        help="Preenchido nos retificadores (indRetif=2): aponta o evento aceito "
+        "que este substitui.",
+    )
     exclusao_evento_id = fields.One2many(
         "l10n_br.esocial.evento",
         "evento_excluido_id",
@@ -160,6 +167,7 @@ class ESocialEvento(models.Model):
             if retorno_xml:
                 rec._consumir_totalizadores(retorno_xml)
             rec._propagar_exclusao()
+            rec._propagar_retificacao()
 
     def _consumir_totalizadores(self, retorno_xml):
         """Persiste os totalizadores devolvidos no retorno deste evento."""
@@ -180,6 +188,18 @@ class ESocialEvento(models.Model):
                 "Evento excluído no eSocial pelo S-3000 %(nome)s "
                 "(recibo %(recibo)s)."
             )
+            % {"nome": self.name, "recibo": self.nr_recibo or _("sem recibo")}
+        )
+
+    def _propagar_retificacao(self):
+        """Marca como retificado o evento que um retificador aceito substituiu."""
+        self.ensure_one()
+        retificado = self.evento_retificado_id
+        if self.ind_retif != "2" or not retificado or retificado.state != "success":
+            return
+        retificado.write({"state": "rectified"})
+        retificado.message_post(
+            body=_("Evento retificado no eSocial por %(nome)s (recibo %(recibo)s).")
             % {"nome": self.name, "recibo": self.nr_recibo or _("sem recibo")}
         )
 

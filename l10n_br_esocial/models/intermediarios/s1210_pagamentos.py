@@ -101,6 +101,14 @@ class ESocialS1210(models.Model):
         help="Recibo do S-1210 a ser retificado. Obrigatório quando o "
         "Indicativo de Retificação for 'Retificação'.",
     )
+    evento_retificado_id = fields.Many2one(
+        "l10n_br.esocial.evento",
+        string="Evento Retificado",
+        readonly=True,
+        copy=False,
+        help="Evento aceito que este retificador substitui. Quando o "
+        "retificador é aceito, o evento retificado passa a 'Retificado'.",
+    )
     pagamento_ids = fields.One2many(
         "l10n_br.esocial.s1210.pagamento",
         "s1210_id",
@@ -143,6 +151,9 @@ class ESocialS1210(models.Model):
     def _get_event_type(self):
         return "S-1210"
 
+    def _esocial_slips(self):
+        return self.pagamento_ids.payslip_id
+
     def _prepare_evento_vals(self, xml, id_evento):
         vals = super()._prepare_evento_vals(xml, id_evento)
         vals.update(
@@ -150,6 +161,7 @@ class ESocialS1210(models.Model):
                 "per_apur": self.per_apur,
                 "ind_retif": self.ind_retif,
                 "operacao": "R" if self.ind_retif == "2" else "I",
+                "evento_retificado_id": self.evento_retificado_id.id,
             }
         )
         return vals

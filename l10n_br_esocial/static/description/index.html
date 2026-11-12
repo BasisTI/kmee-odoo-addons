@@ -622,6 +622,18 @@ rescisão, o indicativo é <tt class="docutils literal">S</tt> só quando a folh
 indenizado (sem justa causa ou acordo), e <tt class="docutils literal">dtProjFimAPI</tt> é o desligamento mais
 os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
 <tt class="docutils literal">S</tt> exige a data projetada, igual ou posterior ao desligamento.</p>
+<p>Holerite estornado: o estorno (Devolução) e o holerite que ele desfez ficam
+fora de vigor e não vão ao eSocial: a geração do S-1200, do S-1210 e do S-2299
+e a conferência da competência os ignoram e usam o holerite novo. O holerite
+estornado que já tem S-1200 ou S-1210 gerado mostra o aviso <strong>eSocial a
+retificar</strong>. Ao gerar o S-1200 (e o S-1210, quando o pagamento cai no mesmo mês)
+do holerite novo, o módulo gera o <strong>retificador</strong> (<tt class="docutils literal">indRetif</tt> = 2) com o recibo
+do evento aceito do estornado, levando também os holerites que continuam em
+vigor naquele evento; quando o retificador é aceito, o evento anterior passa a
+<strong>Retificado</strong>. Se o evento do estornado ainda não foi aceito (sem recibo), a
+geração espera o retorno do lote. Estorno sem holerite novo, ou pagamento do
+novo em outro mês, não se retifica sozinho: exclua o evento por S-3000 ou
+retifique o S-1210 daquele mês manualmente.</p>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
