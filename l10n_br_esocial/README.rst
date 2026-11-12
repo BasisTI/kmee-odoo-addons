@@ -72,6 +72,13 @@ Ambiente de transmissão (trava de produção):
 
 Rubricas (S-1010 e S-1200):
 
+#. Regra sem **Incidência IRRF** sai no S-1010 com o código 09 (verba que não é
+   rendimento, retenção, isenção nem dedução de IRRF); o 00 expirou em 30/06/2021.
+   Regra antiga que ainda guarda um código expirado mostra um aviso na aba
+   eSocial e o S-1010 recusa a geração até a incidência ser trocada. Para listar
+   as regras nessa situação, filtre por ``l10n_br_esocial_cod_inc_irrf_expirado``
+   (campo calculado, pesquisável).
+
 #. O **Código Rubrica eSocial** identifica a rubrica. Regras de estruturas
    diferentes (mensal, férias, 13º, rescisão) podem repetir o código desde que
    tenham a mesma natureza, o mesmo tipo e as mesmas incidências; com definição

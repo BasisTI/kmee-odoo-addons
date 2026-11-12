@@ -15,6 +15,7 @@ from odoo.tests.common import TransactionCase
 from odoo.tools import file_path
 
 from odoo.addons.l10n_br_esocial.models.hr_salary_rule import (
+    COD_INC_IRRF_EXPIRADOS,
     ESOCIAL_COD_INC_CP,
     ESOCIAL_COD_INC_FGTS,
     ESOCIAL_COD_INC_IRRF,
@@ -50,31 +51,50 @@ def diferencas(encontrado, esperado):
     return problemas
 
 
+def diferencas_de_lista(encontrado, esperado):
+    """Como ``diferencas``, para listas ``[(código, valor)]``: acusa também código
+    repetido e ordem diferente da do leiaute (``dict`` esconderia os dois)."""
+    problemas = []
+    codigos = [c for c, _v in encontrado]
+    for codigo in sorted({c for c in codigos if codigos.count(c) > 1}):
+        problemas.append(f"código {codigo} repetido")
+    problemas += diferencas(dict(encontrado), dict(esperado))
+    comuns = {c for c, _v in esperado}
+    ordem_encontrada = [c for c in dict.fromkeys(codigos) if c in comuns]
+    ordem_esperada = [c for c, _v in esperado if c in set(ordem_encontrada)]
+    if ordem_encontrada != ordem_esperada:
+        problemas.append(
+            f"ordem diferente do leiaute: módulo {ordem_encontrada}, "
+            f"leiaute {ordem_esperada}"
+        )
+    return problemas
+
+
 def _esperado_selecao(linhas):
-    return {c: _rotulo(c, g, d) for c, g, d in linhas}
+    return [(c, _rotulo(c, g, d)) for c, g, d in linhas]
 
 
 def _esperado_irrf_selecao():
-    return {
-        _chave_irrf(c): _rotulo(_chave_irrf(c), g, d)
+    return [
+        (_chave_irrf(c), _rotulo(_chave_irrf(c), g, d))
         for c, g, d, _inicio, fim in leiaute_s13.INCIDENCIA_IRRF
         if not fim
-    }
+    ]
 
 
 class TestTabelasIncidencia(TransactionCase):
     def test_selecao_inss(self):
         self.assertEqual(
-            diferencas(
-                dict(ESOCIAL_COD_INC_CP), _esperado_selecao(leiaute_s13.INCIDENCIA_CP)
+            diferencas_de_lista(
+                ESOCIAL_COD_INC_CP, _esperado_selecao(leiaute_s13.INCIDENCIA_CP)
             ),
             [],
         )
 
     def test_selecao_fgts(self):
         self.assertEqual(
-            diferencas(
-                dict(ESOCIAL_COD_INC_FGTS),
+            diferencas_de_lista(
+                ESOCIAL_COD_INC_FGTS,
                 _esperado_selecao(leiaute_s13.INCIDENCIA_FGTS),
             ),
             [],
@@ -82,7 +102,7 @@ class TestTabelasIncidencia(TransactionCase):
 
     def test_selecao_irrf_so_codigos_vigentes(self):
         self.assertEqual(
-            diferencas(dict(ESOCIAL_COD_INC_IRRF), _esperado_irrf_selecao()), []
+            diferencas_de_lista(ESOCIAL_COD_INC_IRRF, _esperado_irrf_selecao()), []
         )
 
     def test_campos_da_regra_usam_as_listas(self):
@@ -161,7 +181,7 @@ class TestTabelasIncidencia(TransactionCase):
 
     def test_o_teste_acusa_diferenca(self):
         """Código a mais, a menos e descrição divergente são apontados."""
-        esperado = _esperado_selecao(leiaute_s13.INCIDENCIA_FGTS)
+        esperado = dict(_esperado_selecao(leiaute_s13.INCIDENCIA_FGTS))
         adulterado = dict(esperado)
         adulterado.pop("31")
         adulterado["99"] = "99 - Inventado"
@@ -171,3 +191,28 @@ class TestTabelasIncidencia(TransactionCase):
         self.assertTrue(any("falta o código 31" in p for p in problemas))
         self.assertTrue(any("código 99 a mais" in p for p in problemas))
         self.assertTrue(any("código 21 diverge" in p for p in problemas))
+
+    def test_o_teste_acusa_duplicata_e_ordem(self):
+        """Código repetido e ordem trocada, que o ``dict`` esconde, são apontados."""
+        esperado = _esperado_selecao(leiaute_s13.INCIDENCIA_FGTS)
+        repetido = esperado + [esperado[0]]
+        problemas = diferencas_de_lista(repetido, esperado)
+        self.assertEqual(problemas, [f"código {esperado[0][0]} repetido"])
+        trocado = list(esperado)
+        trocado[1], trocado[2] = trocado[2], trocado[1]
+        problemas = diferencas_de_lista(trocado, esperado)
+        self.assertEqual(len(problemas), 1)
+        self.assertIn("ordem diferente", problemas[0])
+
+    def test_codigos_irrf_expirados_sao_os_da_tabela_21(self):
+        """A lista de expirados do módulo e da migração é a da Tabela 21."""
+        expirados = {
+            _chave_irrf(c) for c, _g, _d, _i, fim in leiaute_s13.INCIDENCIA_IRRF if fim
+        }
+        self.assertEqual(set(COD_INC_IRRF_EXPIRADOS), expirados)
+        self.assertFalse(expirados & {c for c, _ in ESOCIAL_COD_INC_IRRF})
+        caminho = file_path("l10n_br_esocial/migrations/18.0.1.5.0/post-migration.py")
+        spec = importlib.util.spec_from_file_location("migracao_tg125", caminho)
+        migracao = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migracao)
+        self.assertEqual(set(migracao.EXPIRADOS), expirados)
