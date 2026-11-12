@@ -102,6 +102,13 @@ class ESocialEvento(models.Model):
         ondelete="set null",
         help="Preenchido nos eventos S-3000: aponta o evento que a exclusão " "desfaz.",
     )
+    evento_retificado_id = fields.Many2one(
+        "l10n_br.esocial.evento",
+        string="Evento Retificado",
+        ondelete="set null",
+        help="Preenchido nos retificadores (indRetif=2): aponta o evento aceito "
+        "que este substitui.",
+    )
     exclusao_evento_id = fields.One2many(
         "l10n_br.esocial.evento",
         "evento_excluido_id",
@@ -129,10 +136,33 @@ class ESocialEvento(models.Model):
                 parts.append(rec.id_evento)
             rec.name = " - ".join(parts)
 
+    def _esocial_slips_origem(self):
+        """Holerites que o evento declara (pelo intermediário de origem)."""
+        self.ensure_one()
+        if not self.origem_model or self.origem_model not in self.env:
+            return self.env["hr.payslip"]
+        origem = self.env[self.origem_model].browse(self.origem_id).exists()
+        if not origem or not hasattr(origem, "_esocial_slips"):
+            return self.env["hr.payslip"]
+        return origem._esocial_slips()
+
     def action_validate(self):
         for rec in self:
             if rec.state != "draft":
                 raise UserError(_("Apenas eventos em rascunho podem ser validados."))
+            fora = rec._esocial_slips_origem().filtered("l10n_br_fora_de_vigor")
+            if fora:
+                raise UserError(
+                    _(
+                        "O evento %(nome)s declara holerite fora de vigor (estorno "
+                        "ou estornado): %(slips)s. Descarte-o e gere o evento do "
+                        "holerite que o substitui."
+                    )
+                    % {
+                        "nome": rec.name,
+                        "slips": ", ".join(fora.mapped(lambda s: s.number or s.name)),
+                    }
+                )
             rec.state = "validated"
 
     def action_reset_draft(self):
@@ -160,6 +190,7 @@ class ESocialEvento(models.Model):
             if retorno_xml:
                 rec._consumir_totalizadores(retorno_xml)
             rec._propagar_exclusao()
+            rec._propagar_retificacao()
 
     def _consumir_totalizadores(self, retorno_xml):
         """Persiste os totalizadores devolvidos no retorno deste evento."""
@@ -180,6 +211,18 @@ class ESocialEvento(models.Model):
                 "Evento excluído no eSocial pelo S-3000 %(nome)s "
                 "(recibo %(recibo)s)."
             )
+            % {"nome": self.name, "recibo": self.nr_recibo or _("sem recibo")}
+        )
+
+    def _propagar_retificacao(self):
+        """Marca como retificado o evento que um retificador aceito substituiu."""
+        self.ensure_one()
+        retificado = self.evento_retificado_id
+        if self.ind_retif != "2" or not retificado or retificado.state != "success":
+            return
+        retificado.write({"state": "rectified"})
+        retificado.message_post(
+            body=_("Evento retificado no eSocial por %(nome)s (recibo %(recibo)s).")
             % {"nome": self.name, "recibo": self.nr_recibo or _("sem recibo")}
         )
 
@@ -216,6 +259,7 @@ class ESocialEvento(models.Model):
                 body=_("Estado forçado manualmente para SUCESSO por %(user)s.")
                 % {"user": self.env.user.name}
             )
+            rec._propagar_retificacao()
             _logger.info(
                 "eSocial evento %s: estado forçado para 'success' por %s (uid=%s).",
                 rec.id,

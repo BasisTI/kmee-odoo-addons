@@ -143,6 +143,9 @@ class ESocialS1210(models.Model):
     def _get_event_type(self):
         return "S-1210"
 
+    def _esocial_slips(self):
+        return self.pagamento_ids.payslip_id
+
     def _prepare_evento_vals(self, xml, id_evento):
         vals = super()._prepare_evento_vals(xml, id_evento)
         vals.update(

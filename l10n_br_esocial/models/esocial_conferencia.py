@@ -147,16 +147,25 @@ class ESocialConferencia(models.Model):
 
     def _dominio_totalizador(self, tipo=None):
         self.ensure_one()
+        # Só o totalizador do evento vigente: o do evento retificado ou excluído
+        # foi substituído pelo do retificador e somar os dois contaria em dobro.
         dominio = [
             ("company_id", "=", self.company_id.id),
             ("per_apur", "=", self.per_apur),
+            "|",
+            ("evento_id", "=", False),
+            ("evento_id.state", "not in", ("rectified", "excluded")),
         ]
         if tipo:
             dominio.append(("tipo", "=", tipo))
         return dominio
 
     def _buscar_payslips(self):
-        """Holerites confirmados da competência (fonte da folha calculada)."""
+        """Holerites confirmados e em vigor da competência (folha calculada).
+
+        O par estornado (estorno e original) fica de fora: se anula e somar
+        qualquer dos dois distorceria a conferência.
+        """
         self.ensure_one()
         if not self.per_apur:
             return self.env["hr.payslip"]
@@ -172,6 +181,7 @@ class ESocialConferencia(models.Model):
             [
                 ("company_id", "=", self.company_id.id),
                 ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("date_from", ">=", inicio),
                 ("date_from", "<=", fim),
             ]

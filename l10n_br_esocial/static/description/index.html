@@ -622,6 +622,27 @@ rescisão, o indicativo é <tt class="docutils literal">S</tt> só quando a folh
 indenizado (sem justa causa ou acordo), e <tt class="docutils literal">dtProjFimAPI</tt> é o desligamento mais
 os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
 <tt class="docutils literal">S</tt> exige a data projetada, igual ou posterior ao desligamento.</p>
+<p>Holerite estornado: o estorno (Devolução) e o holerite que ele desfez ficam
+fora de vigor e não vão ao eSocial: a geração do S-1200, do S-1210 e do S-2299
+e a conferência da competência (holerites e totalizadores) os ignoram e usam o
+holerite novo. O holerite estornado que já tem S-1200, S-1210 ou S-2299 gerado
+mostra o aviso <strong>eSocial a retificar</strong> (filtro e menu <em>Holerites a retificar</em>).</p>
+<p>Fluxo (MOS S-1.3, cap. I item 15.2 e S-1200 item 31):</p>
+<ol class="arabic simple">
+<li>Se há <strong>S-1210 transmitido</strong> referenciando o S-1200 do estornado, exclua-o
+antes por S-3000 (o eSocial só aceita o retificador depois); a geração do
+S-1200 retificador recusa até lá.</li>
+<li>Gere o S-1200 do holerite novo: sai o <strong>retificador</strong> (<tt class="docutils literal">indRetif</tt> = 2) com
+o recibo do evento aceito do estornado, levando também os holerites que
+continuam em vigor naquele evento. Quando o retificador é aceito (ou forçado
+como sucesso), o evento anterior passa a <strong>Retificado</strong>.</li>
+<li>Reenvie o S-1210 (selecione de novo os holerites pagos): sai como original.</li>
+</ol>
+<p>Se o evento do estornado ainda não foi aceito (sem recibo), a geração espera o
+retorno do lote. Evento em rascunho/validado do estornado volta a rascunho, sai
+do lote e não pode ser validado. Competência fechada (S-1299 sem S-1298 depois)
+recusa a geração. Estorno sem holerite novo, ou S-2299 de rescisão estornada
+(o módulo não gera retificador de S-2299): exclua o evento por S-3000.</p>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
