@@ -12,6 +12,7 @@ from lxml import etree
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
 
 from .common import HAS_ESOCIALLIB, RECIBO_S1200, ESocialCicloCommon
 
@@ -526,7 +527,9 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
                 for tp in antigos
             ]
         )
-        modulo.migrate(self.env.cr, "18.0.1.3.0")
+        # a migração avisa no log (WARNING) que renumerou: esperado aqui
+        with mute_logger("mig_tp_pgto"):
+            modulo.migrate(self.env.cr, "18.0.1.3.0")
         pagamentos.invalidate_recordset()
         self.assertEqual(
             {p.ide_dm_dev[-1]: p.tp_pgto for p in pagamentos},
