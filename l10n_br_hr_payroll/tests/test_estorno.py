@@ -40,7 +40,7 @@ class TestEstornoHolerite(PayrollCommon):
             self._get_line_total(estorno, "NET"), self._get_line_total(original, "NET")
         )
 
-    def test_par_fica_fora_de_vigor_e_volta_se_o_estorno_cancela(self):
+    def test_par_fica_fora_de_vigor_enquanto_o_estorno_existe(self):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00)
         original = self._confirmado(contract)
@@ -48,8 +48,26 @@ class TestEstornoHolerite(PayrollCommon):
         estorno = self._estornar(original)
         self.assertTrue(original.l10n_br_fora_de_vigor)
         self.assertTrue(estorno.l10n_br_fora_de_vigor)
-        estorno.write({"state": "cancel"})
-        self.assertFalse(original.l10n_br_fora_de_vigor)
+
+    def test_estorno_nao_pode_ser_cancelado(self):
+        """TG-90#P2: nem pela ação, nem pela gravação do estado, nem liberado."""
+        self.env["ir.config_parameter"].sudo().set_param(
+            "payroll.allow_cancel_payslips", "True"
+        )
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3000.00)
+        original = self._confirmado(contract)
+        estorno = self._estornar(original)
+        with self.assertRaises(UserError):
+            estorno.action_payslip_cancel()
+        with self.assertRaises(UserError):
+            estorno.write({"state": "cancel"})
+        self.assertEqual(estorno.state, "done")
+        self.assertTrue(original.l10n_br_fora_de_vigor)
+        # O holerite comum continua cancelável com a opção ligada.
+        outro = self._confirmado(contract, de=date(2024, 4, 1), ate=date(2024, 4, 30))
+        outro.action_payslip_cancel()
+        self.assertEqual(outro.state, "cancel")
 
     def test_media_ignora_o_par_estornado(self):
         emp = self._create_employee()

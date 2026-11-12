@@ -132,7 +132,9 @@ holerites. O período aceita então um holerite novo, calculado do zero.
 * Estornar muda a participação do original: holerites dependentes (DSR da
   semana, férias, rescisão) em rascunho são recalculados; confirmado recusa o
   estorno até voltar a rascunho, como em qualquer outra alteração.
-* Cancelar o estorno devolve a vigência ao original.
+* O holerite de estorno **não pode ser cancelado** (mesmo com o cancelamento de
+  holerites liberado em *Folha de pagamento*): quem errou o estorno calcula um
+  holerite novo no período, que agora aceita.
 * Os eventos do eSocial já gerados (S-1200 e semelhantes) **não** são
   retificados pelo estorno: isso fica para o usuário.
 

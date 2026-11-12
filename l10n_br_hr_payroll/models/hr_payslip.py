@@ -76,7 +76,7 @@ class HrPayslip(models.Model):
         help="Marca o holerite de estorno (devolução) e o holerite original "
         "que tem um estorno em vigor: o par se anula e nenhum dos dois conta "
         "para período duplicado, DSR, médias, salário já pago ou integridade "
-        "entre holerites. Se o estorno é cancelado, o original volta a valer.",
+        "entre holerites. O estorno não pode ser cancelado.",
     )
 
     @api.depends("l10n_br_estorno", "refunded_id", "refunded_id.state")
@@ -351,7 +351,24 @@ class HrPayslip(models.Model):
             l10n_br_dsr_reconciliando=True
         ).compute_sheet()
 
+    def _l10n_br_recusar_cancelar_estorno(self):
+        estornos = self.filtered("l10n_br_estorno")
+        if estornos:
+            raise UserError(
+                _(
+                    "O holerite de estorno %(estornos)s não pode ser cancelado: "
+                    "quem errou o estorno calcula um holerite novo.",
+                    estornos=", ".join(estornos.mapped(lambda r: r.number or r.name)),
+                )
+            )
+
+    def action_payslip_cancel(self):
+        self._l10n_br_recusar_cancelar_estorno()
+        return super().action_payslip_cancel()
+
     def write(self, vals):
+        if vals.get("state") == "cancel":
+            self._l10n_br_recusar_cancelar_estorno()
         if (
             not self
             or self.env.context.get("l10n_br_dsr_em_compute")
