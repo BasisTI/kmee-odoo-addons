@@ -181,7 +181,7 @@ class HrPayslip(models.Model):
         for slip in self:
             valor, tipo = 0.0, None
             if slip.state != "cancel":
-                if slip.struct_id.code in self._L10N_BR_STRUCT_CODES_MENSAIS:
+                if slip._l10n_br_eh_mensal():
                     tipo = "mensal"
                     valor = sum(
                         ln.total
@@ -232,7 +232,7 @@ class HrPayslip(models.Model):
                 if tipo == "ferias":
                     mensais |= self.search(
                         dominio
-                        + [("struct_id.code", "in", self._L10N_BR_STRUCT_CODES_MENSAIS)]
+                        + [("struct_id", "in", self._l10n_br_estruturas_mensais().ids)]
                     )
         dependentes = (mensais | rescisoes) - self
         fechados = dependentes.filtered(lambda r: r.state not in ("draft", "verify"))
@@ -303,10 +303,7 @@ class HrPayslip(models.Model):
         self.ensure_one()
         if not self.date_from or not self.date_to or not contract:
             return periodos
-        if (
-            self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS
-            and self.struct_id.code != "RESCISAO"
-        ):
+        if not self._l10n_br_eh_mensal() and self.struct_id.code != "RESCISAO":
             return periodos
         recibos = self.env["hr.payslip"].search(
             [
@@ -339,7 +336,7 @@ class HrPayslip(models.Model):
         self.ensure_one()
         if not self.date_from or not self.date_to or not contract:
             return base, retido
-        if self.struct_id.code not in self._L10N_BR_STRUCT_CODES_MENSAIS:
+        if not self._l10n_br_eh_mensal():
             return base, retido
         recibos = self.env["hr.payslip"].search(
             [
@@ -714,8 +711,7 @@ class HrPayslipLine(models.Model):
 
     def unlink(self):
         slips = self.mapped("slip_id").filtered(
-            lambda s: s.struct_id.code in s._L10N_BR_STRUCT_CODES_MENSAIS
-            or s.struct_id.code == "FERIAS"
+            lambda s: s._l10n_br_eh_mensal() or s.struct_id.code == "FERIAS"
         )
         if not slips or self.env.context.get("l10n_br_em_compute"):
             # compute_sheet(): a conferência é do próprio compute_sheet.

@@ -35,6 +35,15 @@ vai de segunda a domingo.
   traz a primeira falta dela.
 * Falta justificada não entra na contagem.
 
+**Estrutura mensal e médias**
+
+As médias de férias, 13º e rescisão (e o salário já pago, que a rescisão não paga
+de novo) leem os holerites das estruturas *mensais*. Mensal é a estrutura que tem
+a rubrica ``SALARIO_BASE`` (categoria BASIC) e nenhuma rubrica de férias, 13º ou
+rescisão (``FERIAS``, ``ADIANTAMENTO_13``, ``DECIMO_TERCEIRO_BRUTO``,
+``SALDO_SALARIO``). Vale pelas rubricas, não pelo código: uma estrutura própria
+(como a ``CLT_BASIS``) entra sem cadastro.
+
 **Reflexo no DSR de horas extras e adicional noturno**
 
 As horas extras e o adicional noturno do mês refletem no repouso semanal
