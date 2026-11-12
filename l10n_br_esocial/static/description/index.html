@@ -568,6 +568,21 @@ Previdenciário</strong> (<tt class="docutils literal">l10n_br_afastamento_inss<
 trabalho (S-2230 de motivo 01 no mesmo início) não soma com doença comum.
 Os demais motivos (maternidade, férias, licença remunerada etc.) não têm o
 limite de 15 dias.</li>
+<li><strong>Mesmo motivo do afastamento anterior</strong> (<tt class="docutils literal">infoMesmoMtv</tt>, leiaute S-1.3,
+início a partir de 26/10/2026, só motivos 01 e 03): quando há outro
+afastamento do mesmo motivo do empregado nos 60 dias anteriores ao início, o
+evento informa <strong>S</strong> (mesma doença/acidente) ou <strong>N</strong>. O afastamento do Odoo
+não tem CID, então o usuário preenche o campo <strong>Mesmo motivo do afastamento
+anterior</strong> (<tt class="docutils literal">info_mesmo_mtv</tt>) no S-2230; vazio, o evento é recusado com
+mensagem clara. Sem anterior na janela, o campo não é exigido (<tt class="docutils literal">S</tt> não vai,
+só <tt class="docutils literal">N</tt>), e fora dos motivos 01/03 ou antes da data de vigência ele não vai
+no XML (com aviso no log). O anterior conta por contrato e por motivo
+(acidente e doença não são anteriores um do outro); o término dele vem do
+próprio S-2230, do S-2230 só de término que o segue ou do afastamento
+registrado. Doença anterior sem S-2230 só conta quando era de informação
+obrigatória. Se o anterior não foi informado ao eSocial, use <tt class="docutils literal">N</tt>. A ação
+<tt class="docutils literal">action_gerar_recaida_pendente</tt> recebe <tt class="docutils literal">info_mesmo_mtv</tt> e recusa sem ele
+quando algum pendente exige o campo.</li>
 </ol>
 <p>Pagamentos e informe de rendimentos (S-1210, leiaute S-1.3 - evtPgtos):</p>
 <p>O <tt class="docutils literal">infoIRComplem</tt> (que substitui a DIRF) só sai quando algum holerite pago
