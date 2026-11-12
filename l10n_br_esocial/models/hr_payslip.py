@@ -1,8 +1,6 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from datetime import timedelta
-
 from odoo import _, fields, models
 from odoo.exceptions import UserError
 
@@ -27,47 +25,6 @@ class HrPayslip(models.Model):
         "do S-1210: a competência do evento de pagamento vem desta data, não "
         "da competência da folha.",
     )
-
-    def _esocial_proporcao_maternidade(self):
-        """Fração do salário do holerite que é de licença-maternidade (0..1).
-
-        Conta os dias do período cobertos por licença aprovada de tipo
-        "Licença-maternidade (eSocial)". Mês comercial de 30 dias: mês inteiro
-        em licença é 1; nos demais casos, dias de licença / dias do período
-        (teto 1).
-        """
-        self.ensure_one()
-        if not self.date_from or not self.date_to:
-            return 0.0
-        leaves = (
-            self.env["hr.leave"]
-            .sudo()
-            .search(
-                [
-                    ("employee_id", "=", self.employee_id.id),
-                    ("state", "=", "validate"),
-                    (
-                        "holiday_status_id.l10n_br_esocial_salario_maternidade",
-                        "=",
-                        True,
-                    ),
-                    ("request_date_from", "<=", self.date_to),
-                    ("request_date_to", ">=", self.date_from),
-                ]
-            )
-        )
-        dias = set()
-        for leave in leaves:
-            inicio = max(leave.request_date_from, self.date_from)
-            fim = min(leave.request_date_to, self.date_to)
-            for n in range((fim - inicio).days + 1):
-                dias.add(inicio + timedelta(days=n))
-        if not dias:
-            return 0.0
-        total_periodo = (self.date_to - self.date_from).days + 1
-        if len(dias) >= total_periodo:
-            return 1.0
-        return min(len(dias) / min(total_periodo, 30), 1.0)
 
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""

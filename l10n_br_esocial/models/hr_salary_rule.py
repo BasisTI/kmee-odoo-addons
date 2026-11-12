@@ -384,7 +384,6 @@ ESOCIAL_COD_INC_FGTS = [
 # e tem natureza própria (4050 mensal, 4051 13º), nunca a 1000 de salário comum.
 COD_INC_CP_MATERNIDADE = ("21", "22", "25", "26")
 NATUREZAS_SALARIO_COMUM = ("1000",)
-NATUREZAS_SALARIO_MATERNIDADE = ("4050", "4051")
 
 # Campos que definem a rubrica no S-1010: regras com o mesmo código eSocial
 # (férias, 13º e rescisão repetem o código da mensal) precisam concordar neles.
@@ -425,16 +424,6 @@ class HrSalaryRule(models.Model):
         ],
         string="Tipo Rubrica",
         help="Tipo da rubrica conforme eSocial.",
-    )
-
-    l10n_br_esocial_regra_maternidade_id = fields.Many2one(
-        "hr.salary.rule",
-        string="Rubrica de Salário-Maternidade",
-        domain="[('l10n_br_esocial_nat_rubr_id.codigo', 'in', ('4050', '4051'))]",
-        help="Regra cuja rubrica eSocial (natureza 4050/4051) recebe, no S-1200, "
-        "a parte desta regra referente aos dias de licença-maternidade do "
-        "holerite. A regra de destino só define a rubrica no S-1010; não precisa "
-        "entrar em nenhuma estrutura salarial.",
     )
 
     # Incidências tributárias
@@ -526,22 +515,6 @@ class HrSalaryRule(models.Model):
             [("salary_rule_id", "in", self.ids)]
         )._check_rubrica_unica()
 
-    @api.constrains("l10n_br_esocial_regra_maternidade_id")
-    def _check_esocial_regra_maternidade(self):
-        for rule in self.filtered("l10n_br_esocial_regra_maternidade_id"):
-            destino = rule.l10n_br_esocial_regra_maternidade_id
-            if (
-                destino.l10n_br_esocial_nat_rubr_id.codigo
-                not in NATUREZAS_SALARIO_MATERNIDADE
-            ):
-                raise ValidationError(
-                    _(
-                        "A rubrica de salário-maternidade da regra '%(regra)s' "
-                        "('%(destino)s') precisa ter a natureza 4050 ou 4051."
-                    )
-                    % {"regra": rule.display_name, "destino": destino.display_name}
-                )
-
     @api.constrains("l10n_br_esocial_nat_rubr_id", "l10n_br_esocial_cod_inc_cp")
     def _check_esocial_natureza_maternidade(self):
         """Salário-maternidade não pode ir com a natureza de salário comum."""
@@ -565,3 +538,34 @@ class HrSalaryRule(models.Model):
                         "nat": natureza.codigo,
                     }
                 )
+
+    @api.model
+    def _esocial_configurar_salario_maternidade(self):
+        """Configura no eSocial a rubrica ``SALARIO_MATERNIDADE`` do payroll.
+
+        Natureza 4050 (salário-maternidade pago pelo empregador), incidência
+        INSS 21 (compensada na guia), IRRF 11 e FGTS 11, como na rubrica padrão
+        eSocial1700. Só preenche o que está vazio: o que a empresa já definiu
+        fica como está. Idempotente; chamada na instalação e na migração.
+        """
+        regra = self.env.ref(
+            "l10n_br_hr_payroll.hr_rule_salario_maternidade", raise_if_not_found=False
+        )
+        natureza = self.env.ref(
+            "l10n_br_esocial.nat_rubr_4050", raise_if_not_found=False
+        )
+        if not regra or not natureza:
+            return False
+        padrao = {
+            "l10n_br_esocial_cod_rubr": "SAL_MATERNIDADE",
+            "l10n_br_esocial_ide_tab_rubr": "1",
+            "l10n_br_esocial_nat_rubr_id": natureza.id,
+            "l10n_br_esocial_tp_rubr": "1",
+            "l10n_br_esocial_cod_inc_cp": "21",
+            "l10n_br_esocial_cod_inc_irrf": "11",
+            "l10n_br_esocial_cod_inc_fgts": "11",
+        }
+        vals = {campo: valor for campo, valor in padrao.items() if not regra[campo]}
+        if vals:
+            regra.write(vals)
+        return True

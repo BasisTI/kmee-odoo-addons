@@ -43,6 +43,11 @@
                                 invisible="not l10n_br_hr_cprb_optante"
                             />
                         </group>
+                        <group string="Salário-maternidade">
+                            <field
+                                name="l10n_br_hr_patronal_sobre_salario_maternidade"
+                            />
+                        </group>
                         <group string="Provisões">
                             <field name="l10n_br_hr_prov_ferias_perc_indenizado" />
                         </group>

@@ -481,11 +481,14 @@ CPP até 2027)</li>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
-<li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a></li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-2">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-3">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-4">Authors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-5">Maintainers</a></li>
+<li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a><ul>
+<li><a class="reference internal" href="#salario-maternidade" id="toc-entry-2">Salário-maternidade</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-3">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-4">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-5">Authors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-6">Maintainers</a></li>
 </ul>
 </li>
 </ul>
@@ -540,9 +543,33 @@ instalado, os dias do reflexo são os mesmos com ou sem apuração (domingos e
 feriados do calendário da folha), e a apuração só acrescenta os feriados que
 marcou nos dias que cobre.</li>
 </ul>
+<div class="section" id="salario-maternidade">
+<h3><a class="toc-backref" href="#toc-entry-2">Salário-maternidade</a></h3>
+<p>Marque <strong>Licença-maternidade</strong> no tipo de afastamento. Os dias de licença
+aprovada saem do <tt class="docutils literal">SALARIO_BASE</tt> e vão para a rubrica <tt class="docutils literal">SALARIO_MATERNIDADE</tt>
+(salário × dias ÷ 30), no mesmo conjunto de dias do salário: admissão,
+desligamento, afastamento do INSS e férias já pagas são descontados antes, e a
+soma das duas rubricas fecha com o salário dos dias. Em período maior que 30 dias
+(anual, 13º) a licença entra na proporção dos dias do período.</p>
+<ul class="simple">
+<li>A rubrica está no bruto: entra nas bases de INSS, IRRF e FGTS.</li>
+<li><tt class="docutils literal">COMP_SALARIO_MATERNIDADE</tt> (informativa, categoria INFO) é o valor a
+compensar na guia previdenciária (Lei 8.213/91, art. 72, § 1º); não entra no
+líquido nem nas bases.</li>
+<li>CPP e RAT: o parâmetro <strong>CPP e RAT sobre o salário-maternidade</strong>, na aba
+<em>Encargos da Folha</em> da empresa, vem marcado (incidem, como antes). Desmarcado,
+o salário-maternidade sai dessas duas bases (STF, Tema 72); as contribuições a
+terceiros seguem incidindo. A escolha é do DP/contabilidade.</li>
+<li>O salário-maternidade é o salário contratual dos dias de licença; adicionais e
+médias de verbas variáveis continuam nas suas próprias rubricas.</li>
+<li>Em banco existente a atualização troca as fórmulas padrão de <tt class="docutils literal">SALARIO_BASE</tt>,
+<tt class="docutils literal">CPP</tt> e <tt class="docutils literal">RAT</tt> (as personalizadas ficam como estão) e liga as rubricas novas
+à estrutura CLT.</li>
+</ul>
+</div>
 </div>
 <div class="section" id="bug-tracker">
-<h2><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-3">Bug Tracker</a></h2>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/KMEE/kmee-odoo-addons/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -550,15 +577,15 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h2><a class="toc-backref" href="#toc-entry-3">Credits</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-4">Credits</a></h2>
 <div class="section" id="authors">
-<h3><a class="toc-backref" href="#toc-entry-4">Authors</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-5">Authors</a></h3>
 <ul class="simple">
 <li>KMEE</li>
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h3><a class="toc-backref" href="#toc-entry-5">Maintainers</a></h3>
+<h3><a class="toc-backref" href="#toc-entry-6">Maintainers</a></h3>
 <p>This module is part of the <a class="reference external" href="https://github.com/KMEE/kmee-odoo-addons/tree/18.0/l10n_br_hr_payroll">KMEE/kmee-odoo-addons</a> project on GitHub.</p>
 <p>You are welcome to contribute.</p>
 </div>

@@ -2,9 +2,8 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
-from datetime import date
 
-from odoo.exceptions import UserError, ValidationError
+from odoo.exceptions import ValidationError
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
 
@@ -304,107 +303,44 @@ class TestRubricasUnicas(TransactionCase):
         with self.assertRaisesRegex(ValidationError, "T105"):
             outra.write({"l10n_br_esocial_cod_rubr": "T105"})
 
-    # --- r2: S1, salário-maternidade no S-1200 ----------------------------
+    # --- TG-87: salário-maternidade com rubrica própria -------------------
 
-    def _regra_maternidade(self, **extra):
-        valores = self._config(
-            l10n_br_esocial_cod_rubr="T105_MAT",
-            l10n_br_esocial_nat_rubr_id=self.nat_4050.id,
-            l10n_br_esocial_cod_inc_cp="21",
-            l10n_br_esocial_cod_inc_fgts="11",
-        )
-        valores.update(extra)
-        return self.env["hr.salary.rule"].create(
-            {
-                "name": "Salário-maternidade T105",
-                "code": "T105_SALMAT",
-                "category_id": self.categoria.id,
-                "condition_select": "none",
-                "amount_select": "fix",
-                "amount_fix": 0.0,
-                **valores,
-            }
-        )
+    def _rubrica_maternidade(self):
+        return self.env.ref("l10n_br_hr_payroll.hr_rule_salario_maternidade")
 
-    def _licenca(self, s1200, inicio, fim, maternidade=True):
-        tipo = self.env["hr.leave.type"].create(
-            {
-                "name": "Licença T105",
-                "requires_allocation": "no",
-                "leave_validation_type": "no_validation",
-                "l10n_br_esocial_salario_maternidade": maternidade,
-            }
-        )
-        leave = self.env["hr.leave"].create(
-            {
-                "employee_id": s1200.employee_id.id,
-                "holiday_status_id": tipo.id,
-                "request_date_from": inicio,
-                "request_date_to": fim,
-            }
-        )
-        if leave.state != "validate":
-            leave.sudo().action_validate()
-        return leave
+    def test_rubrica_de_maternidade_vem_configurada(self):
+        regra = self._rubrica_maternidade()
+        self.assertEqual(regra.l10n_br_esocial_nat_rubr_id.codigo, "4050")
+        self.assertEqual(regra.l10n_br_esocial_cod_inc_cp, "21")
+        self.assertEqual(regra.l10n_br_esocial_cod_inc_irrf, "11")
+        self.assertEqual(regra.l10n_br_esocial_cod_inc_fgts, "11")
+        self.assertTrue(regra.l10n_br_esocial_cod_rubr)
 
-    def test_licenca_maternidade_no_mes_inteiro_vai_na_rubrica_4050(self):
-        mat = self._regra_maternidade()
-        self.regra_mensal.write(
-            self._config(l10n_br_esocial_regra_maternidade_id=mat.id)
-        )
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 6500.0)])
-        self._licenca(s1200, date(2024, 3, 1), date(2024, 3, 31))
-        itens = s1200._build_itens_remun()
+    def test_configuracao_nao_sobrepoe_o_que_a_empresa_definiu(self):
+        regra = self._rubrica_maternidade()
+        regra.l10n_br_esocial_cod_rubr = "MINHA_MAT"
+        regra.l10n_br_esocial_cod_inc_fgts = "12"
+        self.env["hr.salary.rule"]._esocial_configurar_salario_maternidade()
+        self.env["hr.salary.rule"]._esocial_configurar_salario_maternidade()
+        self.assertEqual(regra.l10n_br_esocial_cod_rubr, "MINHA_MAT")
+        self.assertEqual(regra.l10n_br_esocial_cod_inc_fgts, "12")
+
+    def test_s1200_leva_o_salario_maternidade_na_rubrica_propria(self):
+        """Sem divisão por dias: cada rubrica do holerite vai com o seu valor."""
+        regra = self._rubrica_maternidade()
+        s1200 = self._s1200_com_linhas([(self.regra_mensal, 2000.0), (regra, 1000.0)])
+        self.regra_mensal.write(self._config())
+        itens = {i["cod_rubr"]: float(i["vr_rubr"]) for i in s1200._build_itens_remun()}
         self.assertEqual(
-            [(i["cod_rubr"], i["vr_rubr"]) for i in itens], [("T105_MAT", "6500.0")]
+            itens, {"T105": 2000.0, regra.l10n_br_esocial_cod_rubr: 1000.0}
         )
         self.assertFalse(s1200.avisos)
 
-    def test_licenca_parcial_divide_o_salario_entre_as_rubricas(self):
-        mat = self._regra_maternidade()
-        self.regra_mensal.write(
-            self._config(l10n_br_esocial_regra_maternidade_id=mat.id)
+    def test_nao_existe_mais_a_divisao_pelos_dias_de_licenca(self):
+        self.assertNotIn(
+            "l10n_br_esocial_regra_maternidade_id", self.env["hr.salary.rule"]._fields
         )
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 3000.0)])
-        self._licenca(s1200, date(2024, 3, 21), date(2024, 3, 30))
-        itens = {i["cod_rubr"]: float(i["vr_rubr"]) for i in s1200._build_itens_remun()}
-        self.assertEqual(itens, {"T105_MAT": 1000.0, "T105": 2000.0})
-
-    def test_licenca_que_nao_e_maternidade_nao_divide(self):
-        mat = self._regra_maternidade()
-        self.regra_mensal.write(
-            self._config(l10n_br_esocial_regra_maternidade_id=mat.id)
+        self.assertNotIn(
+            "l10n_br_esocial_salario_maternidade", self.env["hr.leave.type"]._fields
         )
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 3000.0)])
-        self._licenca(s1200, date(2024, 3, 1), date(2024, 3, 31), maternidade=False)
-        itens = s1200._build_itens_remun()
-        self.assertEqual([i["cod_rubr"] for i in itens], ["T105"])
-
-    def test_maternidade_sem_rubrica_configurada_avisa_a_natureza_1000(self):
-        self.regra_mensal.write(self._config())
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 6500.0)])
-        self._licenca(s1200, date(2024, 3, 1), date(2024, 3, 31))
-        with self.assertLogs(
-            "odoo.addons.l10n_br_esocial.models.intermediarios.s1200_remuneracao",
-            level=logging.WARNING,
-        ):
-            itens = s1200._build_itens_remun()
-        self.assertEqual([i["cod_rubr"] for i in itens], ["T105"])
-        self.assertIn("licença-maternidade", s1200.avisos)
-
-    def test_rubrica_de_maternidade_sem_codigo_e_recusada_na_geracao(self):
-        mat = self._regra_maternidade()
-        self.regra_mensal.write(
-            self._config(l10n_br_esocial_regra_maternidade_id=mat.id)
-        )
-        s1200 = self._s1200_com_linhas([(self.regra_mensal, 6500.0)])
-        self._licenca(s1200, date(2024, 3, 1), date(2024, 3, 31))
-        mat.l10n_br_esocial_cod_rubr = False
-        with self.assertRaises(UserError):
-            s1200._build_itens_remun()
-
-    def test_rubrica_de_maternidade_exige_natureza_4050_ou_4051(self):
-        with self.assertRaisesRegex(ValidationError, "4050"):
-            self.regra_mensal.write(
-                {"l10n_br_esocial_regra_maternidade_id": self.regra_ferias.id}
-            )
+        self.assertIn("l10n_br_salario_maternidade", self.env["hr.leave.type"]._fields)
