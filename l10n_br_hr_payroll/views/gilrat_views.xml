@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="view_gilrat_tree" model="ir.ui.view">
+        <field name="model">l10n_br.hr.payroll.gilrat</field>
+        <field name="arch" type="xml">
+            <list editable="bottom">
+                <field name="company_id" groups="base.group_multi_company" />
+                <field name="cnpj" />
+                <field name="date_start" />
+                <field name="date_end" />
+                <field name="rat" />
+                <field name="fap" />
+                <field name="rat_ajustado" />
+            </list>
+        </field>
+    </record>
+    <record id="action_gilrat" model="ir.actions.act_window">
+        <field name="name">RAT/FAP por Estabelecimento</field>
+        <field name="res_model">l10n_br.hr.payroll.gilrat</field>
+        <field name="view_mode">list</field>
+    </record>
+    <menuitem
+        id="menu_gilrat"
+        parent="menu_payroll_fiscal_tables"
+        action="action_gilrat"
+        sequence="60"
+    />
+</odoo>

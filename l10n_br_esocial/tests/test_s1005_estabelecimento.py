@@ -159,3 +159,46 @@ class TestS1005Estabelecimento(ESocialCicloCommon):
             c for c in self.company.partner_id.vat if c.isdigit()
         )[:8]
         self.assertEqual(valores["nrInsc"], [raiz_empregador, "02546716000146"])
+
+    # ── RAT/FAP do estabelecimento (TG-122#P1) ─────────────────────────────
+
+    def test_s1005_nao_preenche_rat_fap_da_folha_por_padrao(self):
+        """A tabela de RAT/FAP da folha só alimenta o cálculo; o evento não a copia."""
+        self.company.write({"l10n_br_hr_rat": "2", "l10n_br_hr_fap": 1.2262})
+        self.env["l10n_br.hr.payroll.gilrat"].create(
+            {
+                "company_id": self.company.id,
+                "cnpj": self._cnpj_com_raiz(
+                    "".join(c for c in self.company.partner_id.vat if c.isdigit())[:8],
+                    "0006",
+                ),
+                "date_start": "2026-01-01",
+                "rat": "3",
+                "fap": 1.5289,
+            }
+        )
+        s1005 = self.env["l10n_br.esocial.s1005"].create(
+            {
+                "nr_insc_estab": "02546716000629",
+                "ini_valid": "2026-01",
+                "cnae_prep": "4751201",
+                "company_id": self.company.id,
+            }
+        )
+        self.assertFalse(s1005.aliq_rat)
+        self.assertFalse(s1005.fap)
+        data = s1005._to_esociallib_dict()
+        self.assertNotIn("aliq_rat", data)
+        self.assertNotIn("fap", data)
+
+    @staticmethod
+    def _cnpj_com_raiz(raiz, ordem):
+        """CNPJ válido (14 dígitos) com a raiz e a ordem dadas."""
+        base = raiz + ordem
+        for pesos in (
+            [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+            [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+        ):
+            resto = sum(int(d) * p for d, p in zip(base, pesos)) % 11
+            base += "0" if resto < 2 else str(11 - resto)
+        return base
