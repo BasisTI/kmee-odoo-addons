@@ -104,6 +104,7 @@ class ESocialS1200(models.Model):
         itens = []
         sem_config = {}
         for payslip in self.payslip_ids:
+            payslip._esocial_exigir_rubrica_maternidade()
             for line in payslip.line_ids:
                 rule = line.salary_rule_id
                 # Skip zero-valued lines — they must not be reported.

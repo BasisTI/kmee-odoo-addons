@@ -566,6 +566,27 @@ médias de verbas variáveis continuam nas suas próprias rubricas.</li>
 <tt class="docutils literal">CPP</tt> e <tt class="docutils literal">RAT</tt> (as personalizadas ficam como estão) e liga as rubricas novas
 à estrutura CLT.</li>
 </ul>
+<p>Limites do salário-maternidade:</p>
+<ul class="simple">
+<li>Só vale onde a rubrica está na estrutura: a CLT e a Estatutário a trazem. Em
+estrutura própria com <tt class="docutils literal">SALARIO_BASE</tt> e sem <tt class="docutils literal">SALARIO_MATERNIDADE</tt> o salário
+dos dias de licença segue inteiro no <tt class="docutils literal">SALARIO_BASE</tt> (nada é descontado);
+ligue a rubrica para pagá-lo na própria.</li>
+<li><tt class="docutils literal">SALARIO_BASE</tt> personalizada: a atualização não liga a rubrica nova (pagaria o
+salário em dobro) e avisa no log. Adapte a fórmula ao desconto dos dias de
+licença (ver a fórmula padrão) e ligue a rubrica à estrutura.</li>
+<li>Não há parcela de 13º de salário-maternidade (natureza 4051) nem a compensação
+dela: o 13º segue o cálculo anterior.</li>
+<li>Rescisão sem holerite mensal no mês paga os dias de licença no
+<tt class="docutils literal">SALDO_SALARIO</tt>, como salário comum.</li>
+<li>Férias sobrepostas à licença prevalecem: os dias de gozo já foram pagos no
+recibo e não viram salário-maternidade.</li>
+<li><tt class="docutils literal">COMP_SALARIO_MATERNIDADE</tt> é informativa: nenhuma guia do repositório a lê e
+ela não gera lançamento contábil (o <tt class="docutils literal">l10n_br_hr_payroll_account</tt> debita a
+<tt class="docutils literal">SALARIO_MATERNIDADE</tt> em despesa de salários, como o <tt class="docutils literal">SALARIO_BASE</tt>). A
+dedução na guia é feita pelo usuário ou pelo sistema que gera a guia, a partir
+do total desta rubrica.</li>
+</ul>
 </div>
 </div>
 <div class="section" id="bug-tracker">

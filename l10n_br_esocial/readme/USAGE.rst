@@ -40,7 +40,11 @@ Rubricas (S-1010 e S-1200):
    (padrão ``SAL_MATERNIDADE``) se a sua tabela usar outro. A configuração antiga
    (**Licença-maternidade (eSocial)** e **Rubrica de Salário-Maternidade**) foi
    substituída por esta; as regras que tinham o vínculo aparecem no log da
-   atualização.
+   atualização. A rubrica usa a tabela de rubricas que a empresa já tem e, onde
+   há S-1010, ganha o dela (gere e transmita-o antes do primeiro S-1200). Holerite
+   calculado antes da atualização, com dias de licença e sem a rubrica, é
+   recusado na geração do S-1200: volte-o para rascunho, recalcule e confirme.
+   A regra criada à mão com o mecanismo antigo deve ser desativada.
 #. Regra de provento ou desconto com valor no holerite e sem código ou natureza
    eSocial fica fora do S-1200; a geração registra um aviso no log e no campo
    **Avisos da geração** do S-1200.

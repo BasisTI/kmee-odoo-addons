@@ -443,7 +443,11 @@ valor do holerite, sem divisão por dias. Defina o <strong>Código Rubrica eSoci
 (padrão <tt class="docutils literal">SAL_MATERNIDADE</tt>) se a sua tabela usar outro. A configuração antiga
 (<strong>Licença-maternidade (eSocial)</strong> e <strong>Rubrica de Salário-Maternidade</strong>) foi
 substituída por esta; as regras que tinham o vínculo aparecem no log da
-atualização.</li>
+atualização. A rubrica usa a tabela de rubricas que a empresa já tem e, onde
+há S-1010, ganha o dela (gere e transmita-o antes do primeiro S-1200). Holerite
+calculado antes da atualização, com dias de licença e sem a rubrica, é
+recusado na geração do S-1200: volte-o para rascunho, recalcule e confirme.
+A regra criada à mão com o mecanismo antigo deve ser desativada.</li>
 <li>Regra de provento ou desconto com valor no holerite e sem código ou natureza
 eSocial fica fora do S-1200; a geração registra um aviso no log e no campo
 <strong>Avisos da geração</strong> do S-1200.</li>

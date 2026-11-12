@@ -605,6 +605,20 @@ class HrPayslip(models.Model):
             self._l10n_br_maternidade(contract),
         )
 
+    def _l10n_br_dias_maternidade_na_estrutura(self, contract):
+        """Dias de maternidade que ESTE holerite paga na rubrica própria.
+
+        Só vale com a rubrica ``SALARIO_MATERNIDADE`` na estrutura do holerite:
+        sem ela, tirar os dias do ``SALARIO_BASE`` os faria sumir (estrutura
+        montada com a mesma regra de salário, como a ``ESTATUTO`` antiga ou a
+        de estágio). Sem a rubrica o salário segue inteiro no ``SALARIO_BASE``.
+        """
+        self.ensure_one()
+        regras = self._get_salary_rules()
+        if not any(r.code == "SALARIO_MATERNIDADE" for r in regras):
+            return 0
+        return self._l10n_br_dias_maternidade(contract)
+
     def _l10n_br_ferias_gozadas(self, contract):
         """Períodos ``(inicio, fim)`` de férias gozadas já pagas em recibo.
 
@@ -786,7 +800,7 @@ class HrPayslip(models.Model):
             # Dias de salário do mês (admissão, desligamento, afastamento).
             dias_salario=dias_salario,
             # Dias de licença-maternidade (empresa paga; rubrica própria).
-            dias_maternidade=self._l10n_br_dias_maternidade,
+            dias_maternidade=self._l10n_br_dias_maternidade_na_estrutura,
             inss_ferias_competencia=inss_ferias_competencia,
             # Salário já pago no mensal do período (compensação na rescisão).
             salario_pago_mensal=salario_pago_mensal,

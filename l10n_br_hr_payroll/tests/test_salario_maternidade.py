@@ -120,17 +120,25 @@ class TestDiasMaternidade(PayrollCommon):
         )
 
     def test_a_soma_fecha_nos_dias_de_salario(self):
-        for ini, fim in (
-            (date(2026, 10, 3), date(2026, 10, 19)),
-            (date(2026, 9, 20), date(2026, 11, 5)),
-            (date(2026, 10, 31), date(2026, 10, 31)),
-        ):
-            sal, mat = _mat(ini, fim, data_admissao=date(2026, 10, 8))
-            self.assertGreaterEqual(sal, 0)
-            self.assertGreaterEqual(mat, 0)
-            self.assertEqual(
-                sal + mat, dias_salario_mes(OUT_INI, OUT_FIM, date(2026, 10, 8))
-            )
+        """Valores: salário base + maternidade = dias de salário, em cada caso.
+
+        Os esperados são contados à mão (mês comercial), não calculados pela
+        própria função: (período, licença, admissão, dias de salário, maternidade).
+        """
+        casos = [
+            # admitida 08/10 (23 dias); licença 03 a 19/10: só 08 a 19 = 12 dias
+            (OUT_INI, OUT_FIM, (date(2026, 10, 3), date(2026, 10, 19)), 12, 23),
+            # licença de 1 dia
+            (OUT_INI, OUT_FIM, (date(2026, 10, 20), date(2026, 10, 20)), 1, 23),
+            # licença antes da admissão: não conta
+            (OUT_INI, OUT_FIM, (date(2026, 10, 1), date(2026, 10, 7)), 0, 23),
+            # licença até o fim do mês: 08 a 31/10 vale 23 dias comerciais
+            (OUT_INI, OUT_FIM, (date(2026, 10, 8), date(2026, 10, 31)), 23, 23),
+        ]
+        for ini, fim, licenca, esperado_mat, esperado_total in casos:
+            sal, mat = _mat(*licenca, (ini, fim), data_admissao=date(2026, 10, 8))
+            self.assertEqual(mat, esperado_mat, licenca)
+            self.assertEqual(sal + mat, esperado_total, licenca)
 
 
 class TestHoleriteMaternidade(PayrollCommon):
@@ -327,3 +335,125 @@ class TestMigracaoMaternidade(PayrollCommon):
         codigos = self.structure_clt.rule_ids.mapped("code")
         self.assertEqual(codigos.count("SALARIO_MATERNIDADE"), 1)
         self.assertEqual(codigos.count("COMP_SALARIO_MATERNIDADE"), 1)
+
+
+class TestMaternidadeEstruturas(PayrollCommon):
+    """Onde o ``SALARIO_BASE`` novo vai, a rubrica vai junto (ou não há desconto)."""
+
+    def _licenca(self, emp):
+        tipo = self.env["hr.leave.type"].create(
+            {
+                "name": "Licença-maternidade (estrutura)",
+                "requires_allocation": "no",
+                "leave_validation_type": "no_validation",
+                "l10n_br_salario_maternidade": True,
+            }
+        )
+        leave = self.env["hr.leave"].create(
+            {
+                "employee_id": emp.id,
+                "holiday_status_id": tipo.id,
+                "request_date_from": OUT_INI,
+                "request_date_to": OUT_FIM,
+            }
+        )
+        if leave.state != "validate":
+            leave.sudo().action_validate()
+
+    def test_estatutario_traz_a_rubrica_junto_do_salario_base(self):
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_maternidade")
+        self.assertIn(regra, self.structure_estatuto.rule_ids)
+        emp = self._create_employee()
+        contract = self._create_contract(
+            emp, wage=4000.0, structure=self.structure_estatuto
+        )
+        self._licenca(emp)
+        slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "SALARIO_MATERNIDADE"), 4000.0
+        )
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "GROSS"), 4000.0)
+
+    def test_estrutura_sem_a_rubrica_paga_o_salario_inteiro_no_base(self):
+        """Estrutura de terceiros com SALARIO_BASE e sem a rubrica: não zera."""
+        estrutura = self.env["hr.payroll.structure"].create(
+            {
+                "name": "Estágio (teste)",
+                "code": "ESTAGIO_T87",
+                "rule_ids": [
+                    (
+                        6,
+                        0,
+                        [
+                            self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base").id,
+                            self.env.ref("l10n_br_hr_payroll.hr_rule_gross").id,
+                            self.env.ref("l10n_br_hr_payroll.hr_rule_net").id,
+                        ],
+                    )
+                ],
+            }
+        )
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=2000.0, structure=estrutura)
+        self._licenca(emp)
+        slip = self._create_payslip(emp, contract, OUT_INI, OUT_FIM)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "SALARIO_BASE"), 2000.0)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "GROSS"), 2000.0)
+
+
+class TestMigracaoAtualizacaoDeBanco(PayrollCommon):
+    """Banco que já estava instalado: visão órfã e fórmula personalizada."""
+
+    def _carregar(self, nome):
+        caminho = file_path(f"l10n_br_hr_payroll/migrations/18.0.1.6.0/{nome}.py")
+        spec = importlib.util.spec_from_file_location(f"tg87_{nome}", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        return modulo
+
+    def test_pre_migracao_remove_a_visao_orfa_e_e_idempotente(self):
+        view = self.env["ir.ui.view"].create(
+            {
+                "name": "orfa esocial",
+                "model": "hr.leave.type",
+                "type": "form",
+                "arch": "<form/>",
+            }
+        )
+        dado = self.env["ir.model.data"].create(
+            {
+                "module": "l10n_br_esocial",
+                "name": "hr_leave_type_view_form_esocial",
+                "model": "ir.ui.view",
+                "res_id": view.id,
+            }
+        )
+        pre = self._carregar("pre-migration")
+        pre.migrate(self.env.cr, "18.0.1.5.0")
+        pre.migrate(self.env.cr, "18.0.1.5.0")
+        self.env.invalidate_all()
+        self.assertFalse(view.exists())
+        self.assertFalse(dado.exists())
+
+    def test_formula_personalizada_nao_liga_a_rubrica_nova(self):
+        """SALARIO_BASE personalizada + rubrica nova pagaria o salário em dobro."""
+        regra_mat = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_maternidade")
+        comp = self.env.ref("l10n_br_hr_payroll.hr_rule_comp_salario_maternidade")
+        self.structure_clt.write({"rule_ids": [(3, regra_mat.id), (3, comp.id)]})
+        self.structure_estatuto.write({"rule_ids": [(3, regra_mat.id)]})
+        base = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
+        base.amount_python_compute = "# personalizada\nresult = contract.wage"
+        self._carregar("post-migration").migrate(self.env.cr, "18.0.1.5.0")
+        self.assertNotIn(regra_mat, self.structure_clt.rule_ids)
+        self.assertNotIn(regra_mat, self.structure_estatuto.rule_ids)
+
+    def test_formula_padrao_liga_clt_e_estatutario(self):
+        regra_mat = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_maternidade")
+        self.structure_clt.write({"rule_ids": [(3, regra_mat.id)]})
+        self.structure_estatuto.write({"rule_ids": [(3, regra_mat.id)]})
+        modulo = self._carregar("post-migration")
+        base = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
+        base.amount_python_compute = modulo.FORMULAS_ANTIGAS["hr_rule_salario_base"]
+        modulo.migrate(self.env.cr, "18.0.1.5.0")
+        self.assertIn(regra_mat, self.structure_clt.rule_ids)
+        self.assertIn(regra_mat, self.structure_estatuto.rule_ids)

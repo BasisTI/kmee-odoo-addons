@@ -26,6 +26,34 @@ class HrPayslip(models.Model):
         "da competência da folha.",
     )
 
+    def _esocial_exigir_rubrica_maternidade(self):
+        """Recusa o holerite com dias de licença-maternidade sem a rubrica própria.
+
+        Holerite calculado antes da TG-87 paga o salário da licença como salário
+        comum (natureza 1000, incidência 11) e não tem ``SALARIO_MATERNIDADE``.
+        Declará-lo assim faria a DCTFWeb perder, em silêncio, a dedução do
+        salário-maternidade pago pelo empregador. A divisão por dias no S-1200
+        foi removida (um mecanismo só), então o holerite precisa ser recalculado.
+        """
+        self.ensure_one()
+        if not self.contract_id or not self.date_from or not self.date_to:
+            return
+        if not self._l10n_br_dias_maternidade(self.contract_id):
+            return
+        if any(ln.code == "SALARIO_MATERNIDADE" and ln.total for ln in self.line_ids):
+            return
+        raise UserError(
+            _(
+                "O holerite %(holerite)s tem dias de licença-maternidade no "
+                "período, mas não tem a rubrica SALARIO_MATERNIDADE: o salário "
+                "desses dias iria ao S-1200 como salário comum e a dedução do "
+                "salário-maternidade se perderia na DCTFWeb. Volte o holerite "
+                "para rascunho, recalcule (a estrutura precisa ter a rubrica "
+                "Salário-Maternidade) e confirme de novo.",
+                holerite=self.number or self.name,
+            )
+        )
+
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self.filtered(lambda p: p.state == "done")

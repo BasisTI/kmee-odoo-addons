@@ -28,8 +28,6 @@
                 (4, ref('hr_rule_cpp_patronal')),
                 (4, ref('hr_rule_rat_patronal')),
                 (4, ref('hr_rule_terceiros_patronal')),
-                (4, ref('hr_rule_salario_maternidade')),
-                (4, ref('hr_rule_comp_salario_maternidade')),
                 (4, ref('hr_rule_provisao_ferias')),
                 (4, ref('hr_rule_provisao_ferias_encargos')),
                 (4, ref('hr_rule_provisao_decimo')),

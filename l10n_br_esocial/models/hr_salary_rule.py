@@ -540,13 +540,37 @@ class HrSalaryRule(models.Model):
                 )
 
     @api.model
+    def _esocial_tabela_rubricas_da_empresa(self):
+        """ID da tabela de rubricas (``ideTabRubr``) que a empresa já usa.
+
+        O mais frequente entre as regras com código eSocial; ``"1"`` se a
+        empresa ainda não configurou nenhuma.
+        """
+        grupos = self.read_group(
+            [
+                ("l10n_br_esocial_cod_rubr", "!=", False),
+                ("l10n_br_esocial_ide_tab_rubr", "!=", False),
+            ],
+            ["l10n_br_esocial_ide_tab_rubr"],
+            ["l10n_br_esocial_ide_tab_rubr"],
+        )
+        if not grupos:
+            return "1"
+        melhor = max(grupos, key=lambda g: g["l10n_br_esocial_ide_tab_rubr_count"])
+        return melhor["l10n_br_esocial_ide_tab_rubr"]
+
+    @api.model
     def _esocial_configurar_salario_maternidade(self):
         """Configura no eSocial a rubrica ``SALARIO_MATERNIDADE`` do payroll.
 
         Natureza 4050 (salário-maternidade pago pelo empregador), incidência
         INSS 21 (compensada na guia), IRRF 11 e FGTS 11, como na rubrica padrão
-        eSocial1700. Só preenche o que está vazio: o que a empresa já definiu
-        fica como está. Idempotente; chamada na instalação e na migração.
+        eSocial1700, na tabela de rubricas que a empresa já usa. Só preenche o
+        que está vazio: o que a empresa já definiu fica como está. Nas empresas
+        que já têm S-1010, cria o S-1010 da rubrica (um por rubrica, como em
+        ``criar_para_regras``) com a validade do primeiro S-1010 da empresa, para
+        a rubrica existir na tabela do governo antes do primeiro S-1200.
+        Idempotente; chamada na instalação e na migração.
         """
         regra = self.env.ref(
             "l10n_br_hr_payroll.hr_rule_salario_maternidade", raise_if_not_found=False
@@ -558,7 +582,7 @@ class HrSalaryRule(models.Model):
             return False
         padrao = {
             "l10n_br_esocial_cod_rubr": "SAL_MATERNIDADE",
-            "l10n_br_esocial_ide_tab_rubr": "1",
+            "l10n_br_esocial_ide_tab_rubr": self._esocial_tabela_rubricas_da_empresa(),
             "l10n_br_esocial_nat_rubr_id": natureza.id,
             "l10n_br_esocial_tp_rubr": "1",
             "l10n_br_esocial_cod_inc_cp": "21",
@@ -568,4 +592,13 @@ class HrSalaryRule(models.Model):
         vals = {campo: valor for campo, valor in padrao.items() if not regra[campo]}
         if vals:
             regra.write(vals)
+        S1010 = self.env["l10n_br.esocial.s1010"].sudo()
+        for company in self.env["res.company"].sudo().search([]):
+            primeiro = S1010.search(
+                [("company_id", "=", company.id), ("operacao", "=", "inclusao")],
+                order="ini_valid",
+                limit=1,
+            )
+            if primeiro:
+                S1010.with_company(company).criar_para_regras(regra, primeiro.ini_valid)
         return True

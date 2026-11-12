@@ -75,12 +75,54 @@ def migrate(cr, version):
             _logger.info("TG-87: fórmula de %s atualizada", xmlid)
         else:
             _logger.info("TG-87: %s personalizada ou já atualizada, mantida", xmlid)
-    # Rubricas novas na estrutura CLT (estrutura noupdate; (4, id) é idempotente).
-    estrutura = env.ref("l10n_br_hr_payroll.structure_clt", raise_if_not_found=False)
-    if not estrutura:
+    # SALARIO_BASE personalizada: a rubrica nova não é ligada (a fórmula
+    # personalizada paga o salário inteiro e a rubrica o pagaria de novo).
+    base = env.ref("l10n_br_hr_payroll.hr_rule_salario_base", raise_if_not_found=False)
+    if not base:
         return
-    for xmlid in ("hr_rule_salario_maternidade", "hr_rule_comp_salario_maternidade"):
-        regra = env.ref(f"l10n_br_hr_payroll.{xmlid}", raise_if_not_found=False)
-        if regra and regra not in estrutura.rule_ids:
-            estrutura.write({"rule_ids": [(4, regra.id)]})
-            _logger.info("TG-87: %s ligada à estrutura CLT", regra.code)
+    nova = _formula_nova("hr_rule_salario_base")
+    if (base.amount_python_compute or "").strip() != nova.strip():
+        _logger.warning(
+            "TG-87: SALARIO_BASE personalizada: SALARIO_MATERNIDADE NÃO foi ligada "
+            "às estruturas. Adapte a fórmula ao novo desconto dos dias de "
+            "licença-maternidade (ver SALARIO_BASE padrão) e ligue a rubrica."
+        )
+        return
+    # Estruturas noupdate; (4, id) é idempotente. Onde o SALARIO_BASE novo vai,
+    # a rubrica vai junto (sem ela, os dias de licença ficariam sem pagamento).
+    ligar = {
+        "structure_clt": (
+            "hr_rule_salario_maternidade",
+            "hr_rule_comp_salario_maternidade",
+        ),
+        "structure_estatuto": ("hr_rule_salario_maternidade",),
+    }
+    for estrutura_xmlid, regras in ligar.items():
+        estrutura = env.ref(
+            f"l10n_br_hr_payroll.{estrutura_xmlid}", raise_if_not_found=False
+        )
+        if not estrutura:
+            continue
+        for xmlid in regras:
+            regra = env.ref(f"l10n_br_hr_payroll.{xmlid}", raise_if_not_found=False)
+            if regra and regra not in estrutura.rule_ids:
+                estrutura.write({"rule_ids": [(4, regra.id)]})
+                _logger.info(
+                    "TG-87: %s ligada à estrutura %s", regra.code, estrutura.code
+                )
+    # Estruturas de terceiros com o SALARIO_BASE (como a de estágio): sem a
+    # rubrica, o salário dos dias de licença segue inteiro no SALARIO_BASE.
+    mat = env.ref(
+        "l10n_br_hr_payroll.hr_rule_salario_maternidade", raise_if_not_found=False
+    )
+    if mat:
+        outras = env["hr.payroll.structure"].search(
+            [("rule_ids", "in", base.id), ("rule_ids", "not in", mat.id)]
+        )
+        for estrutura in outras:
+            _logger.warning(
+                "TG-87: a estrutura %s tem SALARIO_BASE e não tem SALARIO_MATERNIDADE: "
+                "o salário da licença-maternidade segue no SALARIO_BASE; ligue a "
+                "rubrica para pagá-lo na rubrica própria.",
+                estrutura.code,
+            )
