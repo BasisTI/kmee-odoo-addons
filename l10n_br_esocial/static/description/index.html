@@ -463,18 +463,28 @@ módulo juntos; <tt class="docutils literal">test_tabelas_incidencia</tt> acusa 
 sexo, CNPJ do sindicato, jornada, local de trabalho e dependentes vêm do
 cadastro, e a geração recusa o evento (<tt class="docutils literal">UserError</tt>) quando algum falta.</li>
 <li>No <strong>empregado</strong>: <strong>Gênero</strong> (masculino ou feminino), <strong>Data de Nascimento</strong>,
-<strong>Raça/Cor</strong> (<tt class="docutils literal">ethnicity</tt>, códigos 1 a 6) e, na aba eSocial, <strong>Grau de
+<strong>Raça/Cor</strong> (<tt class="docutils literal">ethnicity</tt>, códigos 1 a 5; o 6 - não informado - é proibido
+no S-2200) e, na aba <strong>Informações Privadas</strong>, grupo <strong>eSocial</strong>, o <strong>Grau de
 Instrução eSocial</strong> (tabela do leiaute S-1.3).</li>
 <li>No <strong>contrato</strong>: <strong>Sindicato</strong> (parceiro com CNPJ válido), o calendário de
 <strong>Jornada de Trabalho</strong> e, no grupo <strong>eSocial - Jornada</strong>, o <strong>Tipo de
-Jornada</strong> (sem padrão) e o <strong>Tempo Parcial</strong>. As horas semanais, o horário
+Jornada</strong> (sem padrão) e o <strong>Tempo Parcial</strong>. As horas semanais (sem os intervalos), o horário
 noturno (22h às 5h) e a descrição da jornada saem do calendário.</li>
 <li>O <strong>local de trabalho</strong> é o <strong>Endereço de Trabalho</strong> do empregado: precisa ser
 um estabelecimento do empregador (CNPJ com a mesma raiz da empresa) e estar
 no S-1005.</li>
 <li><strong>Dependentes</strong>: nos parentes do empregado, preencha o <strong>Tipo de Dependente
-eSocial</strong> (Tabela 07) para declará-lo. Parente sem tipo não é enviado. O CPF é
-obrigatório para dependente de IRRF, e o tipo 99 exige a descrição.</li>
+eSocial</strong> (Tabela 07) para declará-lo. Parente sem tipo não é enviado; se ele
+estiver marcado para IRRF, salário-família ou incapacidade, a geração é
+recusada. O CPF é obrigatório para dependente de IRRF, o tipo 99 exige a
+descrição, o nascimento não pode estar no futuro e tipos encerrados na
+Tabela 07 são recusados. Se os <strong>Dependentes IRRF</strong> ou os <strong>Filhos para
+Salário-Família</strong> da folha divergirem dos declarados, o campo <strong>Avisos da
+geração</strong> do S-2200 registra a diferença.</li>
+<li>A geração junta, numa só mensagem, tudo o que falta no cadastro.</li>
+<li>O <strong>Tempo Parcial</strong> é conferido com a categoria (1 só para a 104; 2 e 3 não
+valem para a 104) e, para admissões a partir de 23/11/2026, com as horas
+(25, 30 e 26 h) e com a jornada 12 x 36 (exige 0).</li>
 </ol>
 </div>
 <div class="section" id="bug-tracker">

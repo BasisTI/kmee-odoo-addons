@@ -73,6 +73,9 @@ class TestS2200Cadastro(TestESocialIntermediarioBase):
                 .create({"code": "9", "name": "Fora da tabela"})
                 .id
             },
+            "raça/cor 6 proibida no S-2200": {
+                "ethnicity": self.env.ref("l10n_br_hr.ethnicity_6").id
+            },
             "grau de instrução": {"l10n_br_esocial_grau_instr": False},
             "nascimento": {"birthday": False},
             "sexo ausente": {"gender": False},
@@ -171,7 +174,11 @@ class TestS2200Cadastro(TestESocialIntermediarioBase):
         self.assertEqual(self.s2200._to_esociallib_dict()["dependentes"], [])
 
     def test_parente_sem_tipo_nao_e_dependente(self):
-        self._dependente(l10n_br_esocial_tp_dep_id=False)
+        self._dependente(
+            l10n_br_esocial_tp_dep_id=False,
+            l10n_br_esocial_dep_irrf=False,
+            l10n_br_esocial_dep_sf=False,
+        )
         self.assertEqual(self.s2200._to_esociallib_dict()["dependentes"], [])
 
     def test_dependente_vem_do_cadastro(self):
@@ -281,5 +288,202 @@ class TestS2200Cadastro(TestESocialIntermediarioBase):
         try:
             erros = validate_xsd(xml, "S-2200")
         except FileNotFoundError:
-            self.skipTest("XSDs oficiais ausentes da esociallib")
+            # O CI do repositório não traz os XSDs oficiais (a esociallib 0.1.3
+            # não os inclui): skip explícito. A validação roda na imagem do POC
+            # (esocial/gerar_eventos.py) e aqui quando os XSDs estiverem no
+            # esociallib/esocial/schemas/v_s13/. A ordem dos elementos que o XSD
+            # exige é conferida sem ele em test_xml_ordem_dos_elementos.
+            self.skipTest(
+                "SKIP EXPLÍCITO: XSDs oficiais S-1.3 ausentes da esociallib; "
+                "a validação contra o XSD não rodou neste ambiente"
+            )
         self.assertEqual([e for e in erros if "Signature" not in e], [])
+
+    def test_xml_ordem_dos_elementos(self):
+        """Ordem exigida pelo XSD, conferida sem os XSDs (que o CI não tem)."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        self._dependente()
+        raiz = self._xml()
+
+        def tags(caminho):
+            return [el.tag.split("}")[1] for el in raiz.find(caminho, NS)]
+
+        self.assertEqual(
+            tags(".//e:trabalhador"),
+            [
+                "cpfTrab",
+                "nmTrab",
+                "sexo",
+                "racaCor",
+                "estCiv",
+                "grauInstr",
+                "nascimento",
+                "dependente",
+            ],
+        )
+        self.assertEqual(
+            tags(".//e:horContratual"),
+            ["qtdHrsSem", "tpJornada", "tmpParc", "horNoturno", "dscJorn"],
+        )
+
+    # --- r2: revisão r1 -------------------------------------------------
+    def _calendario_padrao_odoo(self):
+        """Padrão que o Odoo cria: 08-12, 12-13 (almoço), 13-17, seg a sex."""
+        return self.env["resource.calendar"].create({"name": "Padrão Odoo 40h"})
+
+    def test_calendario_padrao_do_odoo_nao_conta_o_almoco(self):
+        self.contract.resource_calendar_id = self._calendario_padrao_odoo()
+        data = self.s2200._to_esociallib_dict()
+        self.assertEqual(data["qtd_hrs_sem"], "40.00")
+        self.assertNotIn("12:00-13:00", data["dsc_jorn"])
+        self.assertTrue(
+            data["dsc_jorn"].startswith("Segunda: 08:00-12:00, 13:00-17:00")
+        )
+
+    def test_almoco_depois_das_22h_nao_marca_horario_noturno(self):
+        calendario = self.env["resource.calendar"].create(
+            {
+                "name": "Tarde",
+                "attendance_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "name": "a",
+                            "dayofweek": "0",
+                            "hour_from": 14.0,
+                            "hour_to": 18.0,
+                            "day_period": "morning",
+                        },
+                    ),
+                    (
+                        0,
+                        0,
+                        {
+                            "name": "b",
+                            "dayofweek": "0",
+                            "hour_from": 22.0,
+                            "hour_to": 23.0,
+                            "day_period": "lunch",
+                        },
+                    ),
+                ],
+            }
+        )
+        self.contract.resource_calendar_id = calendario
+        self.assertEqual(self.s2200._to_esociallib_dict()["hor_noturno"], "N")
+
+    def test_calendario_duas_semanas_descreve_cada_semana(self):
+        linhas = []
+        for semana, dias in (("0", (0, 2, 4)), ("1", (1, 3))):
+            linhas.append(
+                (
+                    0,
+                    0,
+                    {
+                        "name": "Semana",
+                        "display_type": "line_section",
+                        "week_type": semana,
+                        "hour_from": 0.0,
+                        "hour_to": 0.0,
+                    },
+                )
+            )
+            for dia in dias:
+                linhas.append(
+                    (
+                        0,
+                        0,
+                        {
+                            "name": "d",
+                            "dayofweek": str(dia),
+                            "week_type": semana,
+                            "hour_from": 7.0,
+                            "hour_to": 19.0,
+                        },
+                    )
+                )
+        self.contract.resource_calendar_id = self.env["resource.calendar"].create(
+            {"name": "12x36", "two_weeks_calendar": True, "attendance_ids": linhas}
+        )
+        data = self.s2200._to_esociallib_dict()
+        self.assertEqual(data["qtd_hrs_sem"], "30.00")  # (36 + 24) / 2
+        self.assertEqual(
+            data["dsc_jorn"],
+            "Semana 1 - Segunda: 07:00-19:00; Quarta: 07:00-19:00; "
+            "Sexta: 07:00-19:00 | Semana 2 - Terça: 07:00-19:00; "
+            "Quinta: 07:00-19:00",
+        )
+
+    def test_parente_marcado_sem_tipo_recusa(self):
+        self._dependente(l10n_br_esocial_tp_dep_id=False)
+        with self.assertRaisesRegex(UserError, "sem o Tipo de Dependente"):
+            self.s2200._to_esociallib_dict()
+
+    def test_aviso_quando_a_folha_diverge_dos_dependentes(self):
+        self._dependente()
+        self.employee.write({"l10n_br_irrf_dependentes": 2, "l10n_br_num_filhos_sf": 1})
+        self.s2200._to_esociallib_dict()
+        self.assertIn("Dependentes IRRF da folha: 2", self.s2200.avisos)
+        self.assertNotIn("Salário-Família", self.s2200.avisos)
+        self.employee.l10n_br_irrf_dependentes = 1
+        self.s2200._to_esociallib_dict()
+        self.assertFalse(self.s2200.avisos)
+
+    def test_dependente_com_nascimento_futuro_ou_tipo_encerrado_recusa(self):
+        rel = self._dependente(date_of_birth="2999-01-01")
+        with self.assertRaisesRegex(UserError, "no futuro"):
+            self.s2200._to_esociallib_dict()
+        rel.date_of_birth = "2015-03-20"
+        encerrado = self.env["l10n_br.esocial.tipo.dependente"].search(
+            [("codigo", "=", "04"), ("dt_fim", "!=", False)], limit=1
+        )
+        rel.l10n_br_esocial_tp_dep_id = encerrado
+        with self.assertRaisesRegex(UserError, "encerrado na Tabela 07"):
+            self.s2200._to_esociallib_dict()
+
+    def test_recusas_reunidas_numa_mensagem(self):
+        self.employee.write(
+            {
+                "ethnicity": False,
+                "l10n_br_esocial_grau_instr": False,
+                "birthday": False,
+            }
+        )
+        self.contract.partner_union = False
+        with self.assertRaises(UserError) as ctx:
+            self.s2200._to_esociallib_dict()
+        msg = ctx.exception.args[0]
+        for trecho in ("Raça/Cor", "Grau de Instrução", "Nascimento", "Sindicato"):
+            self.assertIn(trecho, msg)
+
+    # --- tmpParc ---------------------------------------------------------
+    def test_tempo_parcial_conforme_categoria_e_horas(self):
+        cat_104 = self.env["l10n_br.esocial.categoria.trabalhador"].search(
+            [("codigo", "=", "104")], limit=1
+        )
+        casos = [
+            # (tmpParc, tpJornada, categoria, admissão, recusa?)
+            ("1", "4", self.cat_101, "2024-01-02", True),  # 1 só p/ doméstico
+            ("2", "4", cat_104, "2024-01-02", True),  # 2 e 3 não p/ doméstico
+            ("2", "4", self.cat_101, "2026-11-23", True),  # 40h > 30h
+            ("0", "2", self.cat_101, "2026-11-23", False),
+            ("3", "2", self.cat_101, "2026-11-23", True),  # 12x36 exige 0
+            ("2", "4", self.cat_101, "2026-11-22", False),  # antes da regra
+        ]
+        for tmp, tp_jornada, categoria, adm, recusa in casos:
+            with self.subTest(tmp=tmp, tp=tp_jornada, cat=categoria.codigo, adm=adm):
+                self.employee.l10n_br_esocial_categoria_id = categoria
+                self.contract.write(
+                    {
+                        "l10n_br_esocial_tmp_parc": tmp,
+                        "l10n_br_esocial_tp_jornada": tp_jornada,
+                        "date_start": adm,
+                    }
+                )
+                if recusa:
+                    with self.assertRaises(UserError):
+                        self.s2200._to_esociallib_dict()
+                else:
+                    self.s2200._to_esociallib_dict()
