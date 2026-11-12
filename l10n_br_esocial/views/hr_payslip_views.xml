@@ -18,6 +18,12 @@
                     string="Gerar S-1210 eSocial"
                     invisible="state != 'done' or not l10n_br_esocial_s1200_id"
                 />
+                <button
+                    name="action_esocial_gerar_s2299"
+                    type="object"
+                    string="Gerar S-2299 eSocial (rescisão)"
+                    invisible="state != 'done'"
+                />
             </xpath>
             <xpath expr="//notebook" position="inside">
                 <page string="eSocial" name="esocial">

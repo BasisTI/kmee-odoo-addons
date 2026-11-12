@@ -42,3 +42,31 @@ class HrEmployeeRelative(models.Model):
         size=100,
         help="Obrigatória quando o tipo de dependente é 99 - Agregado/Outros.",
     )
+    l10n_br_esocial_pensao_alimenticia = fields.Boolean(
+        string="Beneficiário da Pensão Alimentícia",
+        help="Alimentando que recebe a pensão descontada na folha "
+        "(S-1210, grupo penAlim). O valor "
+        "descontado é único: com mais de um, informe o valor fixo e/ou o percentual de "
+        "cada um. Sem tipo de dependente eSocial, o parente é "
+        "declarado no S-1210 como dependente não cadastrado (infoDep).",
+    )
+    l10n_br_esocial_pensao_valor = fields.Float(
+        string="Pensão - Valor Fixo",
+        digits=(16, 2),
+        help="Parcela fixa da pensão deste alimentando. Só é lida quando há mais "
+        "de um alimentando: a soma de todos precisa fechar com o descontado.",
+    )
+    l10n_br_esocial_pensao_percentual = fields.Float(
+        string="Pensão - Percentual (%)",
+        digits=(16, 2),
+        help="Percentual do rendimento bruto do holerite destinado a este "
+        "alimentando (como na regra de pensão da folha). Só é lido quando há mais "
+        "de um alimentando.",
+    )
+    l10n_br_esocial_vlr_saude = fields.Float(
+        string="Plano de Saúde - Valor Mensal",
+        digits=(16, 2),
+        help="Parte do desconto mensal do plano de saúde coletivo que cabe a "
+        "este dependente (S-1210, grupo infoDepSau). O que sobrar do "
+        "desconto do holerite é o valor do titular. Exige o CPF.",
+    )

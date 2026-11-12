@@ -97,3 +97,23 @@ class HrContract(models.Model):
         help="Campo dtOpcFGTS do S-2300 (leiaute S-1.3). Obrigatório na "
         "categoria 721 (diretor não empregado, com FGTS).",
     )
+
+    l10n_br_esocial_cnpj_oper_saude = fields.Char(
+        string="CNPJ da Operadora do Plano de Saúde",
+        size=18,
+        help="Operadora do plano privado coletivo empresarial (S-1210, "
+        "planSaude/cnpjOper). Obrigatório quando o holerite tem desconto de "
+        "plano de saúde (rubrica com incidência IRRF 67 ou 9067).",
+    )
+    l10n_br_esocial_reg_ans = fields.Char(
+        string="Registro na ANS",
+        size=6,
+        help="Registro da operadora na ANS (S-1210, planSaude/regANS).",
+    )
+    l10n_br_esocial_cnpj_prev_compl = fields.Char(
+        string="CNPJ da Entidade de Previdência Complementar",
+        size=18,
+        help="Entidade (S-1210, previdCompl/cnpjEntidPC). Obrigatório quando "
+        "o holerite tem desconto de previdência complementar (rubrica com "
+        "incidência IRRF 46-48 ou 61-66).",
+    )

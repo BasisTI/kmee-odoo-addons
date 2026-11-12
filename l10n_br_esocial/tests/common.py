@@ -214,6 +214,7 @@ class ESocialCicloCommon(TransactionCase):
         # desenho; isso e esperado nestes testes.
         mute = mute_logger(
             "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario",
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s1210_pagamentos",
             "odoo.addons.l10n_br_esocial.models.esocial_lote",
             "odoo.addons.l10n_br_esocial.models.retorno_totalizadores",
         )
@@ -276,7 +277,9 @@ class ESocialCicloCommon(TransactionCase):
             }
         )
 
-    def _criar_payslip(self, linhas=None, data_pagamento=None, state="done"):
+    def _criar_payslip(
+        self, linhas=None, data_pagamento=None, state="done", struct_id=None
+    ):
         """Holerite confirmado com as rubricas informadas.
 
         ``linhas`` é uma lista de tuplas ``(code, valor)`` — os códigos usados
@@ -298,6 +301,7 @@ class ESocialCicloCommon(TransactionCase):
                 "date_to": "2024-03-31",
                 "state": state,
                 "l10n_br_esocial_data_pagamento": data_pagamento,
+                **({"struct_id": struct_id} if struct_id else {}),
             }
         )
         for code, valor in linhas:

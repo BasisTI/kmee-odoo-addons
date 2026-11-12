@@ -1,7 +1,7 @@
 {
     "name": "eSocial - Integração com o Governo Federal",
     "summary": "Tabelas, eventos e transmissão eSocial S-1.3",
-    "version": "18.0.1.3.0",
+    "version": "18.0.1.4.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",

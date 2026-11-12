@@ -111,6 +111,23 @@ class HrPayslip(models.Model):
 
     # ── S-1210 — pagamentos (regime de caixa) ──────────────────────────────
 
+    def _esocial_tp_rend(self, linha=None):
+        """Tipo de rendimento (TS_tpRendDep) do holerite ou de uma linha dele.
+
+        11 = remuneração mensal, 12 = 13º salário, 13 = férias. Vem da estrutura
+        do holerite (``13_*`` e ``FERIAS``); na rescisão, que traz o 13º
+        proporcional junto, a linha de código ``*_13`` é do 13º.
+        """
+        self.ensure_one()
+        estrutura = self.struct_id.code or ""
+        if estrutura.startswith("13_"):
+            return "12"
+        if estrutura == "FERIAS":
+            return "13"
+        if linha is not None and (linha.code or "").endswith("_13"):
+            return "12"
+        return "11"
+
     def _esocial_valor_liquido(self):
         """Líquido pago do holerite (rubrica NET)."""
         self.ensure_one()
@@ -220,4 +237,44 @@ class HrPayslip(models.Model):
             eventos |= s1210.action_gerar_evento()
             slips.write({"l10n_br_esocial_s1210_id": s1210.id})
 
+        return self._action_esocial_eventos(eventos)
+
+    # ── S-2299 — desligamento a partir da rescisão ─────────────────────────
+
+    def action_esocial_gerar_s2299(self):
+        """Gera o S-2299 dos holerites de rescisão, ligado a cada holerite.
+
+        A ligação (``payslip_id``) é o que faz o ``indPagtoAPI`` e a data
+        projetada do aviso seguirem a folha. Data do desligamento = fim do
+        período da rescisão; o motivo vem do contrato.
+        """
+        payslips = self.filtered(
+            lambda slip: slip.state == "done" and slip.struct_id.code == "RESCISAO"
+        )
+        if not payslips:
+            raise UserError(
+                _("Selecione holerites de rescisão confirmados (estado 'Feito').")
+            )
+        eventos = self.env["l10n_br.esocial.evento"]
+        for slip in payslips:
+            motivo = slip.contract_id.l10n_br_esocial_motivo_deslig_id
+            if not motivo:
+                raise UserError(
+                    _(
+                        "Informe o Motivo Desligamento eSocial no contrato de "
+                        "'%(name)s' antes de gerar o S-2299."
+                    )
+                    % {"name": slip.employee_id.name}
+                )
+            s2299 = self.env["l10n_br.esocial.s2299"].create(
+                {
+                    "employee_id": slip.employee_id.id,
+                    "contract_id": slip.contract_id.id,
+                    "dt_deslig": slip.date_to,
+                    "motivo_desligamento_id": motivo.id,
+                    "payslip_id": slip.id,
+                    "company_id": slip.company_id.id,
+                }
+            )
+            eventos |= s2299.action_gerar_evento()
         return self._action_esocial_eventos(eventos)

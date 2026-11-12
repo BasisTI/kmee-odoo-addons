@@ -210,6 +210,39 @@ Afastamento por doença (S-2230, MOS S-1.3 itens 3.1, 4.1 e 5):
    Os demais motivos (maternidade, férias, licença remunerada etc.) não têm o
    limite de 15 dias.
 
+Pagamentos e informe de rendimentos (S-1210, leiaute S-1.3 - evtPgtos):
+
+O ``infoIRComplem`` (que substitui a DIRF) só sai quando algum holerite pago
+tem desconto com incidência de IRRF que o leiaute manda detalhar. A
+``tpPgto`` vale 1 = S-1200, 2 = S-2299, 3 = S-2399, 4 = S-1202, 5 = S-1207.
+
+#. **Dependentes** (``dedDepen``): os parentes com tipo eSocial e **Dependente
+   para IRRF** (mesmos do S-2200) recebem a dedução por dependente vigente na
+   competência. O número de dependentes de IRRF da folha precisa ser igual ao
+   declarado; se diferir, o evento é recusado.
+#. **Pensão alimentícia** (``penAlim``): rubrica de desconto com incidência
+   IRRF 51 a 54. Marque **Beneficiário da Pensão Alimentícia** em um (e só
+   um) parente, com CPF. Se ele não tem tipo de dependente eSocial, é
+   declarado em ``infoDep`` (o leiaute pede ``infoDep`` só para quem o S-2200
+   não cadastrou).
+#. **Plano de saúde** (``planSaude``): rubrica de desconto com incidência IRRF
+   67 ou 9067 (ou natureza 9219). Informe no contrato o **CNPJ da operadora**
+   e o registro na ANS; o **Plano de Saúde - Valor Mensal** de cada
+   dependente sai do desconto do holerite, e o que sobra é o titular.
+#. **Previdência complementar** (``previdCompl``): rubrica de desconto com
+   incidência IRRF 46-48 (privada), 61, 62 e 66 (FAPI) ou 63-65 (Funpresp).
+   Informe o **CNPJ da entidade** no contrato.
+#. Falta de CPF, CNPJ, beneficiário ou valor recusa o evento com a lista do
+   que falta; nada é preenchido por padrão. Reembolso médico (``infoReembMed``)
+   e moléstia grave (``dtLaudo``) não são gerados.
+
+Desligamento (S-2299): ``indPagtoAPI`` (aviso prévio indenizado) existe no
+S-2299, não no S-1210. Informe o **Holerite de Rescisão**: com o módulo de
+rescisão, o indicativo é ``S`` só quando a folha apurou a verba de aviso
+indenizado (sem justa causa ou acordo), e ``dtProjFimAPI`` é o desligamento mais
+os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
+``S`` exige a data projetada, igual ou posterior ao desligamento.
+
 Bug Tracker
 ===========
 

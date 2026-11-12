@@ -32,6 +32,10 @@
                 <field name="l10n_br_esocial_dep_irrf" />
                 <field name="l10n_br_esocial_dep_sf" />
                 <field name="l10n_br_esocial_inc_trab" />
+                <field name="l10n_br_esocial_pensao_alimenticia" optional="hide" />
+                <field name="l10n_br_esocial_pensao_valor" optional="hide" />
+                <field name="l10n_br_esocial_pensao_percentual" optional="hide" />
+                <field name="l10n_br_esocial_vlr_saude" optional="hide" />
                 <field name="l10n_br_esocial_descr_dep" optional="hide" />
             </xpath>
         </field>
@@ -46,6 +50,11 @@
         />
         <field name="arch" type="xml">
             <xpath expr="//group[@name='union']" position="after">
+                <group name="esocial_ir" string="eSocial - Informe de rendimentos">
+                    <field name="l10n_br_esocial_cnpj_oper_saude" />
+                    <field name="l10n_br_esocial_reg_ans" />
+                    <field name="l10n_br_esocial_cnpj_prev_compl" />
+                </group>
                 <group name="esocial_jornada" string="eSocial - Jornada">
                     <field name="l10n_br_esocial_tp_jornada" />
                     <field name="l10n_br_esocial_tmp_parc" />
