@@ -7,6 +7,17 @@
         <field name="arch" type="xml">
             <xpath expr="//notebook" position="inside">
                 <page string="eSocial" name="esocial">
+                    <field name="l10n_br_esocial_cod_inc_irrf_expirado" invisible="1" />
+                    <div
+                        class="alert alert-warning"
+                        role="alert"
+                        invisible="not l10n_br_esocial_cod_inc_irrf_expirado"
+                    >
+                        Esta regra guarda uma incidência de IRRF que expirou na Tabela 21
+                        do eSocial e não consta mais da lista. O S-1010 não é gerado
+                        enquanto ela não for trocada pela incidência vigente (para o que
+                        não é rendimento, retenção ou dedução de IRRF, a 09).
+                    </div>
                     <group>
                         <group string="Identificação">
                             <field name="l10n_br_esocial_cod_rubr" />

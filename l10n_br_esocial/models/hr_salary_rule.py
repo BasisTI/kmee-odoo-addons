@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 # Tabelas de incidência do leiaute S-1.3 do eSocial (NT 07/2026 rev. 20/10/2026):
 # códigos de ``codIncCP``, ``codIncIRRF`` (Tabela 21, só os vigentes) e ``codIncFGTS``.
@@ -379,6 +379,28 @@ ESOCIAL_COD_INC_FGTS = [
 ]
 
 
+# Tabela 21 (IRRF): códigos que expiraram em 30/06/2021 e já não saem do S-1010.
+# O 00 "Rendimento não tributável" foi substituído, para o que não é base de IRRF,
+# pelo 09 (verba de natureza diversa de rendimento, retenção, isenção ou dedução).
+COD_INC_IRRF_EXPIRADOS = (
+    "00",
+    "01",
+    "15",
+    "35",
+    "44",
+    "55",
+    "78",
+    "81",
+    "82",
+    "83",
+    "91",
+    "92",
+    "93",
+    "94",
+    "95",
+)
+COD_INC_IRRF_SEM_INCIDENCIA = "09"
+
 # Incidência INSS de salário-maternidade (21/22: pago pelo empregador;
 # 25/26: exclusiva do segurado). Rubrica com essa incidência é salário-maternidade
 # e tem natureza própria (4050 mensal, 4051 13º), nunca a 1000 de salário comum.
@@ -442,6 +464,56 @@ class HrSalaryRule(models.Model):
         string="Incidência FGTS",
         help="Código de incidência tributária da rubrica para o FGTS.",
     )
+    l10n_br_esocial_cod_inc_irrf_expirado = fields.Boolean(
+        string="Incidência IRRF expirada",
+        compute="_compute_l10n_br_esocial_cod_inc_irrf_expirado",
+        search="_search_l10n_br_esocial_cod_inc_irrf_expirado",
+        help="A regra guarda um código de IRRF que expirou na Tabela 21 do eSocial "
+        "(ex.: 00). A tela não o oferece mais e o S-1010 não é gerado até a "
+        "incidência ser escolhida de novo.",
+    )
+
+    @api.depends("l10n_br_esocial_cod_inc_irrf")
+    def _compute_l10n_br_esocial_cod_inc_irrf_expirado(self):
+        for rule in self:
+            rule.l10n_br_esocial_cod_inc_irrf_expirado = (
+                rule.l10n_br_esocial_cod_inc_irrf in COD_INC_IRRF_EXPIRADOS
+            )
+
+    def _search_l10n_br_esocial_cod_inc_irrf_expirado(self, operator, value):
+        if operator not in ("=", "!="):
+            raise UserError(_("Operador não suportado: %s", operator))
+        expirado = bool(value) == (operator == "=")
+        return [
+            (
+                "l10n_br_esocial_cod_inc_irrf",
+                "in" if expirado else "not in",
+                list(COD_INC_IRRF_EXPIRADOS),
+            )
+        ]
+
+    def _esocial_cod_inc_irrf_s1010(self):
+        """``codIncIRRF`` do S-1010: o da regra; sem incidência, o 09 vigente.
+
+        Código expirado na Tabela 21 recusa a geração: o governo rejeita o evento e
+        trocar por outro código muda o tratamento fiscal, decisão da folha.
+        """
+        self.ensure_one()
+        codigo = self.l10n_br_esocial_cod_inc_irrf
+        if not codigo:
+            return COD_INC_IRRF_SEM_INCIDENCIA
+        if codigo in COD_INC_IRRF_EXPIRADOS:
+            raise UserError(
+                _(
+                    "A regra '%(regra)s' tem incidência de IRRF %(codigo)s, que "
+                    "expirou na Tabela 21 do eSocial. Escolha a incidência vigente na "
+                    "aba eSocial da regra (para o que não é rendimento, retenção ou "
+                    "dedução de IRRF, a 09).",
+                    regra=self.display_name,
+                    codigo=codigo,
+                )
+            )
+        return codigo
 
     def _esocial_chave_rubrica(self):
         """Chave da rubrica no S-1010: (código, ID da tabela de rubricas)."""
@@ -457,7 +529,7 @@ class HrSalaryRule(models.Model):
             self.l10n_br_esocial_nat_rubr_id.id,
             self.l10n_br_esocial_tp_rubr or False,
             self.l10n_br_esocial_cod_inc_cp or False,
-            self.l10n_br_esocial_cod_inc_irrf or False,
+            self.l10n_br_esocial_cod_inc_irrf or COD_INC_IRRF_SEM_INCIDENCIA,
             self.l10n_br_esocial_cod_inc_fgts or False,
         )
 

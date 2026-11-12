@@ -425,6 +425,12 @@ administrador define o parâmetro de sistema
 </ol>
 <p>Rubricas (S-1010 e S-1200):</p>
 <ol class="arabic simple">
+<li>Regra sem <strong>Incidência IRRF</strong> sai no S-1010 com o código 09 (verba que não é
+rendimento, retenção, isenção nem dedução de IRRF); o 00 expirou em 30/06/2021.
+Regra antiga que ainda guarda um código expirado mostra um aviso na aba
+eSocial e o S-1010 recusa a geração até a incidência ser trocada. Para listar
+as regras nessa situação, filtre por <tt class="docutils literal">l10n_br_esocial_cod_inc_irrf_expirado</tt>
+(campo calculado, pesquisável).</li>
 <li>O <strong>Código Rubrica eSocial</strong> identifica a rubrica. Regras de estruturas
 diferentes (mensal, férias, 13º, rescisão) podem repetir o código desde que
 tenham a mesma natureza, o mesmo tipo e as mesmas incidências; com definição

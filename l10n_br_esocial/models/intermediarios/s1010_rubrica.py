@@ -142,7 +142,7 @@ class ESocialS1010(models.Model):
                     "nat_rubr": int(rule.l10n_br_esocial_nat_rubr_id.codigo),
                     "tp_rubr": int(rule.l10n_br_esocial_tp_rubr),
                     "cod_inc_cp": rule.l10n_br_esocial_cod_inc_cp or "00",
-                    "cod_inc_irrf": int(rule.l10n_br_esocial_cod_inc_irrf or "0"),
+                    "cod_inc_irrf": int(rule._esocial_cod_inc_irrf_s1010()),
                     "cod_inc_fgts": rule.l10n_br_esocial_cod_inc_fgts or "00",
                 }
             )

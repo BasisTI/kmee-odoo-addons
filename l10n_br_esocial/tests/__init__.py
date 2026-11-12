@@ -22,3 +22,4 @@ from . import test_rubricas_unicas
 from . import test_tabelas_incidencia
 from . import test_s2200_cadastro
 from . import test_tsve
+from . import test_s1010_irrf_sem_incidencia
