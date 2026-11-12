@@ -2,6 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 import logging
+from datetime import date
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -417,7 +418,9 @@ class TestS2230(TestESocialIntermediarioBase):
 
 
 class TestS2230Devido(TestESocialIntermediarioBase):
-    """S-2230 de doença só é devido acima de 15 dias (MOS), com recaída."""
+    """S-2230 conforme o MOS S-1.3: motivo 01 sempre; motivo 03 com limite e recaída."""
+
+    MSG = "não é de informação obrigatória"
 
     @classmethod
     def setUpClass(cls):
@@ -433,11 +436,11 @@ class TestS2230Devido(TestESocialIntermediarioBase):
         cls.mot_afast_03 = cls.env.ref("l10n_br_esocial.mot_afast_03")
         cls.mot_afast_16 = cls.env.ref("l10n_br_esocial.mot_afast_16")
 
-    def _licenca(self, inicio, fim, tipo=None):
+    def _licenca(self, inicio, fim):
         leave = self.env["hr.leave"].create(
             {
                 "employee_id": self.employee.id,
-                "holiday_status_id": (tipo or self.tipo_doenca).id,
+                "holiday_status_id": self.tipo_doenca.id,
                 "request_date_from": inicio,
                 "request_date_to": fim,
             }
@@ -446,93 +449,150 @@ class TestS2230Devido(TestESocialIntermediarioBase):
             leave.sudo().action_validate()
         return leave
 
-    def _s2230(self, inicio, fim, motivo=None):
-        return self.env["l10n_br.esocial.s2230"].create(
-            {
-                "employee_id": self.employee.id,
-                "dt_ini_afast": inicio,
-                "dt_term_afast": fim,
-                "motivo_afastamento_id": (motivo or self.mot_afast_03).id,
-                "company_id": self.company.id,
-            }
-        )
+    def _s2230(self, inicio, fim, motivo=None, **extra):
+        valores = {
+            "employee_id": self.employee.id,
+            "dt_ini_afast": inicio,
+            "dt_term_afast": fim,
+            "company_id": self.company.id,
+        }
+        if inicio:
+            valores["motivo_afastamento_id"] = (motivo or self.mot_afast_03).id
+        valores.update(extra)
+        return self.env["l10n_br.esocial.s2230"].create(valores)
 
-    def _gera(self, inicio, fim, motivo=None):
-        self._licenca(inicio, fim)
-        return self._s2230(inicio, fim, motivo)._to_esociallib_dict()
+    def _gera(self, inicio, fim, motivo=None, **extra):
+        return self._s2230(inicio, fim, motivo, **extra)._to_esociallib_dict()
 
+    def _recusa(self, inicio, fim, motivo=None, **extra):
+        with self.assertRaisesRegex(UserError, self.MSG):
+            self._gera(inicio, fim, motivo, **extra)
+
+    # Motivo 03: limite de 15 dias
     def test_doenca_ate_15_dias_nao_gera(self):
-        """15 dias exatos: a empresa paga tudo, sem S-2230."""
         self._licenca("2024-03-01", "2024-03-15")
-        with self.assertRaises(UserError):
-            self._s2230("2024-03-01", "2024-03-15")._to_esociallib_dict()
+        self._recusa("2024-03-01", "2024-03-15")
 
     def test_doenca_curta_de_tres_dias_nao_gera(self):
         self._licenca("2024-03-01", "2024-03-03")
-        with self.assertRaises(UserError):
-            self._s2230("2024-03-01", "2024-03-03")._to_esociallib_dict()
+        self._recusa("2024-03-01", "2024-03-03")
 
     def test_doenca_16_dias_gera(self):
+        self._licenca("2024-03-01", "2024-03-16")
         data = self._gera("2024-03-01", "2024-03-16")
         self.assertEqual(data["dt_ini_afast"], "2024-03-01")
         self.assertEqual(data["dt_term_afast"], "2024-03-16")
 
-    def test_doenca_acidente_do_trabalho_segue_a_mesma_regra(self):
-        self._licenca("2024-03-01", "2024-03-10")
-        with self.assertRaises(UserError):
-            self._s2230(
-                "2024-03-01", "2024-03-10", self.mot_afast_01
-            )._to_esociallib_dict()
+    def test_doenca_curta_opcional_gera_quando_pedido(self):
+        self._licenca("2024-03-01", "2024-03-03")
+        data = self._gera("2024-03-01", "2024-03-03", informar_opcional=True)
+        self.assertEqual(data["cod_mot_afast"], "03")
 
-    def test_recaida_dois_de_10_dias_em_60_dias_gera_o_segundo(self):
-        """10 + 10 dias com 30 de intervalo: o segundo passa de 15 somado."""
+    def test_outros_motivos_nao_tem_limite_de_15_dias(self):
+        data = self._gera("2024-03-01", "2024-03-03", self.mot_afast_16)
+        self.assertEqual(data["cod_mot_afast"], "16")
+
+    # Motivo 01: desde o 1º dia
+    def test_acidente_do_trabalho_de_1_dia_gera(self):
+        self._licenca("2024-03-01", "2024-03-01")
+        data = self._gera("2024-03-01", "2024-03-01", self.mot_afast_01)
+        self.assertEqual(data["cod_mot_afast"], "01")
+
+    def test_acidente_do_trabalho_termino_curto_gera(self):
         self._licenca("2024-03-01", "2024-03-10")
-        with self.assertRaises(UserError):
-            self._s2230("2024-03-01", "2024-03-10")._to_esociallib_dict()
+        self._s2230("2024-03-01", None, self.mot_afast_01)
+        termino = self._s2230(None, "2024-03-10")
+        self.assertEqual(termino._to_esociallib_dict()["dt_term_afast"], "2024-03-10")
+
+    # Recaída
+    def test_recaida_dois_de_10_dias_informa_os_dois(self):
+        self._licenca("2024-03-01", "2024-03-10")
         self._licenca("2024-04-09", "2024-04-18")
-        data = self._s2230("2024-04-09", "2024-04-18")._to_esociallib_dict()
-        self.assertEqual(data["dt_ini_afast"], "2024-04-09")
+        self.assertEqual(
+            self._gera("2024-03-01", "2024-03-10")["dt_ini_afast"], "2024-03-01"
+        )
+        self.assertEqual(
+            self._gera("2024-04-09", "2024-04-18")["dt_ini_afast"], "2024-04-09"
+        )
+
+    def test_recaida_exemplo_do_mos_3_10_3(self):
+        self._licenca("2024-03-01", "2024-03-03")
+        self._licenca("2024-03-20", "2024-03-29")
+        self._licenca("2024-04-20", "2024-04-22")
+        for ini, fim in (
+            ("2024-03-01", "2024-03-03"),
+            ("2024-03-20", "2024-03-29"),
+            ("2024-04-20", "2024-04-22"),
+        ):
+            self.assertEqual(self._gera(ini, fim)["dt_ini_afast"], ini)
 
     def test_recaida_intervalo_de_60_dias_soma(self):
         self._licenca("2024-03-01", "2024-03-10")
         self._licenca("2024-05-09", "2024-05-18")  # 60 dias após o fim do 1º
-        data = self._s2230("2024-05-09", "2024-05-18")._to_esociallib_dict()
-        self.assertEqual(data["dt_ini_afast"], "2024-05-09")
+        self.assertEqual(
+            self._gera("2024-05-09", "2024-05-18")["dt_ini_afast"], "2024-05-09"
+        )
 
     def test_intervalo_de_61_dias_nao_soma(self):
         self._licenca("2024-03-01", "2024-03-10")
         self._licenca("2024-05-10", "2024-05-19")  # 61 dias após o fim do 1º
-        with self.assertRaises(UserError):
-            self._s2230("2024-05-10", "2024-05-19")._to_esociallib_dict()
+        self._recusa("2024-05-10", "2024-05-19")
+
+    def test_janela_conta_do_termino_do_primeiro(self):
+        """O 3º começa a 63 dias do fim do 1º, ainda que a 29 do fim do 2º."""
+        self._licenca("2024-03-01", "2024-03-05")
+        self._licenca("2024-03-30", "2024-04-08")
+        self._licenca("2024-05-07", "2024-05-12")
+        self._recusa("2024-05-07", "2024-05-12")
+
+    def test_retorno_de_afastamento_acima_de_15_dias_torna_devido(self):
+        self._licenca("2024-03-01", "2024-03-05")
+        self._licenca("2024-03-30", "2024-04-30")
+        self._licenca("2024-06-20", "2024-06-22")
+        self.assertEqual(
+            self._gera("2024-06-20", "2024-06-22")["dt_ini_afast"], "2024-06-20"
+        )
+
+    def test_acidente_do_trabalho_nao_soma_com_doenca(self):
+        self._licenca("2024-03-01", "2024-03-10")
+        self._s2230("2024-03-01", "2024-03-10", self.mot_afast_01)
+        self._licenca("2024-03-20", "2024-03-29")
+        self._recusa("2024-03-20", "2024-03-29")
+
+    def test_recaida_sem_evento_avisa_e_gera_pendente(self):
+        self._licenca("2024-03-01", "2024-03-10")
+        self._licenca("2024-04-09", "2024-04-18")
+        segundo = self._s2230("2024-04-09", "2024-04-18")
+        self.assertEqual(
+            segundo._recaida_sem_evento(), [(date(2024, 3, 1), date(2024, 3, 10))]
+        )
+        criado = segundo.action_gerar_recaida_pendente()
+        self.assertEqual(criado.dt_ini_afast, date(2024, 3, 1))
+        self.assertEqual(criado._to_esociallib_dict()["dt_term_afast"], "2024-03-10")
+        self.assertFalse(segundo._recaida_sem_evento())
+
+    # Início em aberto e término
+    def test_inicio_em_aberto_de_doenca_curta_e_recusado(self):
+        self._licenca("2024-03-01", "2024-03-05")
+        self._recusa("2024-03-01", None)
+
+    def test_inicio_em_aberto_sem_afastamento_registrado_segue(self):
+        data = self._gera("2024-03-01", None, self.mot_afast_01)
+        self.assertNotIn("dt_term_afast", data)
 
     def test_termino_de_inicio_nao_gerado_e_recusado(self):
-        """Não gera o término de um afastamento cujo início não é devido."""
         self._licenca("2024-03-01", "2024-03-10")
-        termino = self.env["l10n_br.esocial.s2230"].create(
-            {
-                "employee_id": self.employee.id,
-                "dt_term_afast": "2024-03-10",
-                "company_id": self.company.id,
-            }
-        )
-        with self.assertRaises(UserError):
-            termino._to_esociallib_dict()
+        self._recusa(None, "2024-03-10")
+
+    def test_termino_de_inicio_gerado_segue_mesmo_curto(self):
+        """Início opcional já enviado: o término vai, para não deixar aberto."""
+        self._licenca("2024-03-01", "2024-03-05")
+        self._s2230("2024-03-01", None, informar_opcional=True)
+        self.assertEqual(self._gera(None, "2024-03-05")["dt_term_afast"], "2024-03-05")
 
     def test_termino_de_afastamento_longo_segue(self):
         self._licenca("2024-03-01", "2024-03-20")
-        termino = self.env["l10n_br.esocial.s2230"].create(
-            {
-                "employee_id": self.employee.id,
-                "dt_term_afast": "2024-03-20",
-                "company_id": self.company.id,
-            }
-        )
-        self.assertEqual(termino._to_esociallib_dict()["dt_term_afast"], "2024-03-20")
-
-    def test_outros_motivos_nao_tem_limite_de_15_dias(self):
-        """Licença remunerada (16) de 3 dias continua gerando o S-2230."""
-        data = self._s2230("2024-03-01", "2024-03-03", self.mot_afast_16)
-        self.assertEqual(data._to_esociallib_dict()["cod_mot_afast"], "16")
+        self.assertEqual(self._gera(None, "2024-03-20")["dt_term_afast"], "2024-03-20")
 
 
 class TestS2299(TestESocialIntermediarioBase):

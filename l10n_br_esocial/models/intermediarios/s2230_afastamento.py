@@ -4,14 +4,21 @@
 from odoo import _, fields, models
 from odoo.exceptions import UserError
 
-# Tabela 18: acidente/doença do trabalho (01, 02) e não relacionada ao trabalho
-# (03, 04). Nesses motivos a empresa paga os 15 primeiros dias e o S-2230 só é
-# devido a partir daí (MOS do eSocial, S-2230; Lei 8.213/91, art. 60, § 3º).
-MOTIVOS_DOENCA = frozenset({"01", "02", "03", "04"})
+# MOS S-1.3, S-2230, itens 4.1 e 5.1: o acidente/doença do trabalho (motivo 01) é
+# informado desde o 1º dia, qualquer que seja a duração. A doença não relacionada
+# ao trabalho (motivo 03) é obrigatória só acima de 15 dias, na recaída pela mesma
+# doença em 60 dias (soma acima de 15, ou em até 60 dias do retorno de um
+# afastamento acima de 15); nas demais hipóteses a informação é opcional. Os
+# motivos 02 e 04 foram encerrados em 2016-12-31.
+MOTIVO_TRABALHO = "01"
+MOTIVO_DOENCA = "03"
 DIAS_EMPRESA = 15
-# Novo afastamento pela mesma doença em até 60 dias do anterior soma os dias
-# (Decreto 3.048/99, art. 75, § 3º).
+# Item 5.2: a janela de 60 dias conta do término do primeiro afastamento.
 DIAS_RECAIDA = 60
+
+
+def _dias(inicio, fim):
+    return (fim - inicio).days + 1
 
 
 class ESocialS2230(models.Model):
@@ -44,12 +51,22 @@ class ESocialS2230(models.Model):
     def _get_event_type(self):
         return "S-2230"
 
-    def _afastamentos_inss_anteriores(self, inicio):
-        """Afastamentos previdenciários validados do empregado antes de ``inicio``.
+    informar_opcional = fields.Boolean(
+        string="Informar mesmo sem obrigatoriedade",
+        help="Doença não relacionada ao trabalho de até 15 dias, fora de recaída, "
+        "é de informação opcional no eSocial: marque para gerar o evento assim "
+        "mesmo.",
+    )
 
-        Mesmo critério da TG-82: tipo com ``l10n_br_afastamento_inss``.
+    def _afastamentos_inss(self):
+        """Períodos ``(inicio, fim)`` de doença do empregado, ordenados.
+
+        Mesmo critério da TG-82 (tipo com ``l10n_br_afastamento_inss``). Acidente
+        do trabalho (com S-2230 de motivo 01 no mesmo início) não soma com a
+        doença comum.
         """
-        return (
+        self.ensure_one()
+        leaves = (
             self.env["hr.leave"]
             .sudo()
             .search(
@@ -57,77 +74,169 @@ class ESocialS2230(models.Model):
                     ("employee_id", "=", self.employee_id.id),
                     ("state", "=", "validate"),
                     ("holiday_status_id.l10n_br_afastamento_inss", "=", True),
-                    ("request_date_to", "<", inicio),
                 ],
-                order="request_date_to desc",
+                order="request_date_from",
             )
         )
+        acidentes = {
+            s.dt_ini_afast
+            for s in self.sudo().search(
+                [
+                    ("employee_id", "=", self.employee_id.id),
+                    ("cod_mot_afast", "=", MOTIVO_TRABALHO),
+                ]
+            )
+        } | {
+            s.dt_ini_afast
+            for s in self.sudo().search(
+                [
+                    ("employee_id", "=", self.employee_id.id),
+                    ("motivo_afastamento_id.codigo", "=", MOTIVO_TRABALHO),
+                ]
+            )
+        }
+        return [
+            (lv.request_date_from, lv.request_date_to)
+            for lv in leaves
+            if lv.request_date_from not in acidentes
+        ]
 
-    def _dias_anteriores_encadeados(self, inicio):
-        """Dias de afastamento anteriores a ``inicio`` ligados a ele por recaída.
+    def _cadeias_recaida(self, periodos):
+        """Agrupa os períodos em cadeias de recaída (item 5.2 do MOS).
 
-        Cada afastamento anterior só entra se terminou até 60 dias antes do
-        seguinte da cadeia; o 61º dia de intervalo quebra a cadeia.
+        Cada cadeia começa num afastamento e leva os seguintes que começam em até
+        60 dias do término desse primeiro.
         """
-        total = 0
-        for leave in self._afastamentos_inss_anteriores(inicio):
-            if (inicio - leave.request_date_to).days > DIAS_RECAIDA:
-                break
-            total += (leave.request_date_to - leave.request_date_from).days + 1
-            inicio = leave.request_date_from
-        return total
+        cadeias = []
+        for periodo in sorted(periodos):
+            if cadeias and (periodo[0] - cadeias[-1][0][1]).days <= DIAS_RECAIDA:
+                cadeias[-1].append(periodo)
+            else:
+                cadeias.append([periodo])
+        return cadeias
 
-    def _validar_afastamento_devido(self, cod_mot):
-        """Recusa o S-2230 de doença/acidente que o MOS não manda informar.
+    def _periodo_devido(self, inicio, fim):
+        """Doença (motivo 03) de ``inicio`` a ``fim`` é de informação obrigatória?"""
+        self.ensure_one()
+        if _dias(inicio, fim) > DIAS_EMPRESA:
+            return True
+        periodos = {p for p in self._afastamentos_inss() if p[0] != inicio}
+        periodos.add((inicio, fim))
+        for cadeia in self._cadeias_recaida(periodos):
+            if (inicio, fim) in cadeia and sum(
+                _dias(*p) for p in cadeia
+            ) > DIAS_EMPRESA:
+                return True
+        # Até 60 dias do retorno de um afastamento acima de 15 dias.
+        return any(
+            _dias(*p) > DIAS_EMPRESA and 0 < (inicio - p[1]).days <= DIAS_RECAIDA
+            for p in periodos
+        )
 
-        Devido só quando o afastamento, somado aos anteriores encadeados por
-        recaída (até 60 dias de intervalo), passa de 15 dias. O término segue o
-        início: sem o início devido, não há término a informar.
+    def _recaida_sem_evento(self):
+        """Afastamentos da cadeia de recaída deste, obrigatórios e sem S-2230.
+
+        O MOS manda informar cada afastamento da cadeia no seu evento. O módulo
+        não os gera sozinho (nem recusa o evento atual por falta deles): use
+        ``action_gerar_recaida_pendente``.
         """
         self.ensure_one()
-        inicio, fim = self.dt_ini_afast, self.dt_term_afast
-        if inicio and cod_mot not in MOTIVOS_DOENCA:
+        if not self.dt_ini_afast or not self.dt_term_afast:
+            return []
+        periodos = set(self._afastamentos_inss())
+        periodos.add((self.dt_ini_afast, self.dt_term_afast))
+        existentes = {
+            s.dt_ini_afast
+            for s in self.sudo().search(
+                [("employee_id", "=", self.employee_id.id), ("id", "!=", self.id)]
+            )
+        }
+        pendentes = []
+        for cadeia in self._cadeias_recaida(periodos):
+            if (self.dt_ini_afast, self.dt_term_afast) not in cadeia:
+                continue
+            if sum(_dias(*p) for p in cadeia) > DIAS_EMPRESA:
+                pendentes = [
+                    p
+                    for p in cadeia
+                    if p[0] != self.dt_ini_afast and p[0] not in existentes
+                ]
+        return pendentes
+
+    def action_gerar_recaida_pendente(self):
+        """Cria os S-2230 (motivo 03) que faltam na cadeia de recaída deste."""
+        self.ensure_one()
+        motivo = self.motivo_afastamento_id or self.env[
+            "l10n_br.esocial.motivo.afastamento"
+        ].search([("codigo", "=", MOTIVO_DOENCA)], limit=1)
+        return self.create(
+            [
+                {
+                    "employee_id": self.employee_id.id,
+                    "company_id": self.company_id.id,
+                    "dt_ini_afast": ini,
+                    "dt_term_afast": fim,
+                    "cod_mot_afast": self.cod_mot_afast,
+                    "motivo_afastamento_id": motivo.id,
+                }
+                for ini, fim in self._recaida_sem_evento()
+            ]
+        )
+
+    def _validar_afastamento_devido(self, cod_mot):
+        """Recusa o S-2230 de doença (motivo 03) que o MOS não manda informar.
+
+        Doença curta é opcional: sem ``informar_opcional`` o evento não é gerado,
+        mas nada impede o usuário de pedi-lo. O motivo 01 não tem limite. O
+        término acompanha o início já gerado; só sem início avalia o período.
+        """
+        self.ensure_one()
+        if self.informar_opcional:
             return
-        if not inicio:
-            # Só término: o início vem do afastamento previdenciário que acaba
-            # nessa data; sem ele não há como avaliar e o evento segue.
-            leave = (
-                self.env["hr.leave"]
-                .sudo()
-                .search(
-                    [
-                        ("employee_id", "=", self.employee_id.id),
-                        ("state", "=", "validate"),
-                        ("holiday_status_id.l10n_br_afastamento_inss", "=", True),
-                        ("request_date_to", "=", fim),
-                    ],
-                    limit=1,
+        inicio, fim = self.dt_ini_afast, self.dt_term_afast
+        leave_model = self.env["hr.leave"].sudo()
+        dominio = [
+            ("employee_id", "=", self.employee_id.id),
+            ("state", "=", "validate"),
+            ("holiday_status_id.l10n_br_afastamento_inss", "=", True),
+        ]
+        if inicio:
+            if cod_mot != MOTIVO_DOENCA:
+                return
+            if not fim:
+                # Início em aberto: o término vem do afastamento registrado, para
+                # não deixar aberto no eSocial um afastamento que acabou curto.
+                leave = leave_model.search(
+                    dominio + [("request_date_from", "=", inicio)], limit=1
                 )
+                if not leave:
+                    return
+                fim = leave.request_date_to
+        else:
+            leave = leave_model.search(
+                dominio + [("request_date_to", "=", fim)], limit=1
             )
             if not leave:
                 return
             inicio = leave.request_date_from
-        if not fim:
-            # Afastamento em aberto: o início se informa quando passar dos 15.
-            return
-        dias = (fim - inicio).days + 1
-        anteriores = self._dias_anteriores_encadeados(inicio)
-        if anteriores + dias <= DIAS_EMPRESA:
+            if self.sudo().search_count(
+                [
+                    ("employee_id", "=", self.employee_id.id),
+                    ("dt_ini_afast", "=", inicio),
+                    ("id", "!=", self.id),
+                ]
+            ):
+                return
+        if not self._periodo_devido(inicio, fim):
             raise UserError(
                 _(
-                    "Afastamento por doença/acidente de %(dias)s dia(s)%(ant)s "
-                    "não gera S-2230: só é devido acima de %(lim)s dias, somando "
-                    "os afastamentos pela mesma doença em até %(rec)s dias "
-                    "(MOS do eSocial).",
-                    dias=dias,
-                    ant=(
-                        _(" (mais %s dia(s) anteriores encadeados)") % anteriores
-                        if anteriores
-                        else ""
-                    ),
-                    lim=DIAS_EMPRESA,
-                    rec=DIAS_RECAIDA,
+                    "Doença não relacionada ao trabalho de %(dias)s dia(s) não é "
+                    "de informação obrigatória no S-2230 (acima de %(lim)s dias, "
+                    "ou recaída pela mesma doença em até %(rec)s dias; MOS do "
+                    "eSocial). Marque 'Informar mesmo sem obrigatoriedade' para "
+                    "gerar assim mesmo."
                 )
+                % {"dias": _dias(inicio, fim), "lim": DIAS_EMPRESA, "rec": DIAS_RECAIDA}
             )
 
     def _to_esociallib_dict(self):
