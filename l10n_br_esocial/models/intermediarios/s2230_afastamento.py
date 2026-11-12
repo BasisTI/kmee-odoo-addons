@@ -385,7 +385,7 @@ class ESocialS2230(models.Model):
             or cod_mot not in MOTIVOS_INFO_MESMO_MTV
         ):
             if self.info_mesmo_mtv:
-                _logger.warning(
+                _logger.info(
                     "S-2230 %s: infoMesmoMtv descartado (só vale para os motivos "
                     "01 e 03 com início a partir de %s).",
                     self.id,
