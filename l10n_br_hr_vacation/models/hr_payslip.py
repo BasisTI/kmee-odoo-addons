@@ -164,6 +164,8 @@ class HrPayslip(models.Model):
     # ------------------------------------------------------------------
     _L10N_BR_CAMPOS_PARTICIPACAO = (
         "state",
+        "l10n_br_estorno",
+        "refunded_id",
         "line_ids",
         "date_from",
         "date_to",
@@ -180,7 +182,7 @@ class HrPayslip(models.Model):
         res = {}
         for slip in self:
             valor, tipo = 0.0, None
-            if slip.state != "cancel":
+            if slip.state != "cancel" and not slip.l10n_br_fora_de_vigor:
                 if slip._l10n_br_eh_mensal():
                     tipo = "mensal"
                     valor = sum(
@@ -223,6 +225,7 @@ class HrPayslip(models.Model):
                 dominio = [
                     ("contract_id", "=", contrato),
                     ("state", "!=", "cancel"),
+                    ("l10n_br_fora_de_vigor", "=", False),
                     ("date_from", "<=", ate),
                     ("date_to", ">=", de),
                 ]
@@ -310,6 +313,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("struct_id.code", "=", "FERIAS"),
                 ("date_from", "<=", self.date_to),
                 ("date_to", ">=", self.date_from),
@@ -343,6 +347,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("struct_id.code", "=", "FERIAS"),
                 ("date_from", ">=", self.date_from),
                 ("date_from", "<=", self.date_to),
@@ -434,6 +439,7 @@ class HrPayslip(models.Model):
                 [
                     ("l10n_br_ferias_allocation_id", "=", alloc.id),
                     ("state", "!=", "cancel"),
+                    ("l10n_br_fora_de_vigor", "=", False),
                 ]
             )
             fracoes = irmaos.filtered(lambda p: p.l10n_br_dias_periodo_gozado > 0)
@@ -639,6 +645,7 @@ class HrPayslip(models.Model):
                 [
                     ("l10n_br_ferias_allocation_id", "=", alloc.id),
                     ("state", "=", "done"),
+                    ("l10n_br_fora_de_vigor", "=", False),
                 ]
             )
             dias_pagos = sum(pagos.mapped("l10n_br_dias_periodo_gozado")) + sum(

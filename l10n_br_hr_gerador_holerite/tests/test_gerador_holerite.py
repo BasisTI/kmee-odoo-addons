@@ -81,6 +81,22 @@ class TestGeradorHolerite(TransactionCase):
             "Nenhum holerite novo deve ser criado na segunda geração",
         )
 
+    def test_competencia_estornada_pode_ser_gerada_de_novo(self):
+        """TG-90: o original estornado e o estorno não contam como "já existe"."""
+        wizard = self._create_wizard(mes_do_ano="3", ano=2024, quantity=1)
+        wizard.action_generate()
+        original = wizard.payslip_ids
+        original.action_payslip_done()
+        original.refund_sheet()
+        wizard2 = self._create_wizard(mes_do_ano="3", ano=2024, quantity=1)
+        wizard2.action_generate()
+        self.assertEqual(len(wizard2.payslip_ids), 1)
+        self.assertNotEqual(wizard2.payslip_ids, original)
+        # Com o novo em vigor, uma terceira geração volta a pular a competência.
+        wizard3 = self._create_wizard(mes_do_ano="3", ano=2024, quantity=1)
+        wizard3.action_generate()
+        self.assertFalse(wizard3.payslip_ids)
+
     def test_invalid_quantity_rejected(self):
         """Quantidade inválida (zero ou acima do teto) é rejeitada."""
         from odoo.exceptions import UserError

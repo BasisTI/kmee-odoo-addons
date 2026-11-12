@@ -56,6 +56,103 @@ class HrPayslip(models.Model):
         "uma vez por semana com falta; falta sem data conta numa semana própria.",
     )
 
+    # O OCA copia ``credit_note`` e ``refunded_id`` em qualquer "Duplicar": a
+    # cópia de um estornado nasceria "estornado" (e a de um estorno, estorno), fora
+    # de vigor sem estorno nenhum. Só o ``refund_sheet`` os grava (``credit_note``
+    # vai explícito no ``default`` da cópia; o vínculo, depois da cópia).
+    credit_note = fields.Boolean(copy=False)
+    refunded_id = fields.Many2one(copy=False)
+    l10n_br_estorno = fields.Boolean(
+        string="Holerite de estorno",
+        readonly=True,
+        copy=False,
+        help="Marcado só pela Devolução. Diferente de ``credit_note``, que o "
+        "usuário alcança no rascunho, este não é deduzido de campo editável.",
+    )
+    l10n_br_fora_de_vigor = fields.Boolean(
+        string="Estorno ou estornado",
+        compute="_compute_l10n_br_fora_de_vigor",
+        store=True,
+        help="Marca o holerite de estorno (devolução) e o holerite original "
+        "que tem um estorno em vigor: o par se anula e nenhum dos dois conta "
+        "para período duplicado, DSR, médias, salário já pago ou integridade "
+        "entre holerites. Se o estorno é cancelado, o original volta a valer.",
+    )
+
+    @api.depends("l10n_br_estorno", "refunded_id", "refunded_id.state")
+    def _compute_l10n_br_fora_de_vigor(self):
+        for slip in self:
+            slip.l10n_br_fora_de_vigor = bool(
+                slip.l10n_br_estorno
+                or (slip.refunded_id and slip.refunded_id.state != "cancel")
+            )
+
+    def copy_data(self, default=None):
+        if self.env.context.get("l10n_br_estornando"):
+            default = dict(default or {}, l10n_br_estorno=True)
+        return super().copy_data(default)
+
+    def _l10n_br_estorno_dependentes(self):
+        """Holerites de média (férias, 13º, rescisão) que leem os mensais daqui.
+
+        Os que ficam depois do mensal, dentro da janela de 12 meses de
+        ``_l10n_br_media_habitual``, na mesma relação de contrato.
+        """
+        dependentes = self.browse()
+        for slip in self.filtered(lambda s: s.date_from and s._l10n_br_eh_mensal()):
+            dependentes |= (
+                self.sudo()
+                .search(
+                    [
+                        ("contract_id", "=", slip.contract_id.id),
+                        ("state", "!=", "cancel"),
+                        ("l10n_br_fora_de_vigor", "=", False),
+                        ("date_from", ">", slip.date_from),
+                        ("date_from", "<=", slip.date_from + relativedelta(months=12)),
+                    ]
+                )
+                .filtered(lambda r: not r._l10n_br_eh_mensal())
+            )
+        return dependentes - self
+
+    def refund_sheet(self):
+        """Devolução: só do confirmado em vigor, uma vez, e com as médias em dia."""
+        for slip in self:
+            if slip.l10n_br_estorno or slip.credit_note:
+                raise UserError(
+                    _(
+                        "O holerite %(slip)s já é um estorno: não se estorna um "
+                        "estorno.",
+                        slip=slip.number or slip.name,
+                    )
+                )
+            if slip.refunded_id and slip.refunded_id.state != "cancel":
+                raise UserError(
+                    _(
+                        "O holerite %(slip)s já foi estornado por %(estorno)s.",
+                        slip=slip.number or slip.name,
+                        estorno=slip.refunded_id.number or slip.refunded_id.name,
+                    )
+                )
+        dependentes = self._l10n_br_estorno_dependentes()
+        fechados = dependentes.filtered(lambda r: r.state not in ("draft", "verify"))
+        if fechados:
+            raise UserError(
+                _(
+                    "Não é possível estornar: %(fechados)s, do mesmo contrato, já "
+                    "está confirmado e a média dele depende deste holerite. Volte o "
+                    "confirmado para rascunho primeiro.",
+                    fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
+                )
+            )
+        res = super(
+            HrPayslip, self.with_context(l10n_br_estornando=True)
+        ).refund_sheet()
+        # As médias que liam o estornado: quem nunca foi calculado será certo no
+        # 1º cálculo.
+        dependentes.filtered("line_ids").compute_sheet()
+        return res
+
     @api.constrains("l10n_br_faltas_injustificadas", "l10n_br_falta_ids")
     def _check_datas_faltas(self):
         for rec in self:
@@ -151,6 +248,8 @@ class HrPayslip(models.Model):
 
     _L10N_BR_CAMPOS_DSR = (
         "state",
+        "l10n_br_estorno",
+        "refunded_id",
         "employee_id",
         "contract_id",
         "date_from",
@@ -199,6 +298,7 @@ class HrPayslip(models.Model):
                     [
                         ("employee_id", "=", empregado.id),
                         ("state", "!=", "cancel"),
+                        ("l10n_br_fora_de_vigor", "=", False),
                         "|",
                         ("l10n_br_falta_ids", "!=", False),
                         ("l10n_br_faltas_injustificadas", ">", 0),
@@ -433,6 +533,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("date_from", "<", referencia),
                 ("date_from", ">=", limite),
             ],
@@ -592,6 +693,7 @@ class HrPayslip(models.Model):
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
                 ("date_from", "<=", self.date_to),
                 ("date_to", ">=", self.date_from),

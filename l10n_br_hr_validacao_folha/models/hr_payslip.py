@@ -10,7 +10,15 @@ from odoo.exceptions import ValidationError
 class HrPayslip(models.Model):
     _inherit = "hr.payslip"
 
-    @api.constrains("employee_id", "date_from", "date_to", "struct_id", "state")
+    @api.constrains(
+        "employee_id",
+        "date_from",
+        "date_to",
+        "struct_id",
+        "state",
+        "l10n_br_estorno",
+        "refunded_id",
+    )
     def _check_payslip_duplicate_period(self):
         """Impede holerites com período sobreposto para o mesmo
         empregado/estrutura.
@@ -19,9 +27,13 @@ class HrPayslip(models.Model):
         dois holerites do mesmo mês/estrutura (ex.: 01-15 e 01-31) coexistissem.
         Agora detecta qualquer sobreposição de intervalo
         (``date_from <= other.date_to AND date_to >= other.date_from``).
+
+        O estorno (devolução) e o holerite que ele estornou ficam de fora: o
+        par se anula e o período volta a aceitar um holerite novo. Se o estorno
+        é cancelado, o original volta a valer e a conferência o alcança de novo.
         """
         for rec in self:
-            if rec.state == "cancel":
+            if rec.state == "cancel" or rec.l10n_br_fora_de_vigor:
                 continue
             if not rec.date_from or not rec.date_to:
                 continue
@@ -29,6 +41,7 @@ class HrPayslip(models.Model):
                 ("employee_id", "=", rec.employee_id.id),
                 ("struct_id", "=", rec.struct_id.id),
                 ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
                 ("id", "!=", rec.id),
                 ("date_from", "<=", rec.date_to),
                 ("date_to", ">=", rec.date_from),

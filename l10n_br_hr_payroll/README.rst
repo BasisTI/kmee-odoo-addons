@@ -222,6 +222,25 @@ Limites do salário-maternidade:
   dedução na guia é feita pelo usuário ou pelo sistema que gera a guia, a partir
   do total desta rubrica.
 
+Estorno de holerite confirmado
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+*Devolução* (``refund_sheet``) cria um holerite de estorno (``credit_note``) já
+confirmado, com as mesmas linhas do original, e grava nele o vínculo em
+*Holerite estornado*. O par (estorno e estornado) fica "fora de vigor"
+(``l10n_br_fora_de_vigor``): não conta para período duplicado, DSR, médias de
+férias/13º/rescisão, salário já pago na rescisão nem para a integridade entre
+holerites. O período aceita então um holerite novo, calculado do zero.
+
+* Com o ``l10n_br_hr_payroll_account``, o estorno lança o inverso do lançamento
+  do original.
+* Estornar muda a participação do original: holerites dependentes (DSR da
+  semana, férias, rescisão) em rascunho são recalculados; confirmado recusa o
+  estorno até voltar a rascunho, como em qualquer outra alteração.
+* Cancelar o estorno devolve a vigência ao original.
+* Os eventos do eSocial já gerados (S-1200 e semelhantes) **não** são
+  retificados pelo estorno: isso fica para o usuário.
+
 Bug Tracker
 ===========
 

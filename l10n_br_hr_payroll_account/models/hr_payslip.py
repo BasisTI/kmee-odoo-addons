@@ -3,7 +3,7 @@
 
 import logging
 
-from odoo import api, models
+from odoo import api, fields, models
 
 _logger = logging.getLogger(__name__)
 
@@ -58,3 +58,9 @@ class HrPayslip(models.Model):
                     "Demo: %d holerites vinculados ao diário FOPAG", len(to_fix)
                 )
         return super()._demo_compute_payslips()
+
+    def copy_data(self, default=None):
+        """O lançamento inverso leva a data do estorno, não a do original."""
+        if self.env.context.get("l10n_br_estornando"):
+            default = dict(default or {}, date=fields.Date.context_today(self))
+        return super().copy_data(default)
