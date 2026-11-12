@@ -48,6 +48,18 @@ class TestDiasDsrPuro(TransactionCase):
 class TestDsrReflexoHolerite(PayrollCommon):
     """Holerite mensal: DSR_HE e DSR_NOTURNO a partir das verbas do mês."""
 
+    def setUp(self):
+        super().setUp()
+        # Outros módulos instalados no mesmo banco (CI do repositório) trazem
+        # feriados globais; o teste precisa contar só os que ele cria.
+        self.env["resource.calendar.leaves"].sudo().search(
+            [
+                ("resource_id", "=", False),
+                ("date_from", "<", datetime(2026, 11, 2)),
+                ("date_to", ">", datetime(2026, 9, 29)),
+            ]
+        ).unlink()
+
     def _calendario(self, tz="America/Sao_Paulo"):
         return self.env["resource.calendar"].create(
             {"name": "Calendário DSR", "tz": tz}
