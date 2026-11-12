@@ -57,6 +57,12 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
             {"name": "Estrutura %s" % codigo, "code": codigo}
         )
 
+    def _estrutura_avulsa(self):
+        """Estrutura própria: o módulo de validação recusa dois holerites do mesmo
+        empregado, período e estrutura (o CI instala esse módulo)."""
+        self.n_estruturas = getattr(self, "n_estruturas", 0) + 1
+        return self._estrutura("TST%d" % self.n_estruturas)
+
     def _holerite(
         self,
         descontos=(),
@@ -70,9 +76,8 @@ class TestS1210InfoIRComplem(ESocialCicloCommon):
         ``estrutura`` é o código da estrutura salarial (``13_2PARCELA``,
         ``FERIAS``...); ``codigo_irrf`` é o código da linha de IRRF retido.
         """
-        payslip = self._criar_payslip(data_pagamento="2024-04-05")
-        if estrutura:
-            payslip.struct_id = self._estrutura(estrutura)
+        struct = self._estrutura(estrutura) if estrutura else self._estrutura_avulsa()
+        payslip = self._criar_payslip(data_pagamento="2024-04-05", struct_id=struct.id)
         for desconto in descontos:
             cod, valor = desconto[:2]
             regra = self._regra(cod)
