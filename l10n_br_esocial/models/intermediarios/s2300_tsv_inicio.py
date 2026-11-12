@@ -87,6 +87,39 @@ class ESocialS2300(models.Model):
             )
         return str(inicio)
 
+    def _validar_cad_ini(self, dt_inicio):
+        """cadIni contra o início da obrigatoriedade dos eventos não periódicos."""
+        ini = self.company_id.l10n_br_esocial_dt_ini_nao_periodicos
+        if not dt_inicio:
+            return
+        if self.cad_ini == "S" and not ini:
+            self._erro_cadastro(
+                _(
+                    "Cadastramento inicial exige a Data de Início dos Eventos Não "
+                    "Periódicos na empresa (aba eSocial)."
+                )
+            )
+        if not ini:
+            return
+        if self.cad_ini == "S" and dt_inicio >= str(ini):
+            self._erro_cadastro(
+                _(
+                    "Cadastramento inicial: o início (%(inicio)s) deve ser anterior "
+                    "ao início dos eventos não periódicos (%(ini)s)."
+                ),
+                inicio=dt_inicio,
+                ini=ini,
+            )
+        if self.cad_ini == "N" and dt_inicio < str(ini):
+            self._erro_cadastro(
+                _(
+                    "Início de TSVE: o início (%(inicio)s) é anterior ao início dos "
+                    "eventos não periódicos (%(ini)s); use Cadastramento inicial."
+                ),
+                inicio=dt_inicio,
+                ini=ini,
+            )
+
     def _to_esociallib_dict(self):
         """Dict do S-2300, ou ``UserError`` com TODOS os dados que faltam."""
         self.ensure_one()
@@ -115,7 +148,8 @@ class ESocialS2300(models.Model):
             employee,
         )
         dependentes = self._coletar(erros, self._get_dependentes, employee)
-        compl = self._dados_complementares(erros, categoria, ide, dt_inicio)
+        compl = self._dados_complementares(erros, categoria, ide, dt_inicio, dt_inicio)
+        self._coletar(erros, self._validar_cad_ini, dt_inicio)
         if erros:
             self._erro_evento("S-2300", erros)
 

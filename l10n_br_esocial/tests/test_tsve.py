@@ -201,15 +201,10 @@ class TestTSVE(TestESocialIntermediarioBase):
         )
 
     def test_s2300_dado_faltante_recusa_com_todos_os_motivos(self):
+        self.estagiario.l10n_br_esocial_categoria_id = self._categoria("701")
+        self.contrato.date_end = False
         self.estagiario.write(
             {"job_id": False, "country_of_birth": False, "birthday": False}
-        )
-        self.contrato.write(
-            {
-                "l10n_br_esocial_nat_estagio": False,
-                "l10n_br_esocial_niv_estagio": False,
-                "l10n_br_esocial_inst_ensino_id": False,
-            }
         )
         with self.assertRaises(UserError) as erro:
             self._s2300()._to_esociallib_dict()
@@ -218,16 +213,27 @@ class TestTSVE(TestESocialIntermediarioBase):
             "Cargo",
             "País de Nascimento",
             "Data de Nascimento",
-            "Natureza do Estágio",
-            "Nível do Estágio",
-            "Instituição de Ensino",
         ):
             self.assertIn(trecho, texto)
 
-    def test_s2300_cbo_ausente_recusa(self):
+    def _categoria(self, codigo):
+        return self.env["l10n_br.esocial.categoria.trabalhador"].search(
+            [("codigo", "=", codigo)], limit=1
+        )
+
+    def test_s2300_cbo_ausente_recusa_onde_o_cargo_e_obrigatorio(self):
         self.estagiario.job_id.cbo_id = False
+        self.estagiario.l10n_br_esocial_categoria_id = self._categoria("701")
         with self.assertRaisesRegex(UserError, "CBO"):
             self._s2300()._to_esociallib_dict()
+
+    def test_s2300_cargo_opcional_em_901_903_904_906(self):
+        self.estagiario.job_id.cbo_id = False
+        data = self._s2300()._to_esociallib_dict()  # 901 sem CBO: sem cargoFuncao
+        self.assertNotIn("nm_cargo", data)
+        self.assertNotIn("cod_cbo", data)
+        self.estagiario.job_id = False
+        self.assertNotIn("nm_cargo", self._s2300()._to_esociallib_dict())
 
     def test_s2300_instituicao_sem_cnpj_valido_recusa(self):
         self.inst.vat = False
@@ -346,7 +352,7 @@ class TestTSVE(TestESocialIntermediarioBase):
     def test_s2306_dict(self):
         data = self._s2306()._to_esociallib_dict()
         self.assertEqual(data["dt_alteracao"], str(self.inicio + timedelta(days=10)))
-        self.assertEqual(data["cod_categ"], "901")
+        self.assertNotIn("cod_categ", data)  # exclusivo com a matrícula
         self.assertEqual(data["estagiario"]["dt_prev_term"], str(self.fim))
 
     def test_s2306_alteracao_antes_do_inicio_recusa(self):
@@ -374,7 +380,7 @@ class TestTSVE(TestESocialIntermediarioBase):
     def test_s2399_dict(self):
         data = self._s2399()._to_esociallib_dict()
         self.assertEqual(data["dt_term"], str(self.inicio + timedelta(days=20)))
-        self.assertEqual(data["cod_categ"], "901")
+        self.assertNotIn("cod_categ", data)  # exclusivo com a matrícula
         self.assertNotIn("mtv_deslig_tsv", data)
 
     def test_s2399_motivo_so_na_categoria_721(self):
@@ -427,3 +433,163 @@ class TestTSVE(TestESocialIntermediarioBase):
         )
         self.assertEqual(s2399.action_gerar_evento().tipo, "S-2399")
         self._valida_no_xsd(s2399, "S-2399")
+
+    # --- regras de preenchimento do leiaute (TG-102 r2) --------------------
+    def _raiz_ide(self, registro, ns):
+        raiz = self._arvore(registro)
+        ide = raiz.find(".//e:ideTrabSemVinculo", {"e": ns})
+        return [etree.QName(el).localname for el in ide]
+
+    def test_s2306_e_s2399_identificam_so_por_cpf_e_matricula_no_xml(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        for registro, ns in ((self._s2306(), NS_ALT), (self._s2399(), NS_TERM)):
+            with self.subTest(registro._name):
+                self.assertEqual(self._raiz_ide(registro, ns), ["cpfTrab", "matricula"])
+
+    def test_local_so_nas_categorias_do_leiaute(self):
+        self.assertEqual(self._s2300()._to_esociallib_dict()["tp_insc_local"], 1)
+        for codigo in ("701", "308", "903"):
+            with self.subTest(codigo):
+                self.estagiario.l10n_br_esocial_categoria_id = self._categoria(codigo)
+                self.contrato.l10n_br_esocial_nat_atividade = "1"
+                data = self._s2300()._to_esociallib_dict()
+                self.assertNotIn("tp_insc_local", data)
+                self.assertNotIn("nr_insc_local", data)
+
+    def test_local_obrigatorio_ate_2024_facultativo(self):
+        self.estagiario.address_id = self.env["res.partner"].create(
+            {"name": "Sem CNPJ"}
+        )
+        with self.assertRaises(UserError):
+            self._s2300()._to_esociallib_dict()
+        self.contrato.date_start = "2023-12-01"
+        self.assertNotIn(
+            "tp_insc_local", self._s2300(cad_ini="N")._to_esociallib_dict()
+        )
+
+    def test_remuneracao_obrigatoria_em_721_722_771_906(self):
+        self.contrato.wage = 0
+        self.contrato.l10n_br_esocial_dt_opc_fgts = self.inicio
+        for codigo in ("721", "722", "771", "906"):
+            with self.subTest(codigo):
+                self.estagiario.l10n_br_esocial_categoria_id = self._categoria(codigo)
+                self.contrato.l10n_br_esocial_nat_estagio = "N"
+                with self.assertRaisesRegex(UserError, "remuneração"):
+                    self._s2300()._to_esociallib_dict()
+        # categoria em que é opcional: sai sem o grupo
+        self.estagiario.l10n_br_esocial_categoria_id = self.cat_901
+        self.assertNotIn("vr_sal_fx", self._s2300()._to_esociallib_dict())
+
+    def test_fgts_obrigatorio_na_721(self):
+        self.estagiario.l10n_br_esocial_categoria_id = self._categoria("721")
+        with self.assertRaisesRegex(UserError, "Opção pelo FGTS"):
+            self._s2300()._to_esociallib_dict()
+        self.contrato.l10n_br_esocial_dt_opc_fgts = self.inicio
+        data = self._s2300()._to_esociallib_dict()
+        self.assertEqual(data["dt_opc_fgts"], str(self.inicio))
+        self.assertNotIn("nat_atividade", data)
+        # nas demais categorias o grupo não existe
+        self.estagiario.l10n_br_esocial_categoria_id = self.cat_901
+        self.assertNotIn("dt_opc_fgts", self._s2300()._to_esociallib_dict())
+
+    def test_fgts_721_no_xml_e_xsd(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        self.estagiario.l10n_br_esocial_categoria_id = self._categoria("721")
+        self.contrato.l10n_br_esocial_dt_opc_fgts = self.inicio
+        s2300 = self._s2300()
+        raiz = self._arvore(s2300)
+        compl = raiz.find(".//e:infoComplementares", {"e": NS_INI})
+        self.assertEqual(
+            [etree.QName(el).localname for el in compl],
+            ["cargoFuncao", "remuneracao", "FGTS", "localTrabGeral"],
+        )
+        self._valida_no_xsd(s2300, "S-2300")
+
+    def test_906_nao_emite_agente_nem_supervisor(self):
+        self.estagiario.l10n_br_esocial_categoria_id = self.env.ref(
+            "l10n_br_esocial.cat_trab_906"
+        )
+        data = self._s2300()._to_esociallib_dict()
+        self.assertFalse(data["estagiario"]["cnpj_age_integ"])
+        self.assertFalse(data["estagiario"]["cpf_supervisor"])
+        if HAS_ESOCIALLIB:
+            raiz = self._arvore(self._s2300())
+            self.assertIsNone(raiz.find(".//e:ageIntegracao", {"e": NS_INI}))
+            self.assertIsNone(raiz.find(".//e:supervisorEstagio", {"e": NS_INI}))
+        # na 901 vão os dois
+        self.estagiario.l10n_br_esocial_categoria_id = self.cat_901
+        data = self._s2300()._to_esociallib_dict()
+        self.assertTrue(data["estagiario"]["cnpj_age_integ"])
+        self.assertTrue(data["estagiario"]["cpf_supervisor"])
+
+    def test_pensao_opcional_ate_21_04_2019(self):
+        self.estagiario.l10n_br_esocial_categoria_id = self._categoria("202")
+        self.contrato.date_start = "2018-06-01"
+        self.contrato.l10n_br_esocial_nat_atividade = "1"
+        antigo = self._s2399(dt_term="2019-04-21")
+        self.assertNotIn("pens_alim", antigo._to_esociallib_dict())
+        self.assertEqual(
+            antigo.write({"pens_alim": "0"})
+            and antigo._to_esociallib_dict()["pens_alim"],
+            0,
+        )
+        with self.assertRaisesRegex(UserError, "Pensão Alimentícia"):
+            self._s2399(dt_term="2019-04-22")._to_esociallib_dict()
+
+    def test_s2306_alteracao_alem_de_180_dias_recusa(self):
+        hoje = fields.Date.context_today(self.contrato)
+        self.contrato.date_end = hoje + timedelta(days=400)
+        with self.assertRaisesRegex(UserError, "180"):
+            self._s2306(dt_alteracao=hoje + timedelta(days=181))._to_esociallib_dict()
+        self._s2306(dt_alteracao=hoje + timedelta(days=180))._to_esociallib_dict()
+
+    def test_cad_ini_contra_inicio_dos_eventos_nao_periodicos(self):
+        with self.assertRaisesRegex(UserError, "Início dos Eventos Não Periódicos"):
+            self._s2300(cad_ini="S")._to_esociallib_dict()
+        self.company.l10n_br_esocial_dt_ini_nao_periodicos = self.inicio + timedelta(
+            days=5
+        )
+        with self.assertRaisesRegex(UserError, "anterior ao início dos eventos"):
+            self.company.l10n_br_esocial_dt_ini_nao_periodicos = self.inicio
+            self._s2300(cad_ini="S")._to_esociallib_dict()
+        self.company.l10n_br_esocial_dt_ini_nao_periodicos = self.inicio + timedelta(
+            days=5
+        )
+        self.assertEqual(self._s2300(cad_ini="S")._to_esociallib_dict()["cad_ini"], "S")
+        with self.assertRaisesRegex(UserError, "use Cadastramento inicial"):
+            self._s2300(cad_ini="N")._to_esociallib_dict()
+
+    def test_mensagens_do_s2300_nao_falam_em_s2200_nem_empregado(self):
+        self.estagiario.write(
+            {
+                "ethnicity": self.env.ref("l10n_br_hr.ethnicity_6").id,
+                "gender": False,
+                "birthday": False,
+                "l10n_br_esocial_grau_instr": False,
+            }
+        )
+        with self.assertRaises(UserError) as erro:
+            self._s2300()._to_esociallib_dict()
+        texto = erro.exception.args[0]
+        self.assertNotIn("S-2200", texto)
+        self.assertNotIn("Empregado", texto)
+        self.assertIn("S-2300", texto)
+
+    def test_s2300_estagio_sem_dados_recusa_com_todos_os_motivos(self):
+        self.contrato.write(
+            {
+                "l10n_br_esocial_nat_estagio": False,
+                "l10n_br_esocial_niv_estagio": False,
+                "l10n_br_esocial_inst_ensino_id": False,
+            }
+        )
+        with self.assertRaises(UserError) as erro:
+            self._s2300()._to_esociallib_dict()
+        for trecho in (
+            "Natureza do Estágio",
+            "Nível do Estágio",
+            "Instituição de Ensino",
+        ):
+            self.assertIn(trecho, erro.exception.args[0])

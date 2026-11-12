@@ -105,3 +105,10 @@ class ResCompany(models.Model):
         string="E-mail eSocial",
         size=60,
     )
+
+    l10n_br_esocial_dt_ini_nao_periodicos = fields.Date(
+        string="Início dos Eventos Não Periódicos eSocial",
+        help="Data de início da obrigatoriedade dos eventos não periódicos do "
+        "empregador. O S-2300 com cadastramento inicial (cadIni = Sim) exige "
+        "início anterior a ela; sem cadastramento inicial, igual ou posterior.",
+    )

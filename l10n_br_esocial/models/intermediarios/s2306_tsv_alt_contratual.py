@@ -1,7 +1,11 @@
 # Copyright 2026 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from datetime import timedelta
+
 from odoo import _, fields, models
+
+from .tsv_mixin import DIAS_ALTERACAO_FUTURA
 
 
 class ESocialS2306(models.Model):
@@ -24,6 +28,17 @@ class ESocialS2306(models.Model):
                 name=contract.display_name,
                 dt=self.dt_alteracao,
             )
+        limite = fields.Date.context_today(self) + timedelta(days=DIAS_ALTERACAO_FUTURA)
+        if self.dt_alteracao > limite:
+            self._erro_cadastro(
+                _(
+                    "Contrato '%(name)s': a data da alteração (%(dt)s) passa de "
+                    "%(dias)s dias à frente da data atual."
+                ),
+                name=contract.display_name,
+                dt=self.dt_alteracao,
+                dias=DIAS_ALTERACAO_FUTURA,
+            )
         return str(self.dt_alteracao)
 
     def _to_esociallib_dict(self):
@@ -40,6 +55,8 @@ class ESocialS2306(models.Model):
             categoria,
             ide,
             str(contract.date_start) if contract.date_start else "",
+            dt_alteracao,
+            inicio=False,
         )
         if erros:
             self._erro_evento("S-2306", erros)
@@ -50,7 +67,8 @@ class ESocialS2306(models.Model):
             "ver_proc": proc["ver_proc"],
             "cpf_trab": cpf,
             "matricula": matricula,
-            "cod_categ": categoria.codigo,
+            # Sem codCateg: com matrícula o leiaute o declara exclusivo (obrigatório
+            # só se não houver matrícula), e a matrícula é sempre enviada.
             "dt_alteracao": dt_alteracao,
         }
         data.update(compl)

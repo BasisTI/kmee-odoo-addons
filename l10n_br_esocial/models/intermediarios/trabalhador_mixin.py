@@ -39,7 +39,7 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
         if not sexo:
             self._erro_cadastro(
                 _(
-                    "Empregado '%(name)s': o eSocial só aceita sexo Masculino ou "
+                    "Trabalhador '%(name)s': o eSocial só aceita sexo Masculino ou "
                     "Feminino; preencha o campo Gênero do cadastro."
                 ),
                 name=employee.name,
@@ -51,15 +51,16 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
         if codigo == "6":
             self._erro_cadastro(
                 _(
-                    "Empregado '%(name)s': a Raça/Cor 'Não informado' (6) não pode "
-                    "ser enviada no S-2200; preencha a Raça/Cor do cadastro."
+                    "Trabalhador '%(name)s': a Raça/Cor 'Não informado' (6) não pode "
+                    "ser enviada no %(evento)s; preencha a Raça/Cor do cadastro."
                 ),
                 name=employee.name,
+                evento=self._get_event_type(),
             )
         if codigo not in RACA_COR:
             self._erro_cadastro(
                 _(
-                    "Empregado '%(name)s': preencha Raça/Cor no cadastro (código "
+                    "Trabalhador '%(name)s': preencha Raça/Cor no cadastro (código "
                     "de 1 a 5 da tabela do eSocial)."
                 ),
                 name=employee.name,
@@ -70,7 +71,7 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
         if not employee.l10n_br_esocial_grau_instr:
             self._erro_cadastro(
                 _(
-                    "Empregado '%(name)s': preencha o Grau de Instrução eSocial "
+                    "Trabalhador '%(name)s': preencha o Grau de Instrução eSocial "
                     "no cadastro."
                 ),
                 name=employee.name,
@@ -80,7 +81,7 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
     def _get_dt_nascto(self, employee):
         if not employee.birthday:
             self._erro_cadastro(
-                _("Empregado '%(name)s': preencha a Data de Nascimento."),
+                _("Trabalhador '%(name)s': preencha a Data de Nascimento."),
                 name=employee.name,
             )
         return str(employee.birthday)
@@ -192,8 +193,13 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
             declarados = sum(1 for d in dependentes if d[chave] == "S")
             if folha is not None and folha != declarados:
                 avisos.append(
-                    _("%(rotulo)s: %(folha)s, mas o S-2200 declara %(dep)s.")
-                    % {"rotulo": rotulo, "folha": folha, "dep": declarados}
+                    _("%(rotulo)s: %(folha)s, mas o %(evento)s declara %(dep)s.")
+                    % {
+                        "rotulo": rotulo,
+                        "folha": folha,
+                        "evento": self._get_event_type(),
+                        "dep": declarados,
+                    }
                 )
         return avisos
 
@@ -202,7 +208,8 @@ class ESocialTrabalhadorMixin(models.AbstractModel):
         self.avisos = "\n".join(avisos) if avisos else False
         if avisos:
             _logger.warning(
-                "eSocial S-2200 %s (%s): %s",
+                "eSocial %s %s (%s): %s",
+                self._get_event_type(),
                 self.id,
                 self.employee_id.name,
                 self.avisos,

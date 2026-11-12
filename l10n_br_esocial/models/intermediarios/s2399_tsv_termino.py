@@ -98,8 +98,9 @@ class ESocialS2399(models.Model):
                 name=nome,
                 cat=codigo,
             )
-        if codigo in CATEGORIAS_PENSAO and str(self.dt_term) > DT_PENSAO_OBRIGATORIA:
-            if not self.pens_alim:
+        if codigo in CATEGORIAS_PENSAO:
+            # Obrigatória com término depois de 21/04/2019; opcional até essa data.
+            if str(self.dt_term) > DT_PENSAO_OBRIGATORIA and not self.pens_alim:
                 self._erro_cadastro(
                     _(
                         "Trabalhador '%(name)s': a categoria %(cat)s exige informar "
@@ -163,7 +164,7 @@ class ESocialS2399(models.Model):
             "ver_proc": proc["ver_proc"],
             "cpf_trab": cpf,
             "matricula": matricula,
-            "cod_categ": categoria.codigo,
+            # Sem codCateg: ver S-2306 (exclusivo com a matrícula).
             "dt_term": dt_term,
         }
         data.update(termino)

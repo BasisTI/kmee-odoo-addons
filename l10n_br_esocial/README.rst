@@ -146,15 +146,22 @@ Trabalhador sem vínculo - estagiário e demais categorias (S-2300, S-2306, S-23
    instrução, nascimento, dependentes) saem do cadastro como no S-2200; o
    **País de Nascimento** e a **Nacionalidade** do empregado precisam ter o
    código do Bacen (o eSocial usa os 3 primeiros dígitos). O início é a data de
-   início do contrato; o cargo e o CBO vêm do **Cargo**; a remuneração é o
-   salário do contrato (por mês) e o local de trabalho é o **Endereço de
-   Trabalho**. **Cadastramento inicial** fica em *Não* (início de TSVE).
+   início do contrato; o cargo e o CBO vêm do **Cargo** (opcionais nas
+   categorias 901, 903, 904 e 906: sem CBO o grupo não vai); a remuneração é o
+   salário do contrato (por mês; obrigatória nas 721, 722, 771 e 906); o local
+   de trabalho é o **Endereço de Trabalho** e só vai nas categorias que o
+   leiaute lista (201, 202, 721, 722, 723, 731, 734, 738, 761, 771, 901, 902 e
+   906; antes de 22/01/2024 é facultativo). A categoria 721 exige a **Data de
+   Opção pelo FGTS** do contrato.
+#. **Cadastramento inicial** fica em *Não* (início de TSVE). Com *Sim*, informe
+   na empresa (aba eSocial) o **Início dos Eventos Não Periódicos**: o início do
+   contrato deve ser anterior a ela (e, com *Não*, igual ou posterior).
 #. Estagiário (categorias 901 e 906): no grupo **eSocial - Trabalhador sem
    vínculo e estágio** do contrato, preencha a **Natureza** (sem padrão; 906
    só aceita *Não obrigatório*), o **Nível** (obrigatório na 901), a
    **Instituição de Ensino** (parceiro com CNPJ válido), o **Agente de
-   Integração** e o **Supervisor do Estágio** (opcionais), a área de atuação e
-   a apólice. O término previsto é a **data final do contrato**, posterior ao
+   Integração** e o **Supervisor do Estágio** (opcionais e só na 901), a área
+   de atuação e a apólice. O término previsto é a **data final do contrato**, posterior ao
    início.
 #. A **Natureza da Atividade** do contrato é obrigatória nas categorias 201,
    202, 401, 731, 734 e 738 e não é enviada nas 721, 722, 771 e 901.
@@ -162,13 +169,15 @@ Trabalhador sem vínculo - estagiário e demais categorias (S-2300, S-2306, S-23
    410, mandato eletivo 304) são recusadas: este módulo ainda não gera
    esses grupos.
 #. S-2306 (alteração contratual): ``l10n_br.esocial.s2306``, com a **Data da
-   Alteração** (não anterior ao início do contrato). Reenvia cargo, remuneração,
+   Alteração** (não anterior ao início do contrato nem mais de 180 dias à
+   frente). O trabalhador é identificado só por CPF e matrícula. Reenvia cargo, remuneração,
    local e, no estágio, as informações do estágio como estão no contrato.
 #. S-2399 (término): ``l10n_br.esocial.s2399``, com a **Data do Término** (não
    anterior ao início nem mais de 10 dias à frente). O **Motivo do Término** só
    vale para a categoria 721 (e é obrigatório nela); a **Pensão Alimentícia**
-   é obrigatória nas categorias 201, 202 e 721 (término depois de 21/04/2019) e
-   não se informa nas demais.
+   é obrigatória nas categorias 201, 202 e 721 com término depois de
+   21/04/2019 (opcional até essa data) e não se informa nas demais. Como no
+   S-2306, o trabalhador é identificado só por CPF e matrícula.
 #. Como no S-2200, a geração junta, numa só mensagem, tudo o que falta no
    cadastro, e o XML é conferido contra o XSD do leiaute S-1.3 quando os
    schemas estão na ``esociallib``.

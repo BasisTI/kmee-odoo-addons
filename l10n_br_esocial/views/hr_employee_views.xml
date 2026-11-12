@@ -55,6 +55,7 @@
                     string="eSocial - Trabalhador sem vínculo e estágio"
                 >
                     <field name="l10n_br_esocial_nat_atividade" />
+                    <field name="l10n_br_esocial_dt_opc_fgts" />
                     <field name="l10n_br_esocial_nat_estagio" />
                     <field name="l10n_br_esocial_niv_estagio" />
                     <field name="l10n_br_esocial_area_atuacao" />

@@ -93,7 +93,7 @@ class ESocialBaseIntermediario(models.AbstractModel):
         par.update({v: k for k, v in list(par.items())})
         raise UserError(
             _(
-                "Empregado '%(name)s': a categoria %(cat)s não é válida no "
+                "Trabalhador '%(name)s': a categoria %(cat)s não é válida no "
                 "%(evento)s; para ela o eSocial usa o %(outro)s."
             )
             % {

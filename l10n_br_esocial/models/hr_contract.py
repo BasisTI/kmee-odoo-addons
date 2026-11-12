@@ -92,3 +92,8 @@ class HrContract(models.Model):
         help="Responsável pela supervisão do estagiário, quando informado "
         "(precisa ter CPF).",
     )
+    l10n_br_esocial_dt_opc_fgts = fields.Date(
+        string="Data de Opção pelo FGTS",
+        help="Campo dtOpcFGTS do S-2300 (leiaute S-1.3). Obrigatório na "
+        "categoria 721 (diretor não empregado, com FGTS).",
+    )

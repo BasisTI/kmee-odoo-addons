@@ -34,6 +34,18 @@ CATEGORIAS_GRUPO_NAO_SUPORTADO = {
     "410": "infoTrabCedido",
 }
 CATEGORIAS_ESTAGIARIO = ("901", "906")
+# Tabela de resumo dos registros do leiaute S-1.3 (condição de cada grupo):
+# cargoFuncao é opcional nestas categorias e obrigatório nas demais.
+CATEGORIAS_CARGO_OPCIONAL = ("901", "903", "904", "906")
+# remuneracao é obrigatória nestas e opcional nas demais.
+CATEGORIAS_REMUNERACAO = ("721", "722", "771", "906")
+# localTrabGeral só existe nestas categorias (obrigatório com início/alteração a
+# partir de DT_LOCAL_OBRIGATORIO, facultativo antes) e é proibido nas demais.
+CATEGORIAS_LOCAL = (
+    "201 202 304 305 401 410 721 722 723 731 734 738 761 771 901 902 906".split()
+)
+DT_LOCAL_OBRIGATORIO = "2024-01-22"
+DIAS_ALTERACAO_FUTURA = 180
 # natAtividade: obrigatório nestas categorias e proibido nas de CATEGORIAS_SEM_NAT.
 CATEGORIAS_NAT_ATIVIDADE = ("201", "202", "401", "731", "734", "738")
 CATEGORIAS_SEM_NAT = ("721", "722", "771", "901")
@@ -112,14 +124,23 @@ class ESocialTSVMixin(models.AbstractModel):
     # Informações complementares (S-2300 e S-2306)
     # ------------------------------------------------------------------
     def _get_cargo(self, employee, categoria):
-        """nmCargo e CBOCargo do cargo do trabalhador (exceto categoria 410)."""
+        """nmCargo e CBOCargo do cargo do trabalhador.
+
+        Obrigatório, exceto na categoria 410 (nem é gerado) e nas de
+        ``CATEGORIAS_CARGO_OPCIONAL``, onde só vai se o cargo e o CBO existirem.
+        """
+        opcional = categoria.codigo in CATEGORIAS_CARGO_OPCIONAL
         job = employee.job_id
         if not job:
+            if opcional:
+                return {}
             self._erro_cadastro(
                 _("Trabalhador '%(name)s': preencha o Cargo."), name=employee.name
             )
         cbo = job.cbo_id.code if "cbo_id" in job._fields else False
         if not cbo:
+            if opcional:
+                return {}
             self._erro_cadastro(
                 _(
                     "Trabalhador '%(name)s': o cargo '%(cargo)s' não tem o CBO "
@@ -129,6 +150,46 @@ class ESocialTSVMixin(models.AbstractModel):
                 cargo=job.name,
             )
         return {"nm_cargo": job.name, "cod_cbo": self._so_digitos(cbo)}
+
+    def _get_remuneracao(self, contract, categoria):
+        if contract.wage:
+            return {"vr_sal_fx": "%.2f" % contract.wage, "und_sal_fixo": 5}
+        if categoria.codigo in CATEGORIAS_REMUNERACAO:
+            self._erro_cadastro(
+                _(
+                    "Contrato '%(name)s': a categoria %(cat)s exige a "
+                    "remuneração (salário do contrato)."
+                ),
+                name=contract.display_name,
+                cat=categoria.codigo,
+            )
+        return {}
+
+    def _get_local(self, employee, categoria, ide, dt_ref):
+        """localTrabGeral: só nas categorias do leiaute; facultativo antes de 2024."""
+        if categoria.codigo not in CATEGORIAS_LOCAL:
+            return {}
+        try:
+            local = self._get_local_trabalho(employee, ide)
+        except UserError:
+            if dt_ref and dt_ref < DT_LOCAL_OBRIGATORIO:
+                return {}
+            raise
+        return {"tp_insc_local": 1, "nr_insc_local": local}
+
+    def _get_fgts(self, contract, categoria):
+        """Grupo FGTS (dtOpcFGTS): obrigatório na categoria 721 do S-2300."""
+        if categoria.codigo != "721":
+            return {}
+        if not contract.l10n_br_esocial_dt_opc_fgts:
+            self._erro_cadastro(
+                _(
+                    "Contrato '%(name)s': a categoria 721 exige a Data de Opção "
+                    "pelo FGTS."
+                ),
+                name=contract.display_name,
+            )
+        return {"dt_opc_fgts": str(contract.l10n_br_esocial_dt_opc_fgts)}
 
     def _get_nat_atividade(self, contract, categoria):
         codigo = categoria.codigo
@@ -172,8 +233,9 @@ class ESocialTSVMixin(models.AbstractModel):
             _("preencha a Instituição de Ensino (com CNPJ válido)"),
             erros,
         )
+        # Agente de integração e supervisor só existem na categoria 901.
         agente = False
-        if contract.l10n_br_esocial_age_integ_id:
+        if contract.l10n_br_esocial_age_integ_id and categoria.codigo == "901":
             agente = self._cnpj_parceiro(
                 contract.l10n_br_esocial_age_integ_id,
                 _("o Agente de Integração precisa ter CNPJ válido"),
@@ -181,7 +243,7 @@ class ESocialTSVMixin(models.AbstractModel):
             )
         supervisor = False
         sup = contract.l10n_br_esocial_supervisor_id
-        if sup:
+        if sup and categoria.codigo == "901":
             supervisor = self._so_digitos(sup.cnpj_cpf)
             if len(supervisor) != 11 or (cnpj_cpf and not cnpj_cpf.validar(supervisor)):
                 erros.append(_("o Supervisor do Estágio precisa ter CPF válido"))
@@ -211,31 +273,40 @@ class ESocialTSVMixin(models.AbstractModel):
             return False
         return cnpj
 
-    def _dados_complementares(self, erros, categoria, ide, dt_inicio):
-        """Cargo, remuneração, local e estágio do contrato, no formato do builder."""
+    def _dados_complementares(
+        self, erros, categoria, ide, dt_inicio, dt_ref, inicio=True
+    ):
+        """Cargo, remuneração, local e estágio do contrato, no formato do builder.
+
+        ``dt_ref`` é o início (S-2300) ou a alteração (S-2306); ``inicio`` marca o
+        S-2300, o único com o grupo FGTS.
+        """
         employee = self.employee_id
         contract = self.contract_id
         data = {}
-        if categoria and categoria.codigo != "410":
+        if not categoria:
+            return data
+        if categoria.codigo != "410":
             data.update(
                 self._coletar(erros, self._get_cargo, employee, categoria) or {}
             )
-        if contract.wage:
-            data["vr_sal_fx"] = "%.2f" % contract.wage
-            data["und_sal_fixo"] = 5  # mensal
+        data.update(
+            self._coletar(erros, self._get_remuneracao, contract, categoria) or {}
+        )
+        if inicio:
+            data.update(self._coletar(erros, self._get_fgts, contract, categoria) or {})
         if ide:
-            local = self._coletar(erros, self._get_local_trabalho, employee, ide)
-            if local:
-                data["tp_insc_local"] = 1
-                data["nr_insc_local"] = local
-        if categoria:
-            nat = self._coletar(erros, self._get_nat_atividade, contract, categoria)
-            if nat is not None:
-                data["nat_atividade"] = nat
-            if categoria.codigo in CATEGORIAS_ESTAGIARIO:
-                data["estagiario"] = self._coletar(
-                    erros, self._get_estagiario, contract, categoria, dt_inicio
-                )
+            data.update(
+                self._coletar(erros, self._get_local, employee, categoria, ide, dt_ref)
+                or {}
+            )
+        nat = self._coletar(erros, self._get_nat_atividade, contract, categoria)
+        if nat is not None:
+            data["nat_atividade"] = nat
+        if categoria.codigo in CATEGORIAS_ESTAGIARIO:
+            data["estagiario"] = self._coletar(
+                erros, self._get_estagiario, contract, categoria, dt_inicio
+            )
         return data
 
     def _completar_estagiario(self, raiz, info, estagiario):
