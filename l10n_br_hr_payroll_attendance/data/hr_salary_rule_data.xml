@@ -2,33 +2,30 @@
 <!-- Copyright 2026 KMEE
      License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
 <odoo>
-    <!-- Reflexo das horas extras no repouso semanal remunerado.
-         Lei 605/49, art. 7º, alínea "a" e Súmula 172 do TST: o cálculo é
-         sobre o VALOR das horas extras do mês, dividido pelos dias úteis e
-         multiplicado pelos dias de repouso do período apurado. -->
-    <record id="hr_rule_dsr_he" model="hr.salary.rule">
-        <field name="name">DSR sobre Horas Extras</field>
-        <field name="sequence" eval="7" />
-        <field name="code">DSR_HE</field>
-        <field
-            name="category_id"
-            ref="l10n_br_hr_payroll.hr_salary_rule_category_alw"
-        />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = (HE_50 + HE_100) &gt; 0 and tools.ponto.dias_uteis &gt; 0
+    <!-- LEGADO (TG-86): a rubrica própria deste módulo para o reflexo das
+         horas extras no DSR foi substituída pela DSR_HE do l10n_br_hr_payroll.
+         O registro fica, fora de qualquer estrutura e noupdate, porque holerites
+         antigos têm linhas que apontam para ele (apagá-lo quebraria a chave
+         estrangeira e o histórico). Não é calculado. -->
+    <data noupdate="1">
+        <record id="hr_rule_dsr_he" model="hr.salary.rule">
+            <field name="name">DSR sobre Horas Extras (legado do ponto)</field>
+            <field name="sequence" eval="7" />
+            <field name="code">DSR_HE</field>
+            <field
+                name="category_id"
+                ref="l10n_br_hr_payroll.hr_salary_rule_category_alw"
+            />
+            <field name="condition_select">none</field>
+            <field name="amount_select">code</field>
+            <field name="amount_python_compute">
+result = 0.0
         </field>
-        <field name="amount_select">code</field>
-        <field name="amount_python_compute">
-valor_he = HE_50 + HE_100
-result = tools.br.round_money(
-    valor_he / tools.ponto.dias_uteis * tools.ponto.dias_repouso
-)
-        </field>
-        <field
-            name="note"
-        >Reflexo das horas extras no DSR (Lei 605/49; Súmula 172 do TST). Os dias úteis e de repouso vêm da apuração de ponto do próprio período, não do mês comercial de 30 dias.</field>
-    </record>
+            <field
+                name="note"
+            >Legado: o reflexo no DSR é a rubrica DSR_HE do l10n_br_hr_payroll. Mantida só para o histórico dos holerites que a usaram.</field>
+        </record>
+    </data>
 
     <!-- Intervalo intrajornada suprimido: art. 71, § 4º da CLT, na redação da
          Lei 13.467/2017. Paga-se APENAS o período suprimido, com acréscimo de

@@ -518,22 +518,24 @@ def semanas_com_falta(datas, faltas_sem_data=0):
     return len({inicio_semana(d) for d in datas}) + max(faltas_sem_data, 0)
 
 
-def dias_dsr(ano, mes):
+def dias_dsr(ano, mes, feriados=()):
     """Dias úteis e de descanso (DSR) de um mês.
 
-    Deriva do calendário civil da competência: os domingos são o descanso
-    semanal remunerado (DSR) e os demais dias (segunda a sábado) são úteis
-    para fins do rateio do desconto de DSR.
+    Deriva do calendário civil da competência: os domingos e os feriados são o
+    descanso semanal remunerado (Lei 605/49, art. 1º) e os demais dias
+    (segunda a sábado) são úteis. É a base do reflexo das horas extras e do
+    adicional noturno no DSR (Súmulas 172 e 60 do TST).
 
-    Limitação conhecida: feriados NÃO são computados como DSR (exigiria um
-    calendário de feriados por localidade - ver ``l10n_br_resource``). Para a
-    maioria das competências o erro é pequeno; quando houver feriado no mês o
-    desconto de DSR fica marginalmente subestimado. Documentado como
-    pendência de evolução (RF-26).
+    O módulo não tem calendário de feriados próprio: quem chama informa as
+    datas (``feriados``), tiradas do calendário de trabalho do contrato (ver
+    ``hr.payslip._l10n_br_feriados_competencia``). Sem feriados informados só
+    os domingos são repouso, e o erro é o de um feriado a menos no mês.
 
     Args:
         ano: Ano da competência.
         mes: Mês da competência (1-12).
+        feriados: Datas de feriado. As de outro mês e as que caem num domingo
+            não alteram a contagem.
 
     Returns:
         Tupla ``(dias_uteis, dsr)``.
@@ -542,8 +544,78 @@ def dias_dsr(ano, mes):
     from datetime import date as _date
 
     total = _cal.monthrange(ano, mes)[1]
-    domingos = sum(1 for d in range(1, total + 1) if _date(ano, mes, d).weekday() == 6)
-    return total - domingos, domingos
+    feriados = set(feriados or ())
+    repouso = sum(
+        1
+        for d in range(1, total + 1)
+        if _date(ano, mes, d).weekday() == 6 or _date(ano, mes, d) in feriados
+    )
+    return total - repouso, repouso
+
+
+def dia_feriado_da_ausencia(inicio, fim, janela_do_dia=None, tolerancia_min=1):
+    """Dia que uma ausência global cobre inteiro, ou ``None`` (não é feriado).
+
+    Critério de feriado para o DSR: o dia cujo expediente a ausência global
+    cobre por inteiro, lida no fuso do calendário (``inicio`` e ``fim`` já
+    chegam em hora local, sem fuso). Por isso:
+
+    * a ausência que termina exatamente à meia-noite local não toca o dia
+      seguinte, e uma sobra de poucas horas no dia seguinte não o torna
+      feriado;
+    * meio expediente (ex.: 08h às 12h) não é feriado;
+    * o dia local inteiro (00:00 a 24:00) é feriado em qualquer calendário, mesmo
+      de turnos que cobrem as 24 h; cobrir o expediente é outra forma de lançar;
+    * a ausência que cobre por inteiro DOIS ou mais dias (recesso coletivo,
+      férias coletivas) não é feriado: o repouso é o dia comemorativo, e a regra
+      para o recesso é decisão de negócio ainda em aberto, então fica de fora.
+
+    Args:
+        inicio: ``datetime`` local do início da ausência.
+        fim: ``datetime`` local do fim da ausência.
+        janela_do_dia: ``f(date) -> (hora_inicial, hora_final)`` do expediente
+            do dia no calendário (horas decimais; 24 = meia-noite). Sem ela, o
+            dia inteiro (0 a 24).
+        tolerancia_min: folga, em minutos, nas pontas (o Odoo grava o fim do
+            dia como 23:59:59).
+
+    Returns:
+        O ``date`` do feriado ou ``None``.
+    """
+    from datetime import datetime as _dt, time as _time
+
+    if fim <= inicio:
+        return None
+    folga = timedelta(minutes=tolerancia_min)
+    cobertos = []
+    dia = inicio.date()
+    while _dt.combine(dia, _time(0, 0)) < fim:
+        hora_ini, hora_fim = janela_do_dia(dia) if janela_do_dia else (0.0, 24.0)
+        meia_noite = _dt.combine(dia, _time(0, 0))
+        expediente = inicio <= meia_noite + timedelta(hours=hora_ini) + folga and (
+            fim >= meia_noite + timedelta(hours=hora_fim) - folga
+        )
+        # O dia local inteiro vale em qualquer calendário (inclusive turnos que
+        # cobrem as 24 h); o expediente é uma forma adicional de lançar.
+        dia_inteiro = inicio <= meia_noite + folga and (
+            fim >= meia_noite + timedelta(hours=24) - folga
+        )
+        if expediente or dia_inteiro:
+            cobertos.append(dia)
+        dia += timedelta(days=1)
+    return cobertos[0] if len(cobertos) == 1 else None
+
+
+def calc_dsr_reflexo(valor, dias_uteis, dias_repouso):
+    """Reflexo de uma verba variável no DSR do mês (Lei 605/49, art. 7º, a).
+
+    ``valor / dias úteis * dias de repouso``: Súmula 172 do TST (horas extras)
+    e Súmula 60 (adicional noturno). Sem dia útil não há divisor, e o reflexo
+    é zero.
+    """
+    if not valor or dias_uteis <= 0:
+        return 0.0
+    return round_money(valor / dias_uteis * dias_repouso)
 
 
 def calc_ferias_dias(faltas):

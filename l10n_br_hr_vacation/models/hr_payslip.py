@@ -547,8 +547,17 @@ class HrPayslip(models.Model):
         mês a mês - e por isso ficam FORA desta lista; sua integração às
         apurações separadas é uma lacuna distinta (fora desta onda),
         documentada no relatório.
+
+        O reflexo dessas verbas no DSR (``DSR_HE``, ``DSR_NOTURNO``) integra
+        a média junto com elas (Súmulas 172 e 60 do TST).
         """
-        return ("HE_50", "HE_100", "ADICIONAL_NOTURNO")
+        return (
+            "HE_50",
+            "HE_100",
+            "ADICIONAL_NOTURNO",
+            "DSR_HE",
+            "DSR_NOTURNO",
+        )
 
     def _l10n_br_dias_aviso_previo(self):
         """Dias de aviso prévio devidos (Lei 12.506/2011). Ver salary_rules_br."""

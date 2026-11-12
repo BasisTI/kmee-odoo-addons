@@ -14,3 +14,4 @@ from . import test_worked_days
 from . import test_encargos_patronais
 from . import test_proporcionalidade
 from . import test_dsr_semana
+from . import test_dsr_reflexo

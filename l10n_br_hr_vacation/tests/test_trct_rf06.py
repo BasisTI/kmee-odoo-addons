@@ -63,7 +63,11 @@ class TestTRCTSemJustaCausa(VacationCommon):
             )
             mensal.compute_sheet()
             mensal.action_payslip_done()
-            self.valores_he.append(self._get_line_total(mensal, "HE_50"))
+            # A média leva o reflexo das horas extras no DSR (TG-86).
+            self.valores_he.append(
+                self._get_line_total(mensal, "HE_50")
+                + self._get_line_total(mensal, "DSR_HE")
+            )
         self.media = calc_media_habitual(self.valores_he, 12)
 
         # 1º período aquisitivo, integralmente VENCIDO e nunca gozado; o

@@ -12,10 +12,7 @@ FORMULA_NET = (
     "result = categories.BASIC + categories.ALW + categories.IND - categories.DED"
 )
 
-REGRAS_NOVAS = (
-    "l10n_br_hr_payroll_attendance.hr_rule_dsr_he",
-    "l10n_br_hr_payroll_attendance.hr_rule_intervalo_suprimido",
-)
+REGRAS_NOVAS = ("l10n_br_hr_payroll_attendance.hr_rule_intervalo_suprimido",)
 
 
 def post_init_hook(env):

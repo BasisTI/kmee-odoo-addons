@@ -263,6 +263,25 @@ class HrPayslip(models.Model):
         tools["ponto"] = types.SimpleNamespace(**totais)
         return tools
 
+    def _l10n_br_feriados_competencia(self):
+        """Feriados do calendário da folha mais os da apuração de ponto.
+
+        Há uma só rubrica ``DSR_HE`` (a da folha) e uma só regra de dias: domingos
+        mais feriados, com ou sem apuração. A apuração só ACRESCENTA os
+        feriados que ela marcou (``feriado``) nos dias que cobre: apuração
+        parcial nunca zera nem muda o critério, e sábado sem jornada continua
+        dia útil, como no calendário da folha.
+        """
+        feriados = super()._l10n_br_feriados_competencia()
+        competencia = self._get_competencia()
+        for dia in self.l10n_br_apuracao_dia_ids.filtered("feriado"):
+            if competencia and (dia.date.year, dia.date.month) == (
+                competencia.year,
+                competencia.month,
+            ):
+                feriados.add(dia.date)
+        return feriados
+
     def compute_sheet(self):
         """Recalcula os campos de jornada antes de rodar as regras."""
         self._l10n_br_preencher_horas_da_apuracao()
