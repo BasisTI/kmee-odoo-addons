@@ -3,6 +3,7 @@
 
 import logging
 from datetime import date
+from unittest.mock import patch
 
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
@@ -632,6 +633,65 @@ class TestS2299(TestESocialIntermediarioBase):
         data = s2299._to_esociallib_dict()
         self.assertEqual(data["ind_pagto_api"], "S")
         self.assertEqual(data["dt_proj_fim_api"], "2025-01-30")
+
+    def _s2299_rescisao(self, **extra):
+        slip = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "date_from": "2024-12-01",
+                "date_to": "2024-12-31",
+            }
+        )
+        vals = {
+            "employee_id": self.employee.id,
+            "contract_id": self.contract.id,
+            "dt_deslig": "2024-12-31",
+            "motivo_desligamento_id": self.mot_deslig_02.id,
+            "company_id": self.company.id,
+            "payslip_id": slip.id,
+        }
+        vals.update(extra)
+        return self.env["l10n_br.esocial.s2299"].create(vals)
+
+    def _com_aviso_da_folha(self, indenizado):
+        """Simula o módulo de rescisão (``l10n_br_hr_vacation``) no holerite."""
+        classe = self.env.registry["hr.payslip"]
+        return patch.multiple(
+            classe,
+            create=True,
+            _l10n_br_aviso_indenizado_devido=lambda slip: indenizado,
+            _l10n_br_dias_aviso_previo=lambda slip: 33,
+        )
+
+    def test_s2299_aviso_indenizado_vem_do_holerite_de_rescisao(self):
+        """TG-106: o indPagtoAPI segue a verba de aviso da rescisão, não o padrão N."""
+        s2299 = self._s2299_rescisao()
+        with self._com_aviso_da_folha(True):
+            data = s2299._to_esociallib_dict()
+        self.assertEqual(data["ind_pagto_api"], "S")
+        # desligamento 2024-12-31 + 33 dias de aviso (Lei 12.506/2011)
+        self.assertEqual(data["dt_proj_fim_api"], "2025-02-02")
+
+    def test_s2299_aviso_nao_indenizado_no_holerite_prevalece_sobre_o_campo(self):
+        s2299 = self._s2299_rescisao(ind_pagto_api="S", dt_proj_fim_api="2025-01-30")
+        with self._com_aviso_da_folha(False):
+            data = s2299._to_esociallib_dict()
+        self.assertEqual(data["ind_pagto_api"], "N")
+        self.assertNotIn("dt_proj_fim_api", data)
+
+    def test_s2299_aviso_indenizado_exige_data_projetada(self):
+        s2299 = self._s2299_rescisao(payslip_id=False, ind_pagto_api="S")
+        with self.assertRaisesRegex(UserError, "Data Projetada"):
+            s2299._to_esociallib_dict()
+
+    def test_s2299_data_projetada_nao_pode_ser_anterior_ao_desligamento(self):
+        s2299 = self._s2299_rescisao(
+            payslip_id=False, ind_pagto_api="S", dt_proj_fim_api="2024-12-30"
+        )
+        with self.assertRaisesRegex(UserError, "anterior ao desligamento"):
+            s2299._to_esociallib_dict()
 
     def test_s2299_gerar_xml(self):
         """Deve gerar XML via esociallib."""
