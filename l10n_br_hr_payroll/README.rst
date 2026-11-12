@@ -253,6 +253,11 @@ declara. Sem linha para o estabelecimento na competência, vale o RAT/FAP da
 empresa. No S-1005, ao criar o estabelecimento sem informar RAT/FAP, o evento
 traz os valores da mesma tabela (ou da empresa).
 
+Limite: o estabelecimento vem do Endereço de Trabalho *atual* do empregado e o
+módulo não guarda histórico de endereço. Ao transferir um empregado de filial,
+recalcular um holerite de competência anterior usa o RAT/FAP da filial nova, não
+o da filial onde ele estava na época; holerites confirmados não mudam.
+
 Bug Tracker
 ===========
 

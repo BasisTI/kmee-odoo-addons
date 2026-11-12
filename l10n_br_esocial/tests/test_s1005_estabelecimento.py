@@ -162,13 +162,27 @@ class TestS1005Estabelecimento(ESocialCicloCommon):
 
     # ── RAT/FAP do estabelecimento (TG-122) ────────────────────────────────
 
+    @staticmethod
+    def _cnpj_com_raiz(raiz, ordem):
+        """CNPJ válido (14 dígitos) com a raiz e a ordem dadas."""
+        base = raiz + ordem
+        for pesos in (
+            [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+            [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2],
+        ):
+            resto = sum(int(d) * p for d, p in zip(base, pesos)) % 11
+            base += "0" if resto < 2 else str(11 - resto)
+        return base
+
     def test_s1005_sem_rat_fap_usa_tabela_do_estabelecimento(self):
         """Sem RAT/FAP informados, o S-1005 leva os da tabela da folha."""
         self.company.write({"l10n_br_hr_rat": "2", "l10n_br_hr_fap": 1.2262})
+        raiz = "".join(c for c in self.company.partner_id.vat if c.isdigit())[:8]
+        filial = self._cnpj_com_raiz(raiz, "0006")
         self.env["l10n_br.hr.payroll.gilrat"].create(
             {
                 "company_id": self.company.id,
-                "cnpj": "12.345.678/0006-61",
+                "cnpj": filial,
                 "date_start": "2026-01-01",
                 "date_end": "2026-12-31",
                 "rat": "3",
@@ -177,7 +191,7 @@ class TestS1005Estabelecimento(ESocialCicloCommon):
         )
         filial = self.env["l10n_br.esocial.s1005"].create(
             {
-                "nr_insc_estab": "12345678000661",
+                "nr_insc_estab": filial,
                 "ini_valid": "2026-01",
                 "cnae_prep": "4751201",
                 "company_id": self.company.id,

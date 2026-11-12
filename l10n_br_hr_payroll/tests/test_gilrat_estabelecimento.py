@@ -46,6 +46,7 @@ class TestGilratEstabelecimento(EncargosPatronaisCommon):
     def setUp(self):
         super().setUp()
         self._config_empresa(tax_framework="3", rat="3", fap=1.0)
+        self.env.company.partner_id.vat = cnpj_valido(RAIZ, "0001")
         self.Gilrat = self.env["l10n_br.hr.payroll.gilrat"]
 
     def _gilrat(self, ordem, fap, ini=INI_2026, fim=FIM_2026):
@@ -127,3 +128,69 @@ class TestGilratEstabelecimento(EncargosPatronaisCommon):
             self._gilrat("0004", 1.0, ini=date(2026, 1, 15))
         with self.assertRaises(ValidationError):
             self._gilrat("0004", 1.0, fim=date(2026, 12, 30))
+
+    def test_trocar_cnpj_ou_empresa_revalida_sobreposicao(self):
+        """Editar CNPJ/empresa para colidir com outra vigência é recusado."""
+        self._gilrat("0004", 0.5)
+        outra = self._gilrat("0005", 0.8)
+        with self.assertRaises(ValidationError):
+            outra.cnpj = self._cnpj("0004")
+        # a mesma linha em outra empresa não colide; voltar a colidir, sim
+        filha = self.env["res.company"].create({"name": "Filha TG-122 gilrat"})
+        filha.partner_id.vat = cnpj_valido(RAIZ, "0002")
+        outra.company_id = filha
+        with self.assertRaises(ValidationError):
+            outra.write({"company_id": self.env.company.id, "cnpj": self._cnpj("0004")})
+
+    def test_cnpj_valido_e_da_raiz_do_empregador(self):
+        with self.assertRaises(ValidationError):
+            self.Gilrat.create(
+                {
+                    "cnpj": "12345678000300",  # dígito verificador errado
+                    "date_start": INI_2026,
+                    "rat": "3",
+                    "fap": 1.0,
+                }
+            )
+        with self.assertRaises(ValidationError):
+            self.Gilrat.create(
+                {
+                    "cnpj": cnpj_valido("11222333", "0001"),  # outra raiz
+                    "date_start": INI_2026,
+                    "rat": "3",
+                    "fap": 1.0,
+                }
+            )
+        with self.assertRaises(ValidationError):
+            self._gilrat("0004", 1.0).cnpj = cnpj_valido("11222333", "0001")
+
+    def test_formulario_da_empresa_sem_erro_para_usuario_sem_folha(self):
+        """O bloco novo é só do grupo de folha: sem ele, sem AccessError."""
+        user = self.env["res.users"].create(
+            {
+                "name": "Sem folha",
+                "login": "sem_folha_gilrat",
+                "groups_id": [(6, 0, [self.env.ref("base.group_user").id])],
+                "company_ids": [(6, 0, [self.env.company.id])],
+                "company_id": self.env.company.id,
+            }
+        )
+        company = self.env.company.with_user(user)
+        arch = company.get_view(self.env.ref("base.view_company_form").id)["arch"]
+        self.assertNotIn("l10n_br_hr_gilrat_ids", arch)
+        company.read(["name"])
+        gerente = self.env["res.users"].create(
+            {
+                "name": "Folha",
+                "login": "folha_gilrat",
+                "groups_id": [
+                    (6, 0, [self.env.ref("payroll.group_payroll_manager").id])
+                ],
+                "company_ids": [(6, 0, [self.env.company.id])],
+                "company_id": self.env.company.id,
+            }
+        )
+        arch = self.env.company.with_user(gerente).get_view(
+            self.env.ref("base.view_company_form").id
+        )["arch"]
+        self.assertIn("l10n_br_hr_gilrat_ids", arch)

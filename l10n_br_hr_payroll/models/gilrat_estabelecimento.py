@@ -19,6 +19,11 @@ from odoo.exceptions import ValidationError
 
 from . import salary_rules_br
 
+try:
+    from erpbrasil.base.fiscal import cnpj_cpf
+except ImportError:  # pragma: no cover
+    cnpj_cpf = None
+
 
 def so_digitos(valor):
     return re.sub(r"\D", "", valor or "")
@@ -115,15 +120,30 @@ class L10nBrHrPayrollGilrat(models.Model):
                     % {"cnpj": rec.cnpj, "valor": rec.fap}
                 )
 
-    @api.constrains("cnpj")
+    @api.constrains("cnpj", "company_id")
     def _check_cnpj(self):
+        """CNPJ de 14 dígitos, válido e da raiz do empregador (como o S-2200)."""
         for rec in self:
-            if len(so_digitos(rec.cnpj)) != 14:
+            cnpj = so_digitos(rec.cnpj)
+            if len(cnpj) != 14 or (cnpj_cpf and not cnpj_cpf.validar(cnpj)):
                 raise ValidationError(
-                    _("O CNPJ do estabelecimento deve ter 14 dígitos (%s).") % rec.cnpj
+                    _("O CNPJ do estabelecimento é inválido (%s).") % rec.cnpj
+                )
+            raiz = so_digitos(rec.company_id.partner_id.vat)
+            if len(raiz) == 14 and cnpj[:8] != raiz[:8]:
+                raise ValidationError(
+                    _(
+                        "O CNPJ %(cnpj)s não pertence ao empregador %(empresa)s "
+                        "(raiz %(raiz)s)."
+                    )
+                    % {
+                        "cnpj": cnpj,
+                        "empresa": rec.company_id.display_name,
+                        "raiz": raiz[:8],
+                    }
                 )
 
-    @api.constrains("date_start", "date_end")
+    @api.constrains("date_start", "date_end", "cnpj", "company_id")
     def _check_vigencia(self):
         for rec in self:
             if rec.date_start.day != 1:
