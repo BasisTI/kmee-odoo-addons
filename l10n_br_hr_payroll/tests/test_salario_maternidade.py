@@ -10,7 +10,7 @@ O salário dos dias de licença-maternidade sai de ``SALARIO_BASE`` e vai para
 import importlib.util
 from datetime import date
 
-from odoo.tools import file_path
+from odoo.tools import file_path, mute_logger
 
 from ..models.salary_rules_br import dias_maternidade_mes, dias_salario_mes
 from .common import PayrollCommon
@@ -301,7 +301,8 @@ class TestMigracaoMaternidade(PayrollCommon):
         spec = importlib.util.spec_from_file_location("post_migration_tg87", caminho)
         modulo = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(modulo)
-        modulo.migrate(self.env.cr, "18.0.1.5.0")
+        with mute_logger("post_migration_tg87"):
+            modulo.migrate(self.env.cr, "18.0.1.5.0")
         return modulo
 
     def test_formulas_antigas_sao_atualizadas(self):
@@ -443,7 +444,9 @@ class TestMigracaoAtualizacaoDeBanco(PayrollCommon):
         self.structure_estatuto.write({"rule_ids": [(3, regra_mat.id)]})
         base = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
         base.amount_python_compute = "# personalizada\nresult = contract.wage"
-        self._carregar("post-migration").migrate(self.env.cr, "18.0.1.5.0")
+        with self.assertLogs("tg87_post-migration", level="WARNING") as capturado:
+            self._carregar("post-migration").migrate(self.env.cr, "18.0.1.5.0")
+        self.assertIn("personalizada", capturado.output[0])
         self.assertNotIn(regra_mat, self.structure_clt.rule_ids)
         self.assertNotIn(regra_mat, self.structure_estatuto.rule_ids)
 
@@ -454,6 +457,7 @@ class TestMigracaoAtualizacaoDeBanco(PayrollCommon):
         modulo = self._carregar("post-migration")
         base = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
         base.amount_python_compute = modulo.FORMULAS_ANTIGAS["hr_rule_salario_base"]
-        modulo.migrate(self.env.cr, "18.0.1.5.0")
+        with mute_logger("tg87_post-migration"):
+            modulo.migrate(self.env.cr, "18.0.1.5.0")
         self.assertIn(regra_mat, self.structure_clt.rule_ids)
         self.assertIn(regra_mat, self.structure_estatuto.rule_ids)
