@@ -24,9 +24,6 @@ except ImportError:  # pragma: no cover
     _ensure_builders_loaded = None
     validate_xsd = None
 
-# Raça/cor aceita no S-2200 (TS_racaCorTrab, S-1.3): o 6 (não informado) existe
-# na tabela, mas é proibido neste evento.
-RACA_COR = {"1", "2", "3", "4", "5"}
 # A partir desta data de admissão o leiaute S-1.3 limita as horas do tempo
 # parcial e exige tmpParc = 0 na jornada 12 x 36.
 DT_REGRA_TEMPO_PARCIAL = "2026-11-23"
@@ -39,7 +36,7 @@ FIM_NOTURNO = 5.0
 
 class ESocialS2200(models.Model):
     _name = "l10n_br.esocial.s2200"
-    _inherit = "l10n_br.esocial.base.intermediario"
+    _inherit = "l10n_br.esocial.trabalhador.mixin"
     _description = "eSocial S-2200 - Cadastramento Inicial / Admissão"
 
     employee_id = fields.Many2one(
@@ -55,79 +52,8 @@ class ESocialS2200(models.Model):
         ondelete="cascade",
     )
 
-    avisos = fields.Text(
-        string="Avisos da geração",
-        readonly=True,
-        copy=False,
-        help="Divergências que não impedem o evento, como dependentes de IRRF "
-        "e de salário-família da folha diferentes dos declarados.",
-    )
-
     def _get_event_type(self):
         return "S-2200"
-
-    def _get_cpf_limpo(self, employee):
-        cpf = employee.cnpj_cpf
-        if not cpf:
-            raise UserError(
-                _("Empregado '%(name)s' não possui CPF configurado.")
-                % {"name": employee.name}
-            )
-        return "".join(c for c in cpf if c.isdigit())
-
-    def _erro_cadastro(self, mensagem, **valores):
-        raise UserError(mensagem % valores)
-
-    def _get_sexo(self, employee):
-        sexo = {"male": "M", "female": "F"}.get(employee.gender)
-        if not sexo:
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': o eSocial só aceita sexo Masculino ou "
-                    "Feminino; preencha o campo Gênero do cadastro."
-                ),
-                name=employee.name,
-            )
-        return sexo
-
-    def _get_raca_cor(self, employee):
-        codigo = (employee.ethnicity.code or "").strip()
-        if codigo == "6":
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': a Raça/Cor 'Não informado' (6) não pode "
-                    "ser enviada no S-2200; preencha a Raça/Cor do cadastro."
-                ),
-                name=employee.name,
-            )
-        if codigo not in RACA_COR:
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': preencha Raça/Cor no cadastro (código "
-                    "de 1 a 5 da tabela do eSocial)."
-                ),
-                name=employee.name,
-            )
-        return int(codigo)
-
-    def _get_grau_instr(self, employee):
-        if not employee.l10n_br_esocial_grau_instr:
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': preencha o Grau de Instrução eSocial "
-                    "no cadastro."
-                ),
-                name=employee.name,
-            )
-        return employee.l10n_br_esocial_grau_instr
-
-    def _get_dt_nascto(self, employee):
-        if not employee.birthday:
-            self._erro_cadastro(
-                _("Empregado '%(name)s': preencha a Data de Nascimento."),
-                name=employee.name,
-            )
-        return str(employee.birthday)
 
     def _get_cnpj_sindicato(self, contract):
         cnpj = self._so_digitos(contract.union_cnpj)
@@ -138,30 +64,6 @@ class ESocialS2200(models.Model):
                     "da categoria do empregado."
                 ),
                 name=contract.display_name,
-            )
-        return cnpj
-
-    def _get_local_trabalho(self, employee, ide):
-        """Estabelecimento do empregador onde o empregado trabalha (CNPJ)."""
-        partner = employee.address_id
-        cnpj = self._so_digitos(partner.vat)
-        if len(cnpj) != 14:
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': o Endereço de Trabalho precisa ser o "
-                    "estabelecimento do empregador, com CNPJ de 14 dígitos."
-                ),
-                name=employee.name,
-            )
-        if ide["tp_insc"] == 1 and cnpj[:8] != ide["nr_insc"]:
-            self._erro_cadastro(
-                _(
-                    "Empregado '%(name)s': o CNPJ do Endereço de Trabalho "
-                    "(%(cnpj)s) não pertence ao empregador (raiz %(raiz)s)."
-                ),
-                name=employee.name,
-                cnpj=cnpj,
-                raiz=ide["nr_insc"],
             )
         return cnpj
 
@@ -280,127 +182,6 @@ class ESocialS2200(models.Model):
                 partes.append("Semana %d - %s" % (n, self._descrever_semana(semana)))
         return " | ".join(partes)[:999]
 
-    def _dependente(self, rel, employee, hoje):
-        nome = (rel.name or "").strip()
-        erros = []
-        tipo = rel.l10n_br_esocial_tp_dep_id
-        if not rel.date_of_birth:
-            erros.append(_("preencha a Data de Nascimento"))
-        elif rel.date_of_birth > hoje:
-            erros.append(_("a Data de Nascimento está no futuro"))
-        if tipo.dt_fim and tipo.dt_fim < hoje:
-            erros.append(
-                _("o tipo '%(tipo)s' foi encerrado na Tabela 07 em %(dt)s")
-                % {"tipo": tipo.display_name, "dt": tipo.dt_fim}
-            )
-        cpf = self._so_digitos(rel.l10n_br_esocial_cpf)
-        if rel.l10n_br_esocial_dep_irrf and not cpf:
-            erros.append(_("o CPF é obrigatório quando é dependente para IRRF"))
-        if cpf and (len(cpf) != 11 or (cnpj_cpf and not cnpj_cpf.validar(cpf))):
-            erros.append(_("CPF inválido"))
-        descr = (rel.l10n_br_esocial_descr_dep or "").strip()
-        if tipo.codigo == "99" and not descr:
-            erros.append(_("a descrição da dependência é obrigatória para o tipo 99"))
-        if erros:
-            # ``_()`` fora de genexpr: dentro dele o Odoo não acha o idioma.
-            linhas = []
-            for erro in erros:
-                linhas.append(
-                    _("Dependente '%(dep)s' de '%(name)s': %(erro)s.")
-                    % {"dep": nome, "name": employee.name, "erro": erro}
-                )
-            raise UserError("\n".join(linhas))
-        return {
-            "tp_dep": tipo.codigo,
-            "nm_dep": nome,
-            "dt_nascto": str(rel.date_of_birth),
-            "cpf_dep": cpf,
-            "dep_irrf": "S" if rel.l10n_br_esocial_dep_irrf else "N",
-            "dep_sf": "S" if rel.l10n_br_esocial_dep_sf else "N",
-            "inc_trab": "S" if rel.l10n_br_esocial_inc_trab else "N",
-            "descr_dep": descr if tipo.codigo == "99" else "",
-        }
-
-    def _get_dependentes(self, employee):
-        """Parentes com tipo de dependente eSocial, no formato do grupo.
-
-        Parente com IRRF, salário-família ou incapacidade marcados e sem tipo
-        é recusado (não pode sumir do evento sem aviso).
-        """
-        hoje = fields.Date.context_today(self)
-        erros = []
-        dependentes = []
-        cpfs = {}
-        for rel in employee.relative_ids:
-            if not rel.l10n_br_esocial_tp_dep_id:
-                if (
-                    rel.l10n_br_esocial_dep_irrf
-                    or rel.l10n_br_esocial_dep_sf
-                    or rel.l10n_br_esocial_inc_trab
-                ):
-                    erros.append(
-                        _(
-                            "Dependente '%(dep)s' de '%(name)s': marcado para "
-                            "IRRF/salário-família/incapacidade, mas sem o Tipo de "
-                            "Dependente eSocial."
-                        )
-                        % {"dep": rel.name, "name": employee.name}
-                    )
-                continue
-            try:
-                dep = self._dependente(rel, employee, hoje)
-            except UserError as erro:
-                erros.append(erro.args[0])
-                continue
-            if dep["cpf_dep"] and dep["cpf_dep"] in cpfs:
-                erros.append(
-                    _(
-                        "Dependente '%(dep)s' de '%(name)s': CPF repetido em "
-                        "outro dependente."
-                    )
-                    % {"dep": dep["nm_dep"], "name": employee.name}
-                )
-                continue
-            cpfs[dep["cpf_dep"]] = True
-            dependentes.append(dep)
-        if erros:
-            raise UserError("\n".join(erros))
-        return dependentes
-
-    def _avisos_dependentes(self, employee, dependentes):
-        """Divergência entre a folha (IRRF/salário-família) e o declarado."""
-        avisos = []
-        pares = (
-            (
-                "l10n_br_irrf_dependentes",
-                "dep_irrf",
-                _("Dependentes IRRF da folha"),
-            ),
-            (
-                "l10n_br_num_filhos_sf",
-                "dep_sf",
-                _("Filhos para Salário-Família da folha"),
-            ),
-        )
-        for campo, chave, rotulo in pares:
-            folha = employee[campo] if campo in employee._fields else None
-            declarados = sum(1 for d in dependentes if d[chave] == "S")
-            if folha is not None and folha != declarados:
-                avisos.append(
-                    _("%(rotulo)s: %(folha)s, mas o S-2200 declara %(dep)s.")
-                    % {"rotulo": rotulo, "folha": folha, "dep": declarados}
-                )
-        return avisos
-
-    @staticmethod
-    def _coletar(erros, funcao, *args):
-        """Chama ``funcao``; se recusar, guarda a mensagem e devolve ``None``."""
-        try:
-            return funcao(*args)
-        except UserError as erro:
-            erros.append(erro.args[0])
-            return None
-
     def _to_esociallib_dict(self):
         """Dict do S-2200, ou ``UserError`` com TODOS os dados que faltam."""
         self.ensure_one()
@@ -420,6 +201,10 @@ class ESocialS2200(models.Model):
             erros.append(
                 _("Empregado '%(name)s' não possui Categoria Trabalhador eSocial.")
                 % {"name": employee.name}
+            )
+        else:
+            self._coletar(
+                erros, self._validar_categoria_evento, employee, categoria, "S-2200"
             )
 
         ide = self._coletar(erros, self._get_ide_empregador)
@@ -508,50 +293,15 @@ class ESocialS2200(models.Model):
 
         return data
 
-    def _registrar_avisos(self, avisos):
-        """Guarda (campo ``avisos`` e log) o que não impede o evento."""
-        self.avisos = "\n".join(avisos) if avisos else False
-        if avisos:
-            _logger.warning(
-                "eSocial S-2200 %s (%s): %s",
-                self.id,
-                self.employee_id.name,
-                self.avisos,
-            )
-
     # ------------------------------------------------------------------
     # XML: a esociallib 0.1.3 não emite dependentes nem os campos
     # tmpParc/horNoturno/dscJorn do horário contratual (obrigatórios no XSD).
     # ------------------------------------------------------------------
-    @staticmethod
-    def _filho(pai, tag, texto=None):
-        ns = etree.QName(pai).namespace
-        el = etree.SubElement(pai, "{%s}%s" % (ns, tag))
-        if texto is not None:
-            el.text = str(texto)
-        return el
-
     def _completar_xml(self, raiz, data):
         """Acrescenta ao XML da esociallib o que ela não gera."""
         ns = {"e": etree.QName(raiz[0]).namespace}
         trabalhador = raiz.find(".//e:trabalhador", ns)
-        contato = trabalhador.find("e:contato", ns)
-        for dep in data["dependentes"]:
-            el = etree.Element("{%s}dependente" % ns["e"])
-            self._filho(el, "tpDep", dep["tp_dep"])
-            self._filho(el, "nmDep", dep["nm_dep"])
-            self._filho(el, "dtNascto", dep["dt_nascto"])
-            if dep["cpf_dep"]:
-                self._filho(el, "cpfDep", dep["cpf_dep"])
-            self._filho(el, "depIRRF", dep["dep_irrf"])
-            self._filho(el, "depSF", dep["dep_sf"])
-            self._filho(el, "incTrab", dep["inc_trab"])
-            if dep["descr_dep"]:
-                self._filho(el, "descrDep", dep["descr_dep"])
-            if contato is not None:
-                contato.addprevious(el)
-            else:
-                trabalhador.append(el)
+        self._xml_dependentes(trabalhador, data["dependentes"])
         hor = raiz.find(".//e:horContratual", ns)
         self._filho(hor, "tmpParc", data["tmp_parc"])
         self._filho(hor, "horNoturno", data["hor_noturno"])

@@ -50,6 +50,28 @@
                     <field name="l10n_br_esocial_tp_jornada" />
                     <field name="l10n_br_esocial_tmp_parc" />
                 </group>
+                <group
+                    name="esocial_tsve"
+                    string="eSocial - Trabalhador sem vínculo e estágio"
+                >
+                    <field name="l10n_br_esocial_nat_atividade" />
+                    <field name="l10n_br_esocial_nat_estagio" />
+                    <field name="l10n_br_esocial_niv_estagio" />
+                    <field name="l10n_br_esocial_area_atuacao" />
+                    <field name="l10n_br_esocial_nr_apolice" />
+                    <field
+                        name="l10n_br_esocial_inst_ensino_id"
+                        options="{'no_create': True}"
+                    />
+                    <field
+                        name="l10n_br_esocial_age_integ_id"
+                        options="{'no_create': True}"
+                    />
+                    <field
+                        name="l10n_br_esocial_supervisor_id"
+                        options="{'no_create': True}"
+                    />
+                </group>
             </xpath>
         </field>
     </record>

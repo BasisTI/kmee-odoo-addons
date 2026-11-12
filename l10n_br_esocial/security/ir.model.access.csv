@@ -33,6 +33,12 @@ access_esocial_s2230_user,l10n_br.esocial.s2230 user,model_l10n_br_esocial_s2230
 access_esocial_s2230_manager,l10n_br.esocial.s2230 manager,model_l10n_br_esocial_s2230,payroll.group_payroll_manager,1,1,1,1
 access_esocial_s2299_user,l10n_br.esocial.s2299 user,model_l10n_br_esocial_s2299,payroll.group_payroll_user,1,0,0,0
 access_esocial_s2299_manager,l10n_br.esocial.s2299 manager,model_l10n_br_esocial_s2299,payroll.group_payroll_manager,1,1,1,1
+access_esocial_s2300_user,l10n_br.esocial.s2300 user,model_l10n_br_esocial_s2300,payroll.group_payroll_user,1,0,0,0
+access_esocial_s2300_manager,l10n_br.esocial.s2300 manager,model_l10n_br_esocial_s2300,payroll.group_payroll_manager,1,1,1,1
+access_esocial_s2306_user,l10n_br.esocial.s2306 user,model_l10n_br_esocial_s2306,payroll.group_payroll_user,1,0,0,0
+access_esocial_s2306_manager,l10n_br.esocial.s2306 manager,model_l10n_br_esocial_s2306,payroll.group_payroll_manager,1,1,1,1
+access_esocial_s2399_user,l10n_br.esocial.s2399 user,model_l10n_br_esocial_s2399,payroll.group_payroll_user,1,0,0,0
+access_esocial_s2399_manager,l10n_br.esocial.s2399 manager,model_l10n_br_esocial_s2399,payroll.group_payroll_manager,1,1,1,1
 access_esocial_financiamento_aposent_user,l10n_br.esocial.financiamento.aposent user,model_l10n_br_esocial_financiamento_aposent,base.group_user,1,0,0,0
 access_esocial_financiamento_aposent_manager,l10n_br.esocial.financiamento.aposent manager,model_l10n_br_esocial_financiamento_aposent,payroll.group_payroll_manager,1,1,1,1
 access_esocial_tipo_inscricao_user,l10n_br.esocial.tipo.inscricao user,model_l10n_br_esocial_tipo_inscricao,base.group_user,1,0,0,0

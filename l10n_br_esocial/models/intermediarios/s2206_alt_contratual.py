@@ -61,6 +61,8 @@ class ESocialS2206(models.Model):
                 % {"name": employee.name}
             )
 
+        self._validar_categoria_evento(employee, categoria, "S-2206")
+
         ide = self._get_ide_empregador()
         proc = self._get_proc_info()
 
