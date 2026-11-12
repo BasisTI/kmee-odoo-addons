@@ -12,6 +12,13 @@ RECIBO_RETIF = "1.2.0000000000000054321"
 
 @tagged("post_install", "-at_install")
 class TestEstornoEsocial(ESocialCicloCommon):
+    @classmethod
+    def setUpClass(cls):
+        super().setUpClass()
+        # O estorno recria o holerite e valida o CPF; o do cenário comum não passa
+        # nos dígitos verificadores.
+        cls.employee.write({"cnpj_cpf": "111.444.777-35"})
+
     def _aceitar(self, evento, recibo):
         evento.write({"state": "success", "nr_recibo": recibo})
 
