@@ -302,13 +302,14 @@ class ESocialS2200(models.Model):
         if tipo.codigo == "99" and not descr:
             erros.append(_("a descrição da dependência é obrigatória para o tipo 99"))
         if erros:
-            raise UserError(
-                "\n".join(
+            # ``_()`` fora de genexpr: dentro dele o Odoo não acha o idioma.
+            linhas = []
+            for erro in erros:
+                linhas.append(
                     _("Dependente '%(dep)s' de '%(name)s': %(erro)s.")
                     % {"dep": nome, "name": employee.name, "erro": erro}
-                    for erro in erros
                 )
-            )
+            raise UserError("\n".join(linhas))
         return {
             "tp_dep": tipo.codigo,
             "nm_dep": nome,
