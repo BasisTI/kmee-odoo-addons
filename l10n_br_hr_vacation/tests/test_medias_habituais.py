@@ -44,10 +44,22 @@ class TestMediaHabitual(VacationCommon):
         payslip.action_payslip_done()
         return payslip
 
-    def _valor_he_50(self, contract, horas):
-        """Valor da HE 50% (salário-hora x 1,5 x horas), como as regras calculam."""
-        divisor = contract._l10n_br_divisor_horas_mensais()
-        return round(contract.wage / divisor * 1.5 * horas, 2)
+    def _valor_variavel(self, mensal):
+        """HE 50% mais o reflexo no DSR (TG-86) que o mensal calculou.
+
+        Súmulas 45 e 172 do TST: a média das horas extras habituais leva o
+        DSR junto. O valor vem das linhas do próprio holerite, porque o
+        reflexo varia com os dias úteis e os repousos de cada mês.
+        """
+        total = 0.0
+        for code in ("HE_50", "DSR_HE"):
+            total += self._get_line_total(mensal, code)
+        self.assertGreater(self._get_line_total(mensal, "DSR_HE"), 0.0)
+        return total
+
+    @staticmethod
+    def _media(valores):
+        return round(sum(valores) / len(valores), 2)
 
     def test_media_zero_sem_historico(self):
         """Sem holerites mensais anteriores, a média é zero (compat)."""
@@ -77,12 +89,12 @@ class TestMediaHabitual(VacationCommon):
         contract = self._create_contract(emp, wage=3000.00, date_start=date(2023, 1, 1))
         valores = []
         for mes in range(1, 7):
-            self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
-            valores.append(self._valor_he_50(contract, 10.0))
+            mensal = self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
+            valores.append(self._valor_variavel(mensal))
         for mes in range(7, 13):
-            self._mensal_done(emp, contract, 2024, mes, he_50=20.0)
-            valores.append(self._valor_he_50(contract, 20.0))
-        media_esperada = round(sum(valores) / len(valores), 2)
+            mensal = self._mensal_done(emp, contract, 2024, mes, he_50=20.0)
+            valores.append(self._valor_variavel(mensal))
+        media_esperada = self._media(valores)
 
         ferias = self.env["hr.payslip"].create(
             {
@@ -135,9 +147,11 @@ class TestMediaHabitual(VacationCommon):
         """Contrato com 3 meses de casa: média é feita sobre os 3 meses."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00, date_start=date(2024, 4, 1))
+        valores = []
         for mes in (4, 5, 6):
-            self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
-        media_esperada = self._valor_he_50(contract, 10.0)
+            mensal = self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
+            valores.append(self._valor_variavel(mensal))
+        media_esperada = self._media(valores)
 
         ferias = self.env["hr.payslip"].create(
             {
@@ -159,9 +173,11 @@ class TestMediaHabitual(VacationCommon):
         """A mesma média soma à base do 13º proporcional/bruto."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00, date_start=date(2023, 1, 1))
+        valores = []
         for mes in range(1, 13):
-            self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
-        media_esperada = self._valor_he_50(contract, 10.0)
+            mensal = self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
+            valores.append(self._valor_variavel(mensal))
+        media_esperada = self._media(valores)
 
         decimo = self.env["hr.payslip"].create(
             {
@@ -189,9 +205,11 @@ class TestMediaHabitual(VacationCommon):
         """A média também compõe o 13º proporcional pago na rescisão."""
         emp = self._create_employee("Rescisão com Média")
         contract = self._create_contract(emp, wage=3000.00, date_start=date(2024, 1, 1))
+        valores = []
         for mes in range(1, 13):
-            self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
-        media_esperada = self._valor_he_50(contract, 10.0)
+            mensal = self._mensal_done(emp, contract, 2024, mes, he_50=10.0)
+            valores.append(self._valor_variavel(mensal))
+        media_esperada = self._media(valores)
 
         rescisao = self.env["hr.payslip"].create(
             {

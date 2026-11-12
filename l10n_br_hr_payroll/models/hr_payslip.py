@@ -4,6 +4,7 @@
 import logging
 import types
 
+import pytz
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
@@ -400,6 +401,113 @@ class HrPayslip(models.Model):
         ]
         return salary_rules_br.calc_media_habitual(valores, janela_meses)
 
+    def _l10n_br_feriados_competencia(self):
+        """Feriados do mês da competência, no calendário de trabalho do contrato.
+
+        O módulo não tem calendário de feriados próprio: usa as ausências
+        GLOBAIS (``resource.calendar.leaves`` sem recurso, o "feriado" do
+        Odoo) do calendário do contrato, ou sem calendário (valem para todos),
+        da empresa do holerite. Cada dia coberto pela ausência, no fuso do
+        calendário, é um feriado. Sem ausência cadastrada, devolve vazio e o
+        repouso do mês são só os domingos.
+
+        Critério (``salary_rules_br.dia_feriado_da_ausencia``): ausência de UM
+        dia que cobre o expediente inteiro, lida no fuso do calendário do
+        contrato (sem calendário: o da empresa; sem ele, UTC) e NÃO no do
+        usuário que a lançou. Meio expediente e recesso de vários dias não
+        são feriado.
+
+        Returns:
+            ``set`` de ``date`` dentro do mês da competência.
+        """
+        self.ensure_one()
+        competencia = self._get_competencia()
+        if not competencia:
+            return set()
+        inicio = competencia.replace(day=1)
+        fim = inicio + relativedelta(months=1, days=-1)
+        contrato = self.contract_id
+        calendario = contrato.resource_calendar_id if contrato else False
+        empresa = self.company_id or contrato.company_id
+        fuso = pytz.timezone(
+            (calendario and calendario.tz)
+            or (empresa and empresa.partner_id.tz)
+            or "UTC"
+        )
+        # Folga de dois dias nas pontas: as datas guardadas são UTC.
+        limite_ini = fields.Datetime.to_datetime(inicio - relativedelta(days=2))
+        limite_fim = fields.Datetime.to_datetime(fim + relativedelta(days=3))
+        ausencias = (
+            self.env["resource.calendar.leaves"]
+            .sudo()
+            .search(
+                [
+                    ("resource_id", "=", False),
+                    ("calendar_id", "in", [False, calendario.id if calendario else 0]),
+                    ("company_id", "in", [False, empresa.id]),
+                    ("date_from", "<", limite_fim),
+                    ("date_to", ">", limite_ini),
+                ]
+            )
+        )
+
+        marcacoes = (
+            calendario.attendance_ids.filtered(lambda m: not m.display_type)
+            if calendario
+            else self.env["resource.calendar.attendance"]
+        )
+
+        def do_dia(semana):
+            return marcacoes.filtered(lambda m: int(m.dayofweek) == semana)
+
+        def cauda(semana):
+            """Marcações que começam à 0h de um turno que vem da véspera."""
+            anterior = do_dia((semana - 1) % 7)
+            if not any(m.hour_to >= 23.99 for m in anterior):
+                return marcacoes.browse()
+            return do_dia(semana).filtered(lambda m: m.hour_from <= 0.01)
+
+        def janela(dia):
+            """Expediente do ``dia`` no calendário, em horas desde a 0h do dia.
+
+            Um turno que cruza a meia-noite (22h-24h mais 0h-6h do dia
+            seguinte) é um expediente só: a janela do dia vai até o fim do
+            turno (24 + 6). Sem expediente no dia, o dia local inteiro.
+            """
+            semana = dia.weekday()
+            proprias = do_dia(semana) - cauda(semana)
+            if not proprias:
+                return 0.0, 24.0
+            fim = max(proprias.mapped("hour_to"))
+            if fim >= 23.99:
+                fim = 24.0 + max(cauda((semana + 1) % 7).mapped("hour_to") or [0.0])
+            return min(proprias.mapped("hour_from")), fim
+
+        def local(valor):
+            return pytz.utc.localize(valor).astimezone(fuso).replace(tzinfo=None)
+
+        feriados = set()
+        for ausencia in ausencias:
+            dia = salary_rules_br.dia_feriado_da_ausencia(
+                local(ausencia.date_from), local(ausencia.date_to), janela
+            )
+            if dia and inicio <= dia <= fim:
+                feriados.add(dia)
+        return feriados
+
+    def _l10n_br_dias_dsr_competencia(self):
+        """``(dias úteis, dias de repouso)`` do mês da competência.
+
+        Ponto único para o reflexo no DSR: outros módulos (ponto eletrônico)
+        sobrescrevem para informar os dias da própria apuração, sem criar uma
+        segunda rubrica de DSR.
+        """
+        self.ensure_one()
+        competencia = self._get_competencia()
+        return salary_rules_br.dias_dsr(
+            competencia.year, competencia.month, self._l10n_br_feriados_competencia()
+        )
+
     def _l10n_br_salario_pago_mensal(self, contract):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
 
@@ -573,7 +681,12 @@ class HrPayslip(models.Model):
             return self._l10n_br_semanas_com_falta(contrato)
 
         def dias_dsr():
-            return salary_rules_br.dias_dsr(competencia.year, competencia.month)
+            return self._l10n_br_dias_dsr_competencia()
+
+        def dsr_reflexo(valor):
+            """Reflexo de ``valor`` (horas extras, adicional noturno) no DSR."""
+            uteis, repouso = dias_dsr()
+            return salary_rules_br.calc_dsr_reflexo(valor, uteis, repouso)
 
         def aliquotas_patronais(contrato, decimo_terceiro=False):
             """Alíquotas dos encargos patronais do contrato na competência.
@@ -631,6 +744,8 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Reflexo no DSR de horas extras e adicional noturno (TG-86).
+            dsr_reflexo=dsr_reflexo,
             # Repousos perdidos por falta: um por semana com falta (TG-84).
             semanas_com_falta=semanas_com_falta,
             # Encargos patronais por regime tributário (RF-31/32/33).

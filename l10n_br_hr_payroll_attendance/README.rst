@@ -56,9 +56,10 @@ digitando.
 
 Rubricas novas:
 
-- **DSR sobre horas extras** (Lei 605/49; Súmula 172 do TST), calculado
-  sobre o valor das horas extras com os dias úteis e de repouso do
-  período apurado;
+- **DSR sobre horas extras** (Lei 605/49; Súmula 172 do TST): é a
+  rubrica ``DSR_HE`` do ``l10n_br_hr_payroll``, sobre o valor das horas
+  extras, com os dias úteis e de repouso do mês (domingos e feriados; a
+  apuração acrescenta os feriados que marcou);
 - **Intervalo intrajornada suprimido** (art. 71, § 4º da CLT), pago com
   50% e de natureza **indenizatória** - por isso vai para a categoria
   ``IND``, que entra no líquido mas fica fora do bruto e das bases de

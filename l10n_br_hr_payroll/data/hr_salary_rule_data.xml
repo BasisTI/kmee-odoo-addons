@@ -74,6 +74,25 @@ result = tools.br.round_money(salario_hora * 2.0 * payslip.l10n_br_horas_extras_
         </field>
     </record>
 
+    <!-- 7. DSR sobre Horas Extras (Súmula 172 TST) -->
+    <record id="hr_rule_dsr_he" model="hr.salary.rule">
+        <field name="name">DSR sobre Horas Extras</field>
+        <field name="sequence" eval="7" />
+        <field name="code">DSR_HE</field>
+        <field name="category_id" ref="hr_salary_rule_category_alw" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (HE_50 + HE_100) > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.dsr_reflexo(HE_50 + HE_100)
+        </field>
+        <field
+            name="note"
+        >Reflexo das horas extras no repouso semanal remunerado (Lei 605/49, art. 7º, a; Súmula 172 do TST): valor das horas extras do mês ÷ dias úteis × domingos e feriados. Os feriados vêm das ausências globais do calendário do contrato.</field>
+    </record>
+
     <!-- 10. Adicional Noturno -->
     <record id="hr_rule_adicional_noturno" model="hr.salary.rule">
         <field name="name">Adicional Noturno</field>
@@ -89,6 +108,25 @@ result = payslip.l10n_br_horas_noturnas > 0
 salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()
 result = tools.br.round_money(salario_hora * 0.20 * payslip.l10n_br_horas_noturnas_computadas)
         </field>
+    </record>
+
+    <!-- 11. DSR sobre Adicional Noturno (Súmula 60 TST) -->
+    <record id="hr_rule_dsr_noturno" model="hr.salary.rule">
+        <field name="name">DSR sobre Adicional Noturno</field>
+        <field name="sequence" eval="11" />
+        <field name="code">DSR_NOTURNO</field>
+        <field name="category_id" ref="hr_salary_rule_category_alw" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = ADICIONAL_NOTURNO > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.dsr_reflexo(ADICIONAL_NOTURNO)
+        </field>
+        <field
+            name="note"
+        >Reflexo do adicional noturno habitual no repouso semanal remunerado (Súmula 60 do TST): valor do adicional do mês ÷ dias úteis × domingos e feriados.</field>
     </record>
 
     <!-- 15. Adicional de Periculosidade -->
