@@ -2,9 +2,30 @@
 <!-- Copyright 2026 KMEE
      License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl). -->
 <odoo>
-    <!-- O reflexo das horas extras no DSR (DSR_HE) é a rubrica do
-         l10n_br_hr_payroll; este módulo só informa os dias da apuração
-         (ver hr.payslip._l10n_br_dias_dsr_competencia). -->
+    <!-- LEGADO (TG-86): a rubrica própria deste módulo para o reflexo das
+         horas extras no DSR foi substituída pela DSR_HE do l10n_br_hr_payroll.
+         O registro fica, fora de qualquer estrutura e noupdate, porque holerites
+         antigos têm linhas que apontam para ele (apagá-lo quebraria a chave
+         estrangeira e o histórico). Não é calculado. -->
+    <data noupdate="1">
+        <record id="hr_rule_dsr_he" model="hr.salary.rule">
+            <field name="name">DSR sobre Horas Extras (legado do ponto)</field>
+            <field name="sequence" eval="7" />
+            <field name="code">DSR_HE</field>
+            <field
+                name="category_id"
+                ref="l10n_br_hr_payroll.hr_salary_rule_category_alw"
+            />
+            <field name="condition_select">none</field>
+            <field name="amount_select">code</field>
+            <field name="amount_python_compute">
+result = 0.0
+        </field>
+            <field
+                name="note"
+            >Legado: o reflexo no DSR é a rubrica DSR_HE do l10n_br_hr_payroll. Mantida só para o histórico dos holerites que a usaram.</field>
+        </record>
+    </data>
 
     <!-- Intervalo intrajornada suprimido: art. 71, § 4º da CLT, na redação da
          Lei 13.467/2017. Paga-se APENAS o período suprimido, com acréscimo de

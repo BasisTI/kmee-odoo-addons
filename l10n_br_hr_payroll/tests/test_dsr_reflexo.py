@@ -116,6 +116,10 @@ class BaseDsrReflexo(PayrollCommon):
 
     def setUp(self):
         super().setUp()
+        # O fuso do usuário muda onde o hr_holidays grava a ausência com
+        # calendário, e o do CI não é o da máquina local: todo teste parte de
+        # um fuso explícito (UTC) e quem precisa de outro o diz (tz_usuario).
+        self.env.user.tz = "UTC"
         # Outros módulos instalados no mesmo banco (CI do repositório) trazem
         # feriados globais; o teste precisa contar só os que ele cria.
         self.env["resource.calendar.leaves"].sudo().search(
@@ -151,8 +155,16 @@ class BaseDsrReflexo(PayrollCommon):
             calendario, utc(0, 0, 0), utc(23, 59, 59), empresa=empresa, **extra
         )
 
-    def _ausencia(self, calendario, inicio, fim, empresa=None, **extra):
-        """Ausência global com os instantes UTC dados, sem conversão nenhuma."""
+    def _ausencia(
+        self, calendario, inicio, fim, empresa=None, tz_usuario=None, **extra
+    ):
+        """Ausência global com os instantes UTC dados.
+
+        O fuso do usuário é sempre explícito (``tz_usuario``; sem ele, o do
+        calendário, que não desloca nada): o ``hr_holidays`` regrava a
+        ausência com calendário pelo fuso de quem a cria.
+        """
+        self.env.user.tz = tz_usuario or (calendario and calendario.tz) or "UTC"
         vals = {
             "name": "Feriado",
             "calendar_id": calendario.id if calendario else False,
@@ -162,6 +174,23 @@ class BaseDsrReflexo(PayrollCommon):
         }
         vals.update(extra)
         return self.env["resource.calendar.leaves"].create(vals)
+
+    def _ausencia_local(self, calendario, dia, hora_ini, hora_fim, tz_usuario):
+        """Ausência como o usuário a digita: a hora de parede, no PRÓPRIO fuso.
+
+        ``hora_ini``/``hora_fim`` são horas decimais do dia (``fim`` pode passar
+        de 24). O navegador manda o instante UTC dessa hora no fuso do usuário
+        e o ``hr_holidays`` o leva para o fuso do calendário.
+        """
+        fuso = pytz.timezone(tz_usuario)
+
+        def utc(horas):
+            local = datetime(dia.year, dia.month, dia.day) + timedelta(hours=horas)
+            return fuso.localize(local).astimezone(pytz.utc).replace(tzinfo=None)
+
+        return self._ausencia(
+            calendario, utc(hora_ini), utc(hora_fim), tz_usuario=tz_usuario
+        )
 
     def _holerite(self, calendario=None, **campos):
         emp = self._create_employee()
@@ -267,27 +296,42 @@ class TestDsrReflexoHolerite(BaseDsrReflexo):
         )
 
 
+FUSOS_USUARIO = ("UTC", "America/Sao_Paulo", "Europe/Brussels")
+
+
 class TestFeriadoPorFuso(BaseDsrReflexo):
-    """O feriado vale igual para quem lança de qualquer fuso (TG-86 r2)."""
+    """O feriado vale igual para quem lança de qualquer fuso (TG-86 r2/r3)."""
 
     def _dsr_he(self, cal, **campos):
         slip = self._holerite(cal, l10n_br_horas_extras_50=10.0, **campos)
         he = self._get_line_total(slip, "HE_50")
         return self._get_line_total(slip, "DSR_HE"), he
 
+    def _razao(self, cal):
+        """Razão repouso/úteis efetiva: 5/26 com um feriado, 4/27 sem."""
+        dsr, he = self._dsr_he(cal)
+        for uteis, repouso in ((26, 5), (27, 4), (25, 6)):
+            if abs(dsr - round(he / uteis * repouso, 2)) < 0.011:
+                return uteis, repouso
+        return None
+
+    def _janela_segunda(self, cal):
+        segunda = cal.attendance_ids.filtered(
+            lambda m: not m.display_type and m.dayofweek == "0"
+        )
+        return min(segunda.mapped("hour_from")), max(segunda.mapped("hour_to"))
+
     def test_mesmo_resultado_em_qualquer_fuso_do_usuario(self):
-        for fuso in ("UTC", "America/Sao_Paulo", "Europe/Brussels"):
+        for fuso in FUSOS_USUARIO:
             with self.subTest(fuso=fuso):
                 cal = self._calendario()
                 self._feriado(cal, tz_usuario=fuso)
-                dsr, he = self._dsr_he(cal)
-                self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
+                self.assertEqual(self._razao(cal), (26, 5))
 
     def test_feriado_sem_calendario_lancado_em_sao_paulo(self):
         cal = self._calendario()
         self._feriado(False, tz_usuario="America/Sao_Paulo")
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
+        self.assertEqual(self._razao(cal), (26, 5))
 
     def test_valores_crus_do_ci_em_fuso_a_leste(self):
         """O que o CI gravava: 03:00-23:59:59 UTC com calendário, usuário em Bruxelas.
@@ -295,13 +339,14 @@ class TestFeriadoPorFuso(BaseDsrReflexo):
         O Odoo regrava para 12/10 05:00 a 13/10 01:59:59 hora de São Paulo:
         cobre o expediente de 12/10 e só uma sobra de 13/10, que não é feriado.
         """
-        self.env.user.tz = "Europe/Brussels"
         cal = self._calendario()
         self._ausencia(
-            cal, datetime(2026, 10, 12, 3), datetime(2026, 10, 12, 23, 59, 59)
+            cal,
+            datetime(2026, 10, 12, 3),
+            datetime(2026, 10, 12, 23, 59, 59),
+            tz_usuario="Europe/Brussels",
         )
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
+        self.assertEqual(self._razao(cal), (26, 5))
 
     def test_calendario_em_fuso_diferente_do_de_quem_lancou(self):
         """Calendário em UTC e feriado de São Paulo sem calendário.
@@ -312,32 +357,82 @@ class TestFeriadoPorFuso(BaseDsrReflexo):
         """
         cal = self._calendario(tz="UTC")
         self._feriado(False, tz_usuario="America/Sao_Paulo")
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
+        self.assertEqual(self._razao(cal), (26, 5))
 
-    def test_fim_exatamente_a_meia_noite_local_nao_conta_o_dia_seguinte(self):
-        cal = self._calendario(tz="UTC")
-        self._ausencia(cal, datetime(2026, 10, 12), datetime(2026, 10, 13))
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
-
-    def test_meio_expediente_nao_e_feriado(self):
-        cal = self._calendario(tz="UTC")
-        self._ausencia(cal, datetime(2026, 10, 12, 8), datetime(2026, 10, 12, 12))
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 27 * 4, 2))
-
-    def test_expediente_inteiro_e_feriado(self):
-        cal = self._calendario(tz="UTC")
-        self._ausencia(cal, datetime(2026, 10, 12, 8), datetime(2026, 10, 12, 17))
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 26 * 5, 2))
+    def test_casos_de_expediente_com_usuario_em_cada_fuso(self):
+        """O mesmo caso, com o usuário em UTC, São Paulo e Bruxelas."""
+        for fuso in FUSOS_USUARIO:
+            cal = self._calendario()
+            ini, fim = self._janela_segunda(cal)
+            casos = {
+                "expediente inteiro": (ini, fim, (26, 5)),
+                "dia inteiro, fim à meia-noite": (0.0, 24.0, (26, 5)),
+                "meio expediente": (ini, ini + 4.0, (27, 4)),
+                "atraso de duas horas": (ini + 2.0, fim, (27, 4)),
+            }
+            for nome, (hora_ini, hora_fim, esperado) in casos.items():
+                with self.subTest(fuso=fuso, caso=nome):
+                    calendario = self._calendario()
+                    self._ausencia_local(calendario, FERIADO, hora_ini, hora_fim, fuso)
+                    self.assertEqual(self._razao(calendario), esperado)
 
     def test_recesso_de_varios_dias_nao_vira_repouso(self):
-        cal = self._calendario(tz="UTC")
-        self._ausencia(cal, datetime(2026, 10, 19), datetime(2026, 10, 24))
-        dsr, he = self._dsr_he(cal)
-        self.assertAlmostEqualMoney(dsr, round(he / 27 * 4, 2))
+        """TG-86#P1: recesso coletivo de vários dias não conta como repouso."""
+        for fuso in ("UTC", "America/Sao_Paulo"):
+            with self.subTest(fuso=fuso):
+                cal = self._calendario()
+                # Uma ausência só, de 19 a 23/10 inteiros.
+                self._ausencia_local(cal, date(2026, 10, 19), 0.0, 24.0 * 5, fuso)
+                self.assertEqual(self._razao(cal), (27, 4))
+
+    def test_dia_sem_expediente_usa_o_dia_local_inteiro(self):
+        """Sábado de jornada seg-sex: só o dia local inteiro é feriado."""
+        sabado = date(2026, 10, 31)
+        for fuso in ("UTC", "America/Sao_Paulo"):
+            with self.subTest(fuso=fuso, caso="dia inteiro"):
+                cal = self._calendario()
+                self._ausencia_local(cal, sabado, 0.0, 24.0, fuso)
+                self.assertEqual(self._razao(cal), (26, 5))
+            with self.subTest(fuso=fuso, caso="horário comercial"):
+                cal = self._calendario()
+                self._ausencia_local(cal, sabado, 8.0, 17.0, fuso)
+                self.assertEqual(self._razao(cal), (27, 4))
+
+    def test_calendario_sem_expediente_usa_o_dia_local_inteiro(self):
+        cal = self._calendario()
+        cal.attendance_ids.unlink()
+        self._ausencia_local(cal, FERIADO, 0.0, 24.0, "America/Sao_Paulo")
+        self.assertEqual(self._razao(cal), (26, 5))
+
+    def _calendario_noturno(self):
+        """Segunda 22h-24h e terça 0h-6h: um turno só, que cruza a meia-noite."""
+        cal = self._calendario()
+        cal.attendance_ids.unlink()
+        turno = (("0", 22.0, 24.0), ("1", 0.0, 6.0))
+        cal.write(
+            {
+                "attendance_ids": [
+                    (
+                        0,
+                        0,
+                        {"name": "Noite", "dayofweek": d, "hour_from": i, "hour_to": f},
+                    )
+                    for d, i, f in turno
+                ]
+            }
+        )
+        return cal
+
+    def test_turno_noturno_parcial_nao_e_feriado(self):
+        cal = self._calendario_noturno()
+        self._ausencia_local(cal, FERIADO, 20.0, 24.0, "America/Sao_Paulo")
+        self.assertEqual(self._razao(cal), (27, 4))
+
+    def test_turno_noturno_completo_e_feriado_do_dia_de_inicio(self):
+        """22h de segunda às 6h de terça: feriado de segunda (12/10), só ele."""
+        cal = self._calendario_noturno()
+        self._ausencia_local(cal, FERIADO, 22.0, 30.0, "America/Sao_Paulo")
+        self.assertEqual(self._razao(cal), (26, 5))
 
 
 class TestMigracaoDsr(PayrollCommon):
@@ -368,15 +463,19 @@ class TestMigracaoDsr(PayrollCommon):
     def test_troca_a_rubrica_do_ponto_pela_da_folha(self):
         """Banco atualizado converge para o de banco novo: só a rubrica da folha."""
         padrao = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
-        outra = padrao.copy({"name": "DSR HE do ponto"})
-        self.env["ir.model.data"].create(
-            {
-                "module": "l10n_br_hr_payroll_attendance",
-                "name": "hr_rule_dsr_he",
-                "model": "hr.salary.rule",
-                "res_id": outra.id,
-            }
+        outra = self.env.ref(
+            "l10n_br_hr_payroll_attendance.hr_rule_dsr_he", raise_if_not_found=False
         )
+        if not outra:  # o ponto não está instalado: simula a rubrica dele
+            outra = padrao.copy({"name": "DSR HE do ponto"})
+            self.env["ir.model.data"].create(
+                {
+                    "module": "l10n_br_hr_payroll_attendance",
+                    "name": "hr_rule_dsr_he",
+                    "model": "hr.salary.rule",
+                    "res_id": outra.id,
+                }
+            )
         self.structure_clt.write({"rule_ids": [(3, padrao.id), (4, outra.id)]})
         self._migrar()
         self._migrar()

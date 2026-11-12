@@ -4,7 +4,9 @@
 
 import importlib.util
 from datetime import date, datetime, timedelta
+from unittest import mock
 
+from odoo.api import Environment
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tests.common import TransactionCase
@@ -269,88 +271,124 @@ class TestPonteFolha(TransactionCase):
         )
 
     def test_dsr_sobre_horas_extras(self):
-        """Súmula 172 do TST: HE refletem no repouso."""
+        """Súmula 172 do TST: HE refletem no repouso, pelos dias do calendário."""
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
         self._apurar_marco()
         holerite = self._holerite()
-        ponto = holerite._get_tools_dict()["ponto"]
+        self.assertTrue(holerite.l10n_br_tem_apuracao)
         valor_he = self._valor(holerite, "HE_50") + self._valor(holerite, "HE_100")
         self.assertGreater(valor_he, 0.0)
-        self.assertGreater(ponto.dias_uteis, 0)
-        # Os dias vêm da apuração: HE / dias úteis x dias de repouso.
-        self.assertAlmostEqual(
-            self._valor(holerite, "DSR_HE"),
-            round(valor_he / ponto.dias_uteis * ponto.dias_repouso, 2),
-            places=2,
-        )
-
-    def test_uma_so_rubrica_dsr_he_e_e_a_da_folha(self):
-        """Banco novo e atualizado calculam igual: a rubrica é só a da folha."""
-        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
-        regras = estrutura.rule_ids.filtered(lambda r: r.code == "DSR_HE")
-        self.assertEqual(
-            regras, self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he"), "uma, a da folha"
-        )
-        self.assertFalse(
-            self.env.ref(
-                "l10n_br_hr_payroll_attendance.hr_rule_dsr_he",
-                raise_if_not_found=False,
-            )
-        )
-
-    def test_sem_apuracao_os_dias_sao_os_do_calendario_da_folha(self):
-        """Sem apuração no período, o ponto não muda os dias do reflexo."""
-        holerite = self.env["hr.payslip"].create(
-            {
-                "name": "Holerite Carlos 04/2026",
-                "employee_id": self.employee.id,
-                "contract_id": self.contract.id,
-                "struct_id": self.contract.struct_id.id,
-                "date_from": date(2026, 4, 1),
-                "date_to": date(2026, 4, 30),
-                "company_id": self.company.id,
-                "l10n_br_horas_extras_50": 10.0,
-            }
-        )
-        holerite.compute_sheet()
-        self.assertFalse(holerite.l10n_br_tem_apuracao)
-        uteis, repouso = holerite._l10n_br_dias_dsr_competencia()
-        self.assertEqual(
-            (uteis, repouso),
-            dias_dsr(2026, 4, holerite._l10n_br_feriados_competencia()),
-        )
-        valor_he = self._valor(holerite, "HE_50")
+        uteis, repouso = dias_dsr(2026, 3, holerite._l10n_br_feriados_competencia())
+        self.assertEqual((uteis, repouso), (26, 5))  # domingos; março/2026
         self.assertAlmostEqual(
             self._valor(holerite, "DSR_HE"), round(valor_he / uteis * repouso, 2), 2
         )
 
-    def test_migracao_troca_a_rubrica_do_ponto_pela_da_folha(self):
+    def test_apuracao_parcial_nao_muda_os_dias_do_reflexo(self):
+        """Com um dia apurado ou o mês todo, os dias são os mesmos."""
+        sem = self._holerite()
+        self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
+        self._apurar_marco()
+        com = self._holerite()
+        self.assertFalse(sem.l10n_br_tem_apuracao)
+        self.assertTrue(com.l10n_br_tem_apuracao)
+        self.assertEqual(
+            sem._l10n_br_dias_dsr_competencia(), com._l10n_br_dias_dsr_competencia()
+        )
+        self.assertEqual(com._l10n_br_dias_dsr_competencia(), (26, 5))
+
+    def test_feriado_da_apuracao_entra_nos_repousos(self):
+        self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
+        self._apurar_marco()
+        holerite = self._holerite()
+        dia = holerite.l10n_br_apuracao_dia_ids.filtered(
+            lambda d: d.date == date(2026, 3, 2)
+        )
+        dia.sudo().write({"feriado": True})
+        holerite.invalidate_recordset()
+        self.assertEqual(holerite._l10n_br_dias_dsr_competencia(), (25, 6))
+
+    def test_uma_so_rubrica_dsr_he_na_estrutura_e_e_a_da_folha(self):
+        """Banco novo e atualizado calculam igual: só a rubrica da folha corre."""
         estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
-        folha = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
-        antiga = folha.copy({"name": "DSR HE do ponto (antiga)"})
-        self.env["ir.model.data"].create(
+        regras = estrutura.rule_ids.filtered(lambda r: r.code == "DSR_HE")
+        self.assertEqual(regras, self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he"))
+
+    def test_rubrica_legada_fica_para_o_historico(self):
+        """O registro antigo não sai (holerites antigos apontam para ele)."""
+        legada = self.env.ref("l10n_br_hr_payroll_attendance.hr_rule_dsr_he")
+        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
+        self.assertNotIn(legada, estrutura.rule_ids)
+        holerite = self._holerite()
+        linha = self.env["hr.payslip.line"].create(
             {
-                "module": "l10n_br_hr_payroll_attendance",
-                "name": "hr_rule_dsr_he",
-                "model": "hr.salary.rule",
-                "res_id": antiga.id,
+                "slip_id": holerite.id,
+                "salary_rule_id": legada.id,
+                "code": "DSR_HE",
+                "name": legada.name,
+                "category_id": legada.category_id.id,
+                "contract_id": self.contract.id,
+                "employee_id": self.employee.id,
+                "quantity": 1,
+                "rate": 100,
+                "amount": 47.25,
+                "total": 47.25,
             }
         )
-        estrutura.write({"rule_ids": [(3, folha.id), (4, antiga.id)]})
+        # A atualização do módulo tenta apagar registros fora do XML; este é
+        # mantido pelo XML (noupdate), então nada o remove.
+        self.assertEqual(
+            self.env["ir.model.data"]
+            .search(
+                [
+                    ("module", "=", "l10n_br_hr_payroll_attendance"),
+                    ("name", "=", "hr_rule_dsr_he"),
+                ]
+            )
+            .noupdate,
+            True,
+        )
+        self.assertTrue(linha.exists())
+
+    def _migrar(self):
         caminho = file_path(
             "l10n_br_hr_payroll_attendance/migrations/18.0.1.1.0/post-migration.py"
         )
-        spec = importlib.util.spec_from_file_location(
-            "post_migration_tg86_ponto", caminho
-        )
+        spec = importlib.util.spec_from_file_location("post_migration_ponto", caminho)
         modulo = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(modulo)
         modulo.migrate(self.env.cr, "18.0.1.0.0")
-        modulo.migrate(self.env.cr, "18.0.1.0.0")
+
+    def test_migracao_troca_a_rubrica_do_ponto_pela_da_folha(self):
+        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
+        folha = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
+        legada = self.env.ref("l10n_br_hr_payroll_attendance.hr_rule_dsr_he")
+        estrutura.write({"rule_ids": [(3, folha.id), (4, legada.id)]})
+        self._migrar()
+        self._migrar()
         codigos = estrutura.rule_ids.mapped("code")
         self.assertEqual(codigos.count("DSR_HE"), 1)
         self.assertIn(folha, estrutura.rule_ids)
-        self.assertNotIn(antiga, estrutura.rule_ids)
+        self.assertNotIn(legada, estrutura.rule_ids)
+
+    def test_migracao_sem_a_rubrica_da_folha_nao_deixa_a_estrutura_sem_dsr_he(self):
+        """``-u`` só do ponto: a folha ainda não tem a rubrica nova; a antiga fica."""
+        estrutura = self.env.ref("l10n_br_hr_payroll.structure_clt")
+        folha = self.env.ref("l10n_br_hr_payroll.hr_rule_dsr_he")
+        legada = self.env.ref("l10n_br_hr_payroll_attendance.hr_rule_dsr_he")
+        estrutura.write({"rule_ids": [(3, folha.id), (4, legada.id)]})
+        # Simula a folha ainda sem a rubrica nova (xmlid ausente).
+        original = Environment.ref
+
+        def sem_a_da_folha(env, xmlid, raise_if_not_found=True):
+            if xmlid == "l10n_br_hr_payroll.hr_rule_dsr_he":
+                return None
+            return original(env, xmlid, raise_if_not_found)
+
+        with mock.patch.object(Environment, "ref", sem_a_da_folha):
+            self._migrar()
+        self.assertIn("DSR_HE", estrutura.rule_ids.mapped("code"))
+        self.assertIn(legada, estrutura.rule_ids)
 
     def test_totais_publicados_no_localdict(self):
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))

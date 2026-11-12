@@ -536,8 +536,9 @@ expediente não é feriado, e a ausência que cobre dois ou mais dias por inteir
 por dia. Sem calendário, lance de 00:00 a 23:59:59 do fuso do calendário.</li>
 <li>Em banco existente a atualização liga as rubricas à estrutura CLT. Há uma só
 rubrica <tt class="docutils literal">DSR_HE</tt>, a da folha; com o <tt class="docutils literal">l10n_br_hr_payroll_attendance</tt>
-instalado e apuração no período, ela usa os dias úteis e de repouso da
-apuração em vez do calendário da folha.</li>
+instalado, os dias do reflexo são os mesmos com ou sem apuração (domingos e
+feriados do calendário da folha), e a apuração só acrescenta os feriados que
+marcou nos dias que cobre.</li>
 </ul>
 </div>
 <div class="section" id="bug-tracker">

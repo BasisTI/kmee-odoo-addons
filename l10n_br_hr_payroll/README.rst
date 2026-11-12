@@ -150,8 +150,9 @@ que compõe férias, 13º e rescisão.
   por dia. Sem calendário, lance de 00:00 a 23:59:59 do fuso do calendário.
 * Em banco existente a atualização liga as rubricas à estrutura CLT. Há uma só
   rubrica ``DSR_HE``, a da folha; com o ``l10n_br_hr_payroll_attendance``
-  instalado e apuração no período, ela usa os dias úteis e de repouso da
-  apuração em vez do calendário da folha.
+  instalado, os dias do reflexo são os mesmos com ou sem apuração (domingos e
+  feriados do calendário da folha), e a apuração só acrescenta os feriados que
+  marcou nos dias que cobre.
 
 Bug Tracker
 ===========

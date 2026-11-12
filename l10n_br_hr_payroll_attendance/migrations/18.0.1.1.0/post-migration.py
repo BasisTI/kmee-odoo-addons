@@ -2,9 +2,15 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """TG-86: uma só rubrica ``DSR_HE``, a do ``l10n_br_hr_payroll``.
 
-A rubrica própria deste módulo deixou de existir. Em banco atualizado ela ainda
-está ligada à estrutura CLT; aqui a estrutura passa a usar a da folha, para o
-banco atualizado calcular igual ao banco novo.
+A rubrica própria deste módulo deixou de ser calculada, mas o REGISTRO fica
+(``noupdate``, fora da estrutura): holerites antigos têm linhas que apontam para
+ele e a chave estrangeira impede apagá-lo. Em banco atualizado a rubrica antiga
+ainda está ligada à estrutura CLT; aqui a estrutura passa a usar a da folha, para
+o banco atualizado calcular igual ao banco novo.
+
+Se a folha ainda não foi atualizada (``-u`` só do ponto) a rubrica nova não
+existe: nada muda, a estrutura continua com a antiga e a migração da folha
+(18.0.1.5.0) faz a troca depois.
 """
 
 import logging

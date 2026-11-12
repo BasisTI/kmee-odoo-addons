@@ -451,18 +451,37 @@ class HrPayslip(models.Model):
             )
         )
 
+        marcacoes = (
+            calendario.attendance_ids.filtered(lambda m: not m.display_type)
+            if calendario
+            else self.env["resource.calendar.attendance"]
+        )
+
+        def do_dia(semana):
+            return marcacoes.filtered(lambda m: int(m.dayofweek) == semana)
+
+        def cauda(semana):
+            """Marcações que começam à 0h de um turno que vem da véspera."""
+            anterior = do_dia((semana - 1) % 7)
+            if not any(m.hour_to >= 23.99 for m in anterior):
+                return marcacoes.browse()
+            return do_dia(semana).filtered(lambda m: m.hour_from <= 0.01)
+
         def janela(dia):
-            """Expediente do ``dia`` no calendário; sem ele, o dia inteiro."""
-            marcacoes = (
-                calendario.attendance_ids.filtered(
-                    lambda m: not m.display_type and int(m.dayofweek) == dia.weekday()
-                )
-                if calendario
-                else []
-            )
-            if not marcacoes:
+            """Expediente do ``dia`` no calendário, em horas desde a 0h do dia.
+
+            Um turno que cruza a meia-noite (22h-24h mais 0h-6h do dia
+            seguinte) é um expediente só: a janela do dia vai até o fim do
+            turno (24 + 6). Sem expediente no dia, o dia local inteiro.
+            """
+            semana = dia.weekday()
+            proprias = do_dia(semana) - cauda(semana)
+            if not proprias:
                 return 0.0, 24.0
-            return min(marcacoes.mapped("hour_from")), max(marcacoes.mapped("hour_to"))
+            fim = max(proprias.mapped("hour_to"))
+            if fim >= 23.99:
+                fim = 24.0 + max(cauda((semana + 1) % 7).mapped("hour_to") or [0.0])
+            return min(proprias.mapped("hour_from")), fim
 
         def local(valor):
             return pytz.utc.localize(valor).astimezone(fuso).replace(tzinfo=None)
