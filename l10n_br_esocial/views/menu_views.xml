@@ -57,6 +57,13 @@
         action="action_esocial_s1298"
     />
     <menuitem
+        id="menu_esocial_holerites_a_retificar"
+        parent="menu_esocial_ciclo"
+        name="Holerites a retificar"
+        sequence="50"
+        action="action_hr_payslip_esocial_a_retificar"
+    />
+    <menuitem
         id="menu_esocial_s3000"
         parent="menu_esocial_ciclo"
         name="S-3000 - Exclusão"

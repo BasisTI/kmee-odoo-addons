@@ -79,6 +79,9 @@ class ESocialS2299(models.Model):
     def _get_event_type(self):
         return "S-2299"
 
+    def _esocial_slips(self):
+        return self.payslip_id
+
     def _to_esociallib_dict(self):
         self.ensure_one()
         employee = self.employee_id

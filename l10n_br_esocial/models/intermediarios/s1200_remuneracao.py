@@ -59,6 +59,15 @@ class ESocialS1200(models.Model):
         "Obrigatório quando Indicativo de Retificação for 'Retificação'.",
     )
 
+    evento_retificado_id = fields.Many2one(
+        "l10n_br.esocial.evento",
+        string="Evento Retificado",
+        readonly=True,
+        copy=False,
+        help="Evento aceito que este retificador substitui. Quando o "
+        "retificador é aceito, o evento retificado passa a 'Retificado'.",
+    )
+
     avisos = fields.Text(
         string="Avisos da geração",
         readonly=True,
@@ -74,6 +83,9 @@ class ESocialS1200(models.Model):
 
     def _get_event_type(self):
         return "S-1200"
+
+    def _esocial_slips(self):
+        return self.payslip_ids
 
     def get_ide_dm_dev(self):
         """Identificador do demonstrativo de valores devidos (ideDmDev).
@@ -95,6 +107,7 @@ class ESocialS1200(models.Model):
                 "per_apur": self.per_apur,
                 "ind_retif": self.ind_retif,
                 "operacao": "R" if self.ind_retif == "2" else "I",
+                "evento_retificado_id": self.evento_retificado_id.id,
             }
         )
         return vals
