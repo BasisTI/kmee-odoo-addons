@@ -35,9 +35,35 @@
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 # Proporcional aos dias de salário do mês (admissão, desligamento, afastamento
-# previdenciário), em mês comercial de 30 dias.
-result = tools.br.round_money(contract.wage * tools.br.dias_salario(contract) / 30)
+# previdenciário), em mês comercial de 30 dias. Os dias de licença-maternidade
+# saem daqui e vão para SALARIO_MATERNIDADE (mesmo conjunto de dias).
+dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
+result = tools.br.round_money(contract.wage * dias / 30)
         </field>
+    </record>
+
+    <!-- 2. Salário-Maternidade (pago pelo empregador, compensado na guia) -->
+    <record id="hr_rule_salario_maternidade" model="hr.salary.rule">
+        <field name="name">Salário-Maternidade</field>
+        <field name="sequence" eval="2" />
+        <field name="code">SALARIO_MATERNIDADE</field>
+        <field name="category_id" ref="hr_salary_rule_category_basic" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = tools.br.dias_maternidade(contract) > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+# Dias de licença-maternidade (tipo de afastamento "Licença-maternidade")
+# dentro dos dias de salário do mês, pagos pelo empregador. Integra o salário
+# de contribuição (Lei 8.212/91, art. 28, § 2º), o IRRF e o FGTS, pois está em
+# BASIC e entra no GROSS. A contribuição patronal (CPP/RAT) segue o parâmetro
+# da empresa.
+result = tools.br.round_money(contract.wage * tools.br.dias_maternidade(contract) / 30)
+        </field>
+        <field
+            name="note"
+        >Salário-maternidade pago pelo empregador (Lei 8.213/91, art. 72): remuneração dos dias de licença-maternidade, em rubrica própria (natureza 4050 no eSocial). A empresa compensa o valor na guia (ver COMP_SALARIO_MATERNIDADE).</field>
     </record>
 
     <!-- 5. Hora Extra 50% -->
@@ -483,7 +509,10 @@ result = tools.br.aliquotas_patronais(contract).cpp &gt; 0
 # Lei 8.212/91, art. 22, I: 20% sobre o total das remunerações, sem teto.
 # Optante pela CPRB: alíquota reduzida pela proporção do ano na transição da
 # Lei 14.973/2024 (a redução alcança SÓ este inciso - ver RAT e terceiros).
-base_patronal = max(categories.GROSS - FALTAS - DESC_DSR, 0)
+# Salário-maternidade: fora da base conforme o parâmetro da empresa (STF, Tema 72).
+company = payslip.company_id or contract.company_id
+fora = 0 if company.l10n_br_hr_patronal_sobre_salario_maternidade else SALARIO_MATERNIDADE
+base_patronal = max(categories.GROSS - FALTAS - DESC_DSR - fora, 0)
 result = tools.br.round_money(base_patronal * tools.br.aliquotas_patronais(contract).cpp)
         </field>
     </record>
@@ -505,7 +534,10 @@ result = tools.br.aliquotas_patronais(contract).rat &gt; 0
 # art. 202-A). INTEGRAL mesmo para optante da CPRB e INTEGRAL sobre o 13º.
 # Só alcança segurado empregado: remuneração de contribuinte individual
 # (pró-labore) é art. 22, III, sem RAT.
-base_patronal = max(categories.GROSS - FALTAS - DESC_DSR, 0)
+# Salário-maternidade: fora da base conforme o parâmetro da empresa (STF, Tema 72).
+company = payslip.company_id or contract.company_id
+fora = 0 if company.l10n_br_hr_patronal_sobre_salario_maternidade else SALARIO_MATERNIDADE
+base_patronal = max(categories.GROSS - FALTAS - DESC_DSR - fora, 0)
 result = tools.br.round_money(base_patronal * tools.br.aliquotas_patronais(contract).rat)
         </field>
     </record>
@@ -527,6 +559,25 @@ result = tools.br.aliquotas_patronais(contract).terceiros &gt; 0
 base_patronal = max(categories.GROSS - FALTAS - DESC_DSR, 0)
 result = tools.br.round_money(base_patronal * tools.br.aliquotas_patronais(contract).terceiros)
         </field>
+    </record>
+
+    <!-- 155. Compensação do salário-maternidade na guia -->
+    <record id="hr_rule_comp_salario_maternidade" model="hr.salary.rule">
+        <field name="name">Compensação do Salário-Maternidade na Guia</field>
+        <field name="sequence" eval="155" />
+        <field name="code">COMP_SALARIO_MATERNIDADE</field>
+        <field name="category_id" ref="hr_salary_rule_category_info" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = SALARIO_MATERNIDADE &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = SALARIO_MATERNIDADE
+        </field>
+        <field
+            name="note"
+        >Dedução da guia previdenciária: o salário-maternidade pago pela empresa é abatido das contribuições a recolher (Lei 8.213/91, art. 72, § 1º). Rubrica informativa (INFO): não entra no líquido nem nas bases; a guia usa o total desta rubrica como dedução.</field>
     </record>
 
     <!-- ══════════════════════════════════════════════════════════════

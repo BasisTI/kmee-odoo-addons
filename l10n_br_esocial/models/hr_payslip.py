@@ -1,8 +1,6 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from datetime import timedelta
-
 from odoo import _, fields, models
 from odoo.exceptions import UserError
 
@@ -28,46 +26,40 @@ class HrPayslip(models.Model):
         "da competência da folha.",
     )
 
-    def _esocial_proporcao_maternidade(self):
-        """Fração do salário do holerite que é de licença-maternidade (0..1).
+    def _esocial_exigir_rubrica_maternidade(self):
+        """Recusa o holerite com dias de licença-maternidade sem a rubrica própria.
 
-        Conta os dias do período cobertos por licença aprovada de tipo
-        "Licença-maternidade (eSocial)". Mês comercial de 30 dias: mês inteiro
-        em licença é 1; nos demais casos, dias de licença / dias do período
-        (teto 1).
+        Vale só para a estrutura que tem a rubrica (mensal CLT/Estatutário).
+
+        Holerite calculado antes da TG-87 paga o salário da licença como salário
+        comum (natureza 1000, incidência 11) e não tem ``SALARIO_MATERNIDADE``.
+        Declará-lo assim faria a DCTFWeb perder, em silêncio, a dedução do
+        salário-maternidade pago pelo empregador. A divisão por dias no S-1200
+        foi removida (um mecanismo só), então o holerite precisa ser recalculado.
         """
         self.ensure_one()
-        if not self.date_from or not self.date_to:
-            return 0.0
-        leaves = (
-            self.env["hr.leave"]
-            .sudo()
-            .search(
-                [
-                    ("employee_id", "=", self.employee_id.id),
-                    ("state", "=", "validate"),
-                    (
-                        "holiday_status_id.l10n_br_esocial_salario_maternidade",
-                        "=",
-                        True,
-                    ),
-                    ("request_date_from", "<=", self.date_to),
-                    ("request_date_to", ">=", self.date_from),
-                ]
+        if not self.contract_id or not self.date_from or not self.date_to:
+            return
+        # Só a estrutura que paga o salário na rubrica própria (a mensal CLT e a
+        # Estatutário) exige a linha. 13º, rescisão, férias e estruturas sem a
+        # rubrica não a têm por desenho e o recálculo não a criaria.
+        if not any(r.code == "SALARIO_MATERNIDADE" for r in self.struct_id.rule_ids):
+            return
+        if not self._l10n_br_dias_maternidade(self.contract_id):
+            return
+        if any(ln.code == "SALARIO_MATERNIDADE" and ln.total for ln in self.line_ids):
+            return
+        raise UserError(
+            _(
+                "O holerite %(holerite)s tem dias de licença-maternidade no "
+                "período, mas não tem a rubrica SALARIO_MATERNIDADE: o salário "
+                "desses dias iria ao S-1200 como salário comum e a dedução do "
+                "salário-maternidade se perderia na DCTFWeb. Volte o holerite "
+                "para rascunho, recalcule (a estrutura precisa ter a rubrica "
+                "Salário-Maternidade) e confirme de novo.",
+                holerite=self.number or self.name,
             )
         )
-        dias = set()
-        for leave in leaves:
-            inicio = max(leave.request_date_from, self.date_from)
-            fim = min(leave.request_date_to, self.date_to)
-            for n in range((fim - inicio).days + 1):
-                dias.add(inicio + timedelta(days=n))
-        if not dias:
-            return 0.0
-        total_periodo = (self.date_to - self.date_from).days + 1
-        if len(dias) >= total_periodo:
-            return 1.0
-        return min(len(dias) / min(total_periodo, 30), 1.0)
 
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo noupdate="1">
+    <!--
+        Rubrica de salário-maternidade do payroll (SALARIO_MATERNIDADE) com a
+        natureza e as incidências do eSocial. A função só roda na instalação
+        (noupdate): bases já instaladas recebem a configuração pela migração.
+    -->
+    <function model="hr.salary.rule" name="_esocial_configurar_salario_maternidade" />
+</odoo>

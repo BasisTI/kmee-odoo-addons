@@ -836,6 +836,67 @@ def dias_trabalhados_mes(date_from, date_to, data_admissao=None, data_demissao=N
 DIAS_AFASTAMENTO_EMPRESA = 15
 
 
+def _janela_dias(date_from, date_to, data_admissao, data_demissao):
+    """``(inicio, fim, mes_inteiro, dias_base)`` do período do holerite.
+
+    ``dias_base`` são os dias de salário antes de tirar os que são do INSS, das
+    férias e da maternidade: 30 no mês inteiro de vigência (inclusive
+    fevereiro), senão os dias corridos de vigência (teto de 30).
+    """
+    vigencia = dias_trabalhados_mes(date_from, date_to, data_admissao, data_demissao)
+    if not vigencia:
+        return None
+    inicio = max(date_from, data_admissao) if data_admissao else date_from
+    fim = min(date_to, data_demissao) if data_demissao else date_to
+    mes_inteiro = (
+        inicio == date_from
+        and fim == date_to
+        and date_from.day == 1
+        and (date_to + timedelta(days=1)).day == 1
+        and date_from.month == date_to.month
+        and date_from.year == date_to.year
+    )
+    return inicio, fim, mes_inteiro, 30 if mes_inteiro else vigencia
+
+
+def _dias_dos_pares(pares, inicio, fim):
+    """Conjunto de dias civis cobertos por ``pares`` dentro de ``inicio..fim``."""
+    dias = set()
+    for p_inicio, p_fim in pares:
+        ini = max(p_inicio, inicio)
+        fi = min(p_fim, fim)
+        for n in range((fi - ini).days + 1):
+            dias.add(ini + timedelta(days=n))
+    return dias
+
+
+def _dias_comerciais(dias, fim, mes_inteiro, date_to):
+    """Leva um conjunto de dias civis à base comercial de 30 dias."""
+    if mes_inteiro:
+        # Mês inteiro: por CONTAGEM, sem fração/arredondamento. O dia 31 não
+        # tem correspondente comercial (não conta); o último dia de fevereiro
+        # vale também os dias 29 e 30 que faltam. Assim os 15 primeiros dias do
+        # afastamento são sempre da empresa, mês todo de INSS paga 0 e mês sem
+        # afastamento paga 30.
+        n = len([d for d in dias if d.day <= 30])
+        if date_to in dias and date_to.day < 30:
+            n += 30 - date_to.day
+        return n
+    return len(dias)
+
+
+def _dias_fora_do_salario(afastamentos_inss, ferias_gozadas, inicio, fim):
+    """Dias civis não pagos no salário (INSS e férias) dentro da vigência.
+
+    Conjunto: ausências sobrepostas não contam duas vezes.
+    """
+    pares = [
+        (a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), a_fim)
+        for a_inicio, a_fim in afastamentos_inss
+    ] + list(ferias_gozadas)
+    return _dias_dos_pares(pares, inicio, fim)
+
+
 def dias_salario_mes(
     date_from,
     date_to,
@@ -855,6 +916,10 @@ def dias_salario_mes(
       conjunto de dias do afastamento, então dias coincidentes não saem duas
       vezes. O abono pecuniário não entra: são dias trabalhados, não gozados.
 
+    A licença-maternidade NÃO sai daqui: é paga pela empresa. Os dias dela são
+    separados por ``dias_maternidade_mes`` (``SALARIO_BASE`` = estes dias menos
+    os de maternidade).
+
     Args:
         date_from: Início do período do holerite (date).
         date_to: Fim do período do holerite (date).
@@ -869,42 +934,58 @@ def dias_salario_mes(
     Returns:
         Dias de salário (int, 0..30).
     """
-    vigencia = dias_trabalhados_mes(date_from, date_to, data_admissao, data_demissao)
-    if not vigencia:
+    janela = _janela_dias(date_from, date_to, data_admissao, data_demissao)
+    if not janela:
         return 0
-    inicio = max(date_from, data_admissao) if data_admissao else date_from
-    fim = min(date_to, data_demissao) if data_demissao else date_to
-    mes_inteiro = (
-        inicio == date_from
-        and fim == date_to
-        and date_from.day == 1
-        and (date_to + timedelta(days=1)).day == 1
-        and date_from.month == date_to.month
-        and date_from.year == date_to.year
-    )
-    dias = 30 if mes_inteiro else vigencia
-    # Dias civis não pagos no salário (INSS e férias) dentro da vigência
-    # (conjunto: ausências sobrepostas não contam duas vezes).
-    dias_inss = set()
-    pares = [
-        (a_inicio + timedelta(days=DIAS_AFASTAMENTO_EMPRESA), a_fim)
-        for a_inicio, a_fim in afastamentos_inss
-    ] + list(ferias_gozadas)
-    for p_inicio, p_fim in pares:
-        ini = max(p_inicio, inicio)
-        fi = min(p_fim, fim)
-        for n in range((fi - ini).days + 1):
-            dias_inss.add(ini + timedelta(days=n))
-    if mes_inteiro:
-        # Mês inteiro: leva os dias civis do INSS e das férias à base comercial de 30 dias
-        # por CONTAGEM, sem fração/arredondamento. O dia 31 não tem
-        # correspondente comercial (não conta); o último dia de fevereiro
-        # vale também os dias 29 e 30 que faltam. Assim os 15 primeiros dias do
-        # afastamento são sempre da empresa, mês todo de INSS paga 0 e mês sem
-        # afastamento paga 30.
-        inss = len([d for d in dias_inss if d.day <= 30])
-        if date_to in dias_inss and date_to.day < 30:
-            inss += 30 - date_to.day
+    inicio, fim, mes_inteiro, dias = janela
+    fora = _dias_fora_do_salario(afastamentos_inss, ferias_gozadas, inicio, fim)
+    return max(dias - _dias_comerciais(fora, fim, mes_inteiro, date_to), 0)
+
+
+def dias_maternidade_mes(
+    date_from,
+    date_to,
+    data_admissao=None,
+    data_demissao=None,
+    afastamentos_inss=(),
+    ferias_gozadas=(),
+    maternidade=(),
+):
+    """Dias do período pagos como salário-maternidade (mês comercial de 30 dias).
+
+    Parte do MESMO conjunto de dias de ``dias_salario_mes`` (TG-82): só contam
+    os dias de licença dentro da vigência do contrato (admissão e desligamento)
+    e que não sejam dos INSS nem de férias já pagas. O resultado nunca passa dos
+    dias de salário, então ``dias_salario_mes - dias_maternidade_mes`` fecha
+    sem sobra nem falta, qualquer que seja a proporcionalização do mês.
+
+    Mês inteiro: contagem comercial (licença de 01 a 31 vale 30; fevereiro
+    inteiro vale 30). Período maior que 30 dias (anual, 16/09 a 31/10, 13º):
+    os dias de salário são limitados a 30, então a licença entra na proporção
+    dos dias do período, e não pelos dias corridos (que passariam de 30).
+
+    Args:
+        maternidade: Pares ``(inicio, fim)`` das licenças-maternidade aprovadas.
+        Demais: iguais às de ``dias_salario_mes``.
+
+    Returns:
+        Dias de salário-maternidade (int, 0..30).
+    """
+    janela = _janela_dias(date_from, date_to, data_admissao, data_demissao)
+    if not janela or not maternidade:
+        return 0
+    inicio, fim, mes_inteiro, dias = janela
+    fora = _dias_fora_do_salario(afastamentos_inss, ferias_gozadas, inicio, fim)
+    licenca = _dias_dos_pares(maternidade, inicio, fim) - fora
+    if not licenca:
+        return 0
+    pagos = max(dias - _dias_comerciais(fora, fim, mes_inteiro, date_to), 0)
+    span = (fim - inicio).days + 1
+    if span > 30 and not mes_inteiro:
+        # Dias de salário (teto 30) distribuídos pelos dias civis do período.
+        # Meio-dia arredonda para cima: nunca paga menos licença do que devido.
+        utilizaveis = span - len(fora)
+        mat = int(pagos * len(licenca) / utilizaveis + 0.5) if utilizaveis else 0
     else:
-        inss = len(dias_inss)
-    return max(dias - inss, 0)
+        mat = _dias_comerciais(licenca, fim, mes_inteiro, date_to)
+    return max(min(mat, pagos), 0)
