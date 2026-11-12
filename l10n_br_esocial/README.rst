@@ -182,6 +182,17 @@ Trabalhador sem vínculo - estagiário e demais categorias (S-2300, S-2306, S-23
    cadastro, e o XML é conferido contra o XSD do leiaute S-1.3 quando os
    schemas estão na ``esociallib``.
 
+Afastamento por doença (S-2230):
+
+#. O S-2230 de acidente/doença (motivos 01 a 04 da tabela 18) só é devido
+   quando o afastamento passa de 15 dias, somando os afastamentos anteriores
+   pela mesma doença com até 60 dias de intervalo (recaída). Abaixo disso, o
+   Odoo recusa gerar o evento, e o de término de um início não gerado também.
+#. O critério usa os afastamentos validados de tipo **Afastamento
+   Previdenciário** (``l10n_br_afastamento_inss``) do empregado: marque o tipo
+   de licença por doença/acidente com esse campo. Os demais motivos
+   (maternidade, férias, licença remunerada etc.) não têm o limite de 15 dias.
+
 Bug Tracker
 ===========
 
