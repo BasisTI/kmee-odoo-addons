@@ -1,8 +1,13 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import logging
+from datetime import date
+
 from odoo import _, fields, models
 from odoo.exceptions import UserError
+
+_logger = logging.getLogger(__name__)
 
 # MOS S-1.3, S-2230, itens 4.1 e 5.1: o acidente/doença do trabalho (motivo 01) é
 # informado desde o 1º dia, qualquer que seja a duração. A doença não relacionada
@@ -15,6 +20,12 @@ MOTIVO_DOENCA = "03"
 DIAS_EMPRESA = 15
 # Item 5.2: a janela de 60 dias conta do término do primeiro afastamento.
 DIAS_RECAIDA = 60
+# Leiaute S-1.3 (NT 07/2026), S-2230, ``infoMesmoMtv`` (em ``iniAfastamento``):
+# exclusivo dos motivos 01 e 03 e exigido a partir de 2026-10-26. Com outro
+# afastamento do mesmo motivo nos 60 dias anteriores, o evento informa S (mesma
+# doença/acidente) ou N; sem anterior, o campo fica vazio ou vale N.
+INICIO_INFO_MESMO_MTV = date(2026, 10, 26)
+MOTIVOS_INFO_MESMO_MTV = (MOTIVO_TRABALHO, MOTIVO_DOENCA)
 
 
 def _dias(inicio, fim):
@@ -46,6 +57,18 @@ class ESocialS2230(models.Model):
     motivo_afastamento_id = fields.Many2one(
         "l10n_br.esocial.motivo.afastamento",
         string="Motivo Afastamento",
+    )
+
+    info_mesmo_mtv = fields.Selection(
+        [
+            ("S", "Sim, mesma doença/acidente do afastamento anterior"),
+            ("N", "Não, outra doença/acidente"),
+        ],
+        string="Mesmo motivo do afastamento anterior",
+        help="Leiaute S-1.3 (a partir de 26/10/2026), motivos 01 e 03: quando há "
+        "outro afastamento do mesmo motivo nos 60 dias anteriores, informe se "
+        "decorre da mesma doença/acidente (S) ou não (N). O afastamento do Odoo "
+        "não tem CID, então a informação vem do usuário.",
     )
 
     def _get_event_type(self):
@@ -163,13 +186,20 @@ class ESocialS2230(models.Model):
                 ]
         return pendentes
 
-    def action_gerar_recaida_pendente(self):
-        """Cria os S-2230 (motivo 03) que faltam na cadeia de recaída deste."""
+    def action_gerar_recaida_pendente(self, info_mesmo_mtv=None):
+        """Cria os S-2230 (motivo 03) que faltam na cadeia de recaída deste.
+
+        Os pendentes nascem com ``info_mesmo_mtv`` (S ou N). Quando o leiaute exige
+        o campo (início a partir de 2026-10-26 e anterior em 60 dias), a ação
+        recusa sem o valor em vez de criar eventos que a geração recusaria.
+        """
         self.ensure_one()
+        if info_mesmo_mtv not in (None, False, "S", "N"):
+            raise UserError(_("info_mesmo_mtv deve ser 'S' ou 'N'."))
         motivo = self.motivo_afastamento_id or self.env[
             "l10n_br.esocial.motivo.afastamento"
         ].search([("codigo", "=", MOTIVO_DOENCA)], limit=1)
-        return self.create(
+        criados = self.create(
             [
                 {
                     "employee_id": self.employee_id.id,
@@ -178,10 +208,29 @@ class ESocialS2230(models.Model):
                     "dt_term_afast": fim,
                     "cod_mot_afast": self.cod_mot_afast,
                     "motivo_afastamento_id": motivo.id,
+                    "info_mesmo_mtv": info_mesmo_mtv or False,
                 }
                 for ini, fim in self._recaida_sem_evento()
             ]
         )
+        if not info_mesmo_mtv:
+            exigem = criados.filtered(
+                lambda r: r.dt_ini_afast >= INICIO_INFO_MESMO_MTV
+                and r._codigo_motivo() in MOTIVOS_INFO_MESMO_MTV
+                and r._exige_info_mesmo_mtv(r._codigo_motivo())
+            )
+            if exigem:
+                raise UserError(
+                    _(
+                        "Os afastamentos pendentes vêm até %(rec)s dias depois de "
+                        "outro afastamento do mesmo motivo, e o leiaute S-1.3 exige "
+                        "informar se é a mesma doença: chame a ação com "
+                        "info_mesmo_mtv='S' ou 'N' (ou preencha o campo em cada "
+                        "evento)."
+                    )
+                    % {"rec": DIAS_RECAIDA}
+                )
+        return criados
 
     def _validar_afastamento_devido(self, cod_mot):
         """Recusa o S-2230 de doença (motivo 03) que o MOS não manda informar.
@@ -239,6 +288,131 @@ class ESocialS2230(models.Model):
                 % {"dias": _dias(inicio, fim), "lim": DIAS_EMPRESA, "rec": DIAS_RECAIDA}
             )
 
+    def _codigo_motivo(self):
+        self.ensure_one()
+        return self.cod_mot_afast or self.motivo_afastamento_id.codigo
+
+    def _inicio_do_contrato(self, inicio):
+        """Início do contrato do empregado vigente em ``inicio`` (ou ``None``)."""
+        self.ensure_one()
+        contratos = self.employee_id.sudo().contract_ids.filtered(
+            lambda c: c.date_start
+            and c.date_start <= inicio
+            and (not c.date_end or c.date_end >= inicio)
+        )
+        return max(contratos.mapped("date_start")) if contratos else None
+
+    def _periodos_mesmo_motivo(self, cod_mot, inicio):
+        """Períodos ``(inicio, fim)`` do mesmo motivo e contrato, antes de ``inicio``.
+
+        O leiaute conta por contrato e por motivo: acidente (01) e doença (03) não
+        são anteriores um do outro. O término vem do próprio S-2230, do S-2230 só
+        de término que o segue (fluxo do ``l10n_br_hr_sst_cat``) ou do afastamento
+        registrado; só sem nenhum deles o período fica em aberto (``None``). Doença
+        sem S-2230 só conta quando é de informação obrigatória: o eSocial não
+        conhece a opcional que nunca foi enviada.
+        """
+        self.ensure_one()
+        outros = self.sudo().search(
+            [("employee_id", "=", self.employee_id.id), ("id", "!=", self.id)]
+        )
+        terminos = sorted(
+            r.dt_term_afast for r in outros if not r.dt_ini_afast and r.dt_term_afast
+        )
+        leaves = [
+            (lv.request_date_from, lv.request_date_to)
+            for lv in self.env["hr.leave"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", self.employee_id.id),
+                    ("state", "=", "validate"),
+                ]
+            )
+        ]
+
+        def fim_de(ini, proprio=None):
+            if proprio:
+                return proprio
+            for termino in terminos:
+                if termino >= ini:
+                    return termino
+            for de, ate in leaves:
+                # O CAT grava o último dia trabalhado: o afastamento começa no dia
+                # seguinte.
+                if 0 <= (de - ini).days <= 1:
+                    return ate
+            return None
+
+        com_inicio = [r for r in outros if r.dt_ini_afast]
+        periodos = {}
+        for outro in com_inicio:
+            if outro._codigo_motivo() == cod_mot:
+                ini = outro.dt_ini_afast
+                periodos.setdefault(ini, (ini, fim_de(ini, outro.dt_term_afast)))
+        if cod_mot == MOTIVO_DOENCA:
+            acidentes = [
+                r.dt_ini_afast
+                for r in com_inicio
+                if r._codigo_motivo() == MOTIVO_TRABALHO
+            ]
+            for ini, fim in self._afastamentos_inss():
+                if ini in periodos or any(0 <= (ini - a).days <= 1 for a in acidentes):
+                    continue
+                if self._periodo_devido(ini, fim):
+                    periodos[ini] = (ini, fim)
+        contrato = self._inicio_do_contrato(inicio)
+        return [
+            p
+            for p in periodos.values()
+            if p[0] < inicio and (not contrato or p[0] >= contrato)
+        ]
+
+    def _exige_info_mesmo_mtv(self, cod_mot):
+        """Há afastamento do mesmo motivo nos 60 dias antes deste início?"""
+        self.ensure_one()
+        return any(
+            fim is None or (self.dt_ini_afast - fim).days <= DIAS_RECAIDA
+            for _ini, fim in self._periodos_mesmo_motivo(cod_mot, self.dt_ini_afast)
+        )
+
+    def _info_mesmo_mtv_para_xml(self, cod_mot):
+        """Valor do ``infoMesmoMtv`` (S/N) ou ``None`` quando não vai no evento."""
+        self.ensure_one()
+        if (
+            not self.dt_ini_afast
+            or self.dt_ini_afast < INICIO_INFO_MESMO_MTV
+            or cod_mot not in MOTIVOS_INFO_MESMO_MTV
+        ):
+            if self.info_mesmo_mtv:
+                _logger.info(
+                    "S-2230 %s: infoMesmoMtv descartado (só vale para os motivos "
+                    "01 e 03 com início a partir de %s).",
+                    self.id,
+                    INICIO_INFO_MESMO_MTV,
+                )
+            return None
+        exige = self._exige_info_mesmo_mtv(cod_mot)
+        if self.info_mesmo_mtv:
+            # Sem anterior o leiaute admite só vazio ou N; S não vai.
+            return self.info_mesmo_mtv if exige or self.info_mesmo_mtv == "N" else None
+        if exige:
+            raise UserError(
+                _(
+                    "O afastamento de %(ini)s (motivo %(mot)s) vem até %(rec)s dias "
+                    "depois de outro afastamento do mesmo motivo: o leiaute S-1.3 "
+                    "exige informar se é a mesma doença/acidente. Preencha o campo 'Mesmo "
+                    "motivo do afastamento anterior' (info_mesmo_mtv: S ou N) do "
+                    "S-2230; se o anterior não foi informado ao eSocial, use N."
+                )
+                % {
+                    "ini": self.dt_ini_afast.strftime("%d/%m/%Y"),
+                    "mot": cod_mot,
+                    "rec": DIAS_RECAIDA,
+                }
+            )
+        return None
+
     def _to_esociallib_dict(self):
         self.ensure_one()
         employee = self.employee_id
@@ -287,6 +461,9 @@ class ESocialS2230(models.Model):
         if self.dt_ini_afast:
             data["dt_ini_afast"] = str(self.dt_ini_afast)
             data["cod_mot_afast"] = cod_mot
+            info_mesmo_mtv = self._info_mesmo_mtv_para_xml(cod_mot)
+            if info_mesmo_mtv:
+                data["info_mesmo_mtv"] = info_mesmo_mtv
 
         if self.dt_term_afast:
             data["dt_term_afast"] = str(self.dt_term_afast)
