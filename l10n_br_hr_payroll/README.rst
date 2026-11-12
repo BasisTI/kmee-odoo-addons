@@ -142,9 +142,16 @@ que compõe férias, 13º e rescisão.
   global* (Tempo livre ▸ Configuração ▸ Feriados) no calendário de trabalho do
   contrato, ou sem calendário para valerem a todos. Sem feriado cadastrado, só os
   domingos são repouso e o reflexo sai menor que o devido.
-* Em banco existente a atualização liga as rubricas à estrutura CLT. Se a
-  estrutura já tem uma rubrica ``DSR_HE`` (como a do
-  ``l10n_br_hr_payroll_attendance``), ela é mantida.
+* É feriado o dia cujo expediente a ausência global cobre por inteiro, lido no
+  fuso do calendário do contrato (sem calendário: o da empresa), não no de quem
+  lançou. Ausência que termina à meia-noite não toca o dia seguinte, meio
+  expediente não é feriado, e a ausência que cobre dois ou mais dias por inteiro
+  (recesso coletivo) fica de fora; para dois feriados seguidos, lance um registro
+  por dia. Sem calendário, lance de 00:00 a 23:59:59 do fuso do calendário.
+* Em banco existente a atualização liga as rubricas à estrutura CLT. Há uma só
+  rubrica ``DSR_HE``, a da folha; com o ``l10n_br_hr_payroll_attendance``
+  instalado e apuração no período, ela usa os dias úteis e de repouso da
+  apuração em vez do calendário da folha.
 
 Bug Tracker
 ===========
