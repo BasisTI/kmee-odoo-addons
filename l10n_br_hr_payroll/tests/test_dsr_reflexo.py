@@ -428,6 +428,34 @@ class TestFeriadoPorFuso(BaseDsrReflexo):
         self._ausencia_local(cal, FERIADO, 20.0, 24.0, "America/Sao_Paulo")
         self.assertEqual(self._razao(cal), (27, 4))
 
+    def test_turno_noturno_aceita_o_dia_local_inteiro(self):
+        """O dia inteiro (00:00-23:59:59) vale em calendário de turno noturno."""
+        for fuso in ("UTC", "America/Sao_Paulo"):
+            with self.subTest(fuso=fuso):
+                cal = self._calendario_noturno()
+                self._ausencia_local(cal, FERIADO, 0.0, 24.0, fuso)
+                self.assertEqual(self._razao(cal), (26, 5))
+
+    def test_tres_turnos_cobrindo_as_24_horas(self):
+        """Jornada de 24 h: o dia local inteiro continua sendo feriado."""
+        cal = self._calendario()
+        cal.attendance_ids.unlink()
+        cal.write(
+            {
+                "attendance_ids": [
+                    (0, 0, {"name": n, "dayofweek": d, "hour_from": i, "hour_to": f})
+                    for d in "0123456"
+                    for n, i, f in (
+                        ("T1", 0.0, 8.0),
+                        ("T2", 8.0, 16.0),
+                        ("T3", 16.0, 24.0),
+                    )
+                ]
+            }
+        )
+        self._ausencia_local(cal, FERIADO, 0.0, 24.0, "America/Sao_Paulo")
+        self.assertEqual(self._razao(cal), (26, 5))
+
     def test_turno_noturno_completo_e_feriado_do_dia_de_inicio(self):
         """22h de segunda às 6h de terça: feriado de segunda (12/10), só ele."""
         cal = self._calendario_noturno()

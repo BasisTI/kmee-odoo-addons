@@ -564,6 +564,8 @@ def dia_feriado_da_ausencia(inicio, fim, janela_do_dia=None, tolerancia_min=1):
       seguinte, e uma sobra de poucas horas no dia seguinte não o torna
       feriado;
     * meio expediente (ex.: 08h às 12h) não é feriado;
+    * o dia local inteiro (00:00 a 24:00) é feriado em qualquer calendário, mesmo
+      de turnos que cobrem as 24 h; cobrir o expediente é outra forma de lançar;
     * a ausência que cobre por inteiro DOIS ou mais dias (recesso coletivo,
       férias coletivas) não é feriado: o repouso é o dia comemorativo, e a regra
       para o recesso é decisão de negócio ainda em aberto, então fica de fora.
@@ -590,9 +592,15 @@ def dia_feriado_da_ausencia(inicio, fim, janela_do_dia=None, tolerancia_min=1):
     while _dt.combine(dia, _time(0, 0)) < fim:
         hora_ini, hora_fim = janela_do_dia(dia) if janela_do_dia else (0.0, 24.0)
         meia_noite = _dt.combine(dia, _time(0, 0))
-        if inicio <= meia_noite + timedelta(hours=hora_ini) + folga and (
+        expediente = inicio <= meia_noite + timedelta(hours=hora_ini) + folga and (
             fim >= meia_noite + timedelta(hours=hora_fim) - folga
-        ):
+        )
+        # O dia local inteiro vale em qualquer calendário (inclusive turnos que
+        # cobrem as 24 h); o expediente é uma forma adicional de lançar.
+        dia_inteiro = inicio <= meia_noite + folga and (
+            fim >= meia_noite + timedelta(hours=24) - folga
+        )
+        if expediente or dia_inteiro:
             cobertos.append(dia)
         dia += timedelta(days=1)
     return cobertos[0] if len(cobertos) == 1 else None

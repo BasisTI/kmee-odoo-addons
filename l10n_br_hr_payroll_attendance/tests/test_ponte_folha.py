@@ -285,17 +285,16 @@ class TestPonteFolha(TransactionCase):
         )
 
     def test_apuracao_parcial_nao_muda_os_dias_do_reflexo(self):
-        """Com um dia apurado ou o mês todo, os dias são os mesmos."""
-        sem = self._holerite()
+        """Com um só dia apurado, os dias são os do calendário do mês todo."""
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
         self._apurar_marco()
-        com = self._holerite()
-        self.assertFalse(sem.l10n_br_tem_apuracao)
-        self.assertTrue(com.l10n_br_tem_apuracao)
+        holerite = self._holerite()
+        self.assertEqual(len(holerite.l10n_br_apuracao_dia_ids.filtered("date")), 31)
         self.assertEqual(
-            sem._l10n_br_dias_dsr_competencia(), com._l10n_br_dias_dsr_competencia()
+            holerite._l10n_br_dias_dsr_competencia(),
+            dias_dsr(2026, 3, holerite._l10n_br_feriados_competencia()),
         )
-        self.assertEqual(com._l10n_br_dias_dsr_competencia(), (26, 5))
+        self.assertEqual(holerite._l10n_br_dias_dsr_competencia(), (26, 5))
 
     def test_feriado_da_apuracao_entra_nos_repousos(self):
         self._marcar(2, (8, 0), (12, 0), (13, 0), (19, 0))
