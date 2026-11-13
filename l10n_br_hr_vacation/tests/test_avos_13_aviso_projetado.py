@@ -42,9 +42,7 @@ class TestAvos13AvisoProjetado(VacationCommon):
         avo) e o 13º saía zerado.
         """
         payslip = self._rescisao(date(2025, 7, 1), date(2026, 11, 30))
-        self.assertEqual(
-            payslip._l10n_br_data_projetada_rescisao(), date(2027, 1, 2)
-        )
+        self.assertEqual(payslip._l10n_br_data_projetada_rescisao(), date(2027, 1, 2))
         self.assertEqual(payslip.l10n_br_avos_13, 12)
         self.assertAlmostEqualMoney(
             self._get_line_total(payslip, "DECIMO_RESCISAO"), 2000.00
@@ -55,9 +53,7 @@ class TestAvos13AvisoProjetado(VacationCommon):
     def test_projecao_com_15_dias_ou_mais_no_ano_seguinte(self):
         """20/12/2026 + 33 dias = 22/01/2027: 12 avos de 2026 + 1 de 2027."""
         payslip = self._rescisao(date(2025, 7, 1), date(2026, 12, 20))
-        self.assertEqual(
-            payslip._l10n_br_data_projetada_rescisao(), date(2027, 1, 22)
-        )
+        self.assertEqual(payslip._l10n_br_data_projetada_rescisao(), date(2027, 1, 22))
         self.assertEqual(payslip.l10n_br_avos_13, 13)
         self.assertAlmostEqualMoney(
             self._get_line_total(payslip, "DECIMO_RESCISAO"), 2166.67
@@ -77,7 +73,5 @@ class TestAvos13AvisoProjetado(VacationCommon):
     def test_projecao_dentro_do_mesmo_ano_nao_regride(self):
         """Aviso que não cruza o ano segue medido só no ano do desligamento."""
         payslip = self._rescisao(date(2025, 7, 1), date(2026, 8, 20))
-        self.assertEqual(
-            payslip._l10n_br_data_projetada_rescisao(), date(2026, 9, 22)
-        )
+        self.assertEqual(payslip._l10n_br_data_projetada_rescisao(), date(2026, 9, 22))
         self.assertEqual(payslip.l10n_br_avos_13, 9)
