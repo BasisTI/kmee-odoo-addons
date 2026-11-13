@@ -82,3 +82,11 @@ do mesmo ano (holerites de 1ª parcela confirmados e em vigor); se a 1ª parcela
 for maior que o FGTS do proporcional, o FGTS do 13º da rescisão é zero. A base
 da multa soma o FGTS do 13º da rescisão e o das 1ªs parcelas. O desconto do 13º
 já pago no líquido do TRCT não é tratado aqui.
+
+**Abono pecuniário com as médias**
+
+O abono pecuniário (e o seu 1/3) é pago pela mesma remuneração das férias, por
+dia vendido (CLT art. 143 §1º): salário, mais a média das verbas variáveis
+habituais dos holerites mensais confirmados (Súmula 45 do TST), mais os
+adicionais fixos do contrato. Abono e 1/3 do abono não entram na base de INSS
+nem de FGTS; o 1/3 do abono segue tributável pelo IRRF (COSIT 209/2021).

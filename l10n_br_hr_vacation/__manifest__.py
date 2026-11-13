@@ -4,7 +4,7 @@
 {
     "name": "Férias e 13º Salário Brasileiros",
     "summary": "Férias CLT (art. 130), abono pecuniário e 13º salário",
-    "version": "18.0.1.6.0",
+    "version": "18.0.1.7.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
