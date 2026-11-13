@@ -41,7 +41,9 @@ class HrContract(models.Model):
         string="Percentual do Adicional Noturno",
         default=20.0,
         help="Percentual do adicional noturno sobre o salário-hora: 20% na CLT "
-        "urbana (art. 73), 25% para o trabalhador rural (Lei 5.889/73, art. 7º).",
+        "urbana (art. 73), 25% para o trabalhador rural (Lei 5.889/73, art. 7º). "
+        "Maior que 0 e até 100. Só a regra salarial padrão lê este campo: regra "
+        "personalizada do adicional noturno usa a própria fórmula e o ignora.",
     )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
@@ -113,11 +115,26 @@ class HrContract(models.Model):
                     )
                 )
 
+    @api.constrains("l10n_br_adicional_noturno_perc")
+    def _check_adicional_noturno_perc(self):
+        """O percentual do adicional noturno é maior que 0 e até 100."""
+        for rec in self:
+            if not 0 < rec.l10n_br_adicional_noturno_perc <= 100:
+                raise ValidationError(
+                    _(
+                        "O percentual do adicional noturno deve ser maior que 0 e "
+                        "no máximo 100 (informado: %(perc).2f).",
+                        perc=rec.l10n_br_adicional_noturno_perc,
+                    )
+                )
+
     def write(self, vals):
         res = super().write(vals)
         if "l10n_br_hora_noturna_reduzida" in vals:
             # Só holerite em rascunho acompanha: o confirmado guarda o que valeu.
-            self.env["hr.payslip"].search(
+            # ``sudo``: o gerente de contratos pode não ter acesso à folha, e a
+            # busca é só dos rascunhos deste contrato.
+            self.env["hr.payslip"].sudo().search(
                 [
                     ("contract_id", "in", self.ids),
                     ("state", "in", ("draft", "verify")),

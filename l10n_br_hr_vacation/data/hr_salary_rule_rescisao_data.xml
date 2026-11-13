@@ -127,8 +127,14 @@ dias = tools.br.dias_salario(contract)
 # Compensa o que o holerite mensal do mesmo período já pagou de salário
 # (evita pagar os mesmos dias duas vezes); sem mensal, paga o saldo inteiro.
 # Periculosidade/insalubridade dos mesmos dias (TG-88), também compensadas.
-remuneracao = contract.wage + tools.br.adicionais_fixos(contract)
-saldo = (remuneracao / 30) * dias - tools.br.salario_pago_mensal(contract, True)
+# Cada parcela é arredondada como a rubrica do mensal (salário, maternidade e
+# cada adicional): arredondar só a soma deixava R$ 0,01 de resíduo (TG-130).
+maternidade = tools.br.dias_maternidade(contract)
+salario = (
+    tools.br.round_money(contract.wage * (dias - maternidade) / 30)
+    + tools.br.round_money(contract.wage * maternidade / 30)
+)
+saldo = salario + tools.br.adicionais_fixos_dias(contract, dias) - tools.br.salario_pago_mensal(contract, True)
 result = tools.br.round_money(max(saldo, 0))
         </field>
     </record>

@@ -151,7 +151,8 @@ class HrPayslip(models.Model):
     # * a RESCISÃO desconta o que o mensal já pagou (SALDO_SALARIO).
     #
     # A "participação" de um holerite é o que ele entrega aos dependentes: do
-    # mensal, o total do salário (SALARIO_BASE e SALARIO_MATERNIDADE); do recibo,
+    # mensal, o total do salário (SALARIO_BASE e SALARIO_MATERNIDADE) e dos
+    # adicionais fixos (periculosidade e insalubridade, TG-130); do recibo,
     # o gozo (dias e fim), a base e o INSS retido; 0 se cancelado ou de outra
     # estrutura. UM ÚNICO gancho
     # (write/create/unlink, a exclusão de linhas e o compute_sheet) compara a
@@ -188,7 +189,9 @@ class HrPayslip(models.Model):
                     valor = sum(
                         ln.total
                         for ln in slip.line_ids
-                        if ln.code in self._L10N_BR_CODIGOS_SALARIO_MENSAL
+                        if ln.code
+                        in self._L10N_BR_CODIGOS_SALARIO_MENSAL
+                        + self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS
                     )
                 elif slip.struct_id.code == "FERIAS":
                     tipo = "ferias"
