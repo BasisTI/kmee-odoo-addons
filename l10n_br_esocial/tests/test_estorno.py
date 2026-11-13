@@ -4,6 +4,7 @@
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
+from odoo.tools import mute_logger
 
 from .common import (
     HAS_ESOCIALLIB,
@@ -289,7 +290,12 @@ class TestEstornoEsocial(ESocialCicloCommon):
             {"name": "Rescisão estorno", "code": "RESCISAO"}
         )
         rescisao = self._criar_payslip(struct_id=estrutura.id)
-        rescisao.action_esocial_gerar_s2299()
+        # As linhas do holerite de teste repetem uma regra de provento com valor
+        # negativo (desconto): o aviso de sinal contrário é esperado.
+        with mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
+        ):
+            rescisao.action_esocial_gerar_s2299()
         self.assertTrue(rescisao.l10n_br_esocial_s2299_ids)
         self.assertFalse(rescisao.l10n_br_esocial_a_retificar)
         self._estornar(rescisao)

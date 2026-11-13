@@ -268,6 +268,57 @@ class ESocialBaseIntermediario(models.AbstractModel):
             ) from exc
         return xml
 
+    # ── Ajuste do XML gerado pela esociallib 0.1.3 ─────────────────────────
+    # A biblioteca não gera ``infoAgNocivo`` (S-1200 e S-2299): o módulo o
+    # acrescenta ao XML pronto, na ordem do XSD, e confere o resultado.
+
+    @api.model
+    def _grau_exp(self, contract, inicio, fim=None):
+        """``grauExp`` (Tabela 02): 1 sem adicional de aposentadoria especial.
+
+        Com o módulo de SST, o grau vem do adicional (GILRAT) vigente do
+        contrato no período: 12 pontos = 2 (15 anos), 9 = 3 (20 anos), 6 = 4
+        (25 anos). Sem ele, ou sem exposição, é 1 (não ensejador).
+        """
+        if contract and hasattr(contract, "_l10n_br_sst_aliquota_gilrat_em"):
+            aliquota = contract._l10n_br_sst_aliquota_gilrat_em(inicio, fim)
+            return {12: 2, 9: 3, 6: 4}.get(int(round(aliquota or 0)), 1)
+        return 1
+
+    @api.model
+    def _categoria_rgps(self, codigo):
+        """Categoria amparada pelo RGPS, que exige ``infoAgNocivo`` (S-1200)."""
+        codigo = codigo or ""
+        return codigo[:1] in ("1", "2", "3") or codigo in ("731", "734", "738")
+
+    def _xml_com_info_ag_nocivo(self, xml, evento, grupo, grau):
+        """Acrescenta ``infoAgNocivo`` ao fim de cada ``grupo`` do XML.
+
+        ``grupo`` é o elemento que o contém (``remunPerApur`` no S-1200,
+        ``ideEstabLot`` no S-2299); no S-2299 o ``infoAgNocivo`` vem depois das
+        ``detVerbas`` e antes do ``infoSimples``, que o módulo não gera.
+        """
+        raiz = etree.fromstring(xml.encode("utf-8"))
+        for pai in raiz.iter("{*}%s" % grupo):
+            if pai.find("{*}infoAgNocivo") is not None:
+                continue
+            info = self._filho(pai, "infoAgNocivo")
+            self._filho(info, "grauExp", grau)
+        novo = etree.tostring(raiz, xml_declaration=True, encoding="UTF-8").decode()
+        if validate_xsd:
+            try:
+                erros = validate_xsd(novo, evento)
+            except FileNotFoundError:
+                return novo
+            # O XML ainda não está assinado: o XSD exige a Signature.
+            erros = [e for e in erros if "Signature" not in e]
+            if erros:
+                raise UserError(
+                    _("O XML do %(evento)s não passou na validação do leiaute:\n%(e)s")
+                    % {"evento": evento, "e": "\n".join(erros)}
+                )
+        return novo
+
     def _gerar_xml(self):
         """Generate XML for this intermediary record."""
         self.ensure_one()

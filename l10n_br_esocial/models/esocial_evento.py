@@ -91,6 +91,12 @@ class ESocialEvento(models.Model):
         string="ID Origem",
         help="ID do registro que originou o evento.",
     )
+    avisos = fields.Text(
+        string="Avisos da geração",
+        compute="_compute_avisos",
+        help="Avisos do registro que originou o evento (por exemplo, linhas do "
+        "holerite que ficaram fora do XML por falta de configuração eSocial).",
+    )
     ocorrencia_ids = fields.One2many(
         "l10n_br.esocial.ocorrencia",
         "evento_id",
@@ -122,6 +128,17 @@ class ESocialEvento(models.Model):
         "pelo governo no processamento deste evento.",
     )
     totalizador_count = fields.Integer(compute="_compute_totalizador_count")
+
+    @api.depends("origem_model", "origem_id")
+    def _compute_avisos(self):
+        for evento in self:
+            origem = (
+                self.env[evento.origem_model].browse(evento.origem_id).exists()
+                if evento.origem_model in self.env
+                else False
+            )
+            tem = origem and "avisos" in origem._fields
+            evento.avisos = origem.avisos if tem else False
 
     @api.depends("totalizador_ids")
     def _compute_totalizador_count(self):

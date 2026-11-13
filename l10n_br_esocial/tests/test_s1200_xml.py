@@ -3,6 +3,8 @@
 
 import logging
 
+from lxml import etree
+
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
@@ -10,7 +12,7 @@ from odoo.tools import mute_logger
 _logger = logging.getLogger(__name__)
 
 try:
-    pass
+    import esociallib  # noqa: F401
 
     HAS_ESOCIALLIB = True
 except ImportError:
@@ -178,6 +180,65 @@ class TestS1200XML(TransactionCase):
         itens = s1200._build_itens_remun()
         self.assertEqual(len(itens), 1)
         self.assertEqual(itens[0]["vr_rubr"], "5000.0")
+
+    def test_s1200_item_leva_ind_apur_ir(self):
+        """TG-103: indApurIR é obrigatório no S-1200 a partir de 07/2021."""
+        payslip = self._create_payslip_with_lines([5000.0])
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        (item,) = s1200._build_itens_remun()
+        self.assertEqual(item["ind_apur_ir"], 0)
+
+    def test_s1200_xml_leva_info_ag_nocivo(self):
+        """TG-103: infoAgNocivo (grauExp) para categoria do RGPS, depois dos itens."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        payslip = self._create_payslip_with_lines([5000.0])
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        with mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario",
+        ):
+            xml = s1200._gerar_xml()
+        raiz = etree.fromstring(xml.encode())
+        ns = {"e": etree.QName(raiz[0]).namespace}
+        remun = raiz.find(".//e:remunPerApur", ns)
+        self.assertEqual(
+            [etree.QName(c).localname for c in remun][-2:],
+            ["itensRemun", "infoAgNocivo"],
+        )
+        self.assertEqual(remun.findtext("e:infoAgNocivo/e:grauExp", namespaces=ns), "1")
+        self.assertEqual(remun.findtext("e:itensRemun/e:indApurIR", namespaces=ns), "0")
+
+    def test_s1200_provento_indenizatorio_sem_rubrica_vai_a_avisos(self):
+        """TG-103: PROV_INDENIZ sem rubrica avisa, e a multa do FGTS fica fora."""
+        Categoria = self.env["hr.salary.rule.category"]
+        indeniz = Categoria.search([("code", "=", "PROV_INDENIZ")], limit=1) or (
+            Categoria.create({"name": "Indenizatório", "code": "PROV_INDENIZ"})
+        )
+        payslip = self._create_payslip_with_lines([5000.0])
+        for code in ("AVISO_SEM_RUBRICA", "MULTA_FGTS"):
+            regra = self.env["hr.salary.rule"].create(
+                {"name": code, "code": code, "category_id": indeniz.id}
+            )
+            self.env["hr.payslip.line"].create(
+                {
+                    "slip_id": payslip.id,
+                    "salary_rule_id": regra.id,
+                    "name": code,
+                    "code": code,
+                    "employee_id": self.employee.id,
+                    "contract_id": self.contract.id,
+                    "quantity": 1,
+                    "amount": 700.0,
+                    "rate": 100,
+                }
+            )
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        with mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s1200_remuneracao"
+        ):
+            s1200._build_itens_remun()
+        self.assertIn("AVISO_SEM_RUBRICA", s1200.avisos)
+        self.assertNotIn("MULTA_FGTS", s1200.avisos)
 
     def test_s1200_requires_matricula(self):
         """Deve dar erro se empregado não tem matrícula.

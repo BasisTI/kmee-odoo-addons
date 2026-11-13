@@ -222,12 +222,35 @@ rescisão, o indicativo é ``S`` só quando a folha apurou a verba de aviso
 indenizado (sem justa causa ou acordo), e ``dtProjFimAPI`` é o desligamento mais
 os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
 ``S`` exige a data projetada, igual ou posterior ao desligamento.
-Com o holerite, as linhas com valor e com código e natureza de rubrica eSocial
-na regra (aviso indenizado, 13º, férias e demais verbas da rescisão) saem em
-``verbasResc`` (um ``detVerbas`` por linha, ``ideDmDev`` do próprio evento); a
-linha com valor e sem essa configuração fica fora e é listada em **Avisos da
-geração**. ``dtAvPrv`` (data da concessão do aviso) não é gerada: a rescisão não
-a registra.
+Com o holerite de rescisão **confirmado** e em vigor, o S-2299 declara as
+verbas em ``verbasResc``, um ``dmDev`` por holerite (``ideDmDev`` ``RES`` + id do
+holerite, nunca igual ao do S-1200) e uma ``detVerbas`` por linha com valor e
+com código e natureza de rubrica eSocial na regra: aviso indenizado, férias
+indenizadas e terço, 13º rescisório, saldo de salário e descontos. ``indApurIR``
+(0, apuração normal) e ``infoAgNocivo`` saem conforme o leiaute S-1.3;
+``grauExp`` é 1 (não ensejador), ou o grau do adicional de aposentadoria
+especial do contrato quando o módulo de SST está instalado. Linha com valor e
+sem código ou natureza de rubrica, ou de sinal contrário ao da rubrica (provento
+negativo, desconto positivo), fica fora e é listada em **Avisos da geração** (na
+tela do evento e no log): nada com valor some em silêncio. A multa do FGTS
+(``MULTA_FGTS``) vai à conta vinculada e não é verba paga ao trabalhador, por
+isso não entra no ``verbasResc``. Rescisão que não está confirmada, e os
+``mtvDeslig`` para os quais o leiaute proíbe o grupo (11, 12, 13, 25, 28, 29,
+30, 34, 36, 43 e 44), não geram ``verbasResc``. ``dtAvPrv`` (data da concessão
+do aviso) não é gerada: a rescisão não a registra. O S-2299 de uma rescisão não
+se gera duas vezes: para regerar, exclua o anterior por S-3000.
+
+O leiaute recusa o S-1200 da competência do desligamento rescisório
+(``REGRA_REMUN_JA_EXISTE_DESLIGAMENTO``); por isso o S-2299 com ``verbasResc``
+declara também os holerites confirmados do mês do desligamento (mensal e
+férias; o 13º tem competência própria) e o S-1200 não é gerado para eles. Se
+algum já tem S-1200 vigente, o S-2299 recusa e pede o S-3000 dele antes. O
+pagamento desses holerites vai no S-1210 com ``tpPgto`` 2, ``perRef`` do mês do
+desligamento e o ``ideDmDev`` do S-2299, depois do aceite do S-2299.
+
+No S-1200, o ``indApurIR`` sai em cada rubrica (obrigatório desde 07/2021) e o
+``infoAgNocivo`` para categorias do RGPS; regras de provento indenizatório
+(``PROV_INDENIZ``) e tributável só pelo IRRF sem rubrica também geram aviso.
 
 Holerite estornado: o estorno (Devolução) e o holerite que ele desfez ficam
 fora de vigor e não vão ao eSocial: a geração do S-1200, do S-1210 e do S-2299

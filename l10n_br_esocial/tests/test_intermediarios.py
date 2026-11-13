@@ -5,6 +5,8 @@ import logging
 from datetime import date
 from unittest.mock import patch
 
+from lxml import etree
+
 from odoo.exceptions import UserError
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
@@ -828,6 +830,7 @@ class TestS2299(TestESocialIntermediarioBase):
                 "contract_id": self.contract.id,
                 "date_from": "2024-12-01",
                 "date_to": "2024-12-31",
+                "state": "done",
             }
         )
         vals = {
@@ -909,11 +912,10 @@ class TestS2299(TestESocialIntermediarioBase):
             "<dtProjFimAPI>2025-02-02</dtProjFimAPI>", s2299.evento_id.xml_envio
         )
 
-    def _regra_rubrica(self, code, cod_rubr=None):
-        categoria = self.env["hr.salary.rule.category"].search(
-            [("code", "=", "ALW")], limit=1
-        ) or self.env["hr.salary.rule.category"].create(
-            {"name": "Provento", "code": "ALW"}
+    def _regra_rubrica(self, code, cod_rubr=None, categoria="PROV_INDENIZ", tp="1"):
+        Categoria = self.env["hr.salary.rule.category"]
+        categoria = Categoria.search([("code", "=", categoria)], limit=1) or (
+            Categoria.create({"name": categoria, "code": categoria})
         )
         vals = {"name": code, "code": code, "category_id": categoria.id}
         if cod_rubr:
@@ -924,7 +926,7 @@ class TestS2299(TestESocialIntermediarioBase):
                     "l10n_br_esocial_nat_rubr_id": self.env.ref(
                         "l10n_br_esocial.nat_rubr_1000"
                     ).id,
-                    "l10n_br_esocial_tp_rubr": "1",
+                    "l10n_br_esocial_tp_rubr": tp,
                 }
             )
         return self.env["hr.salary.rule"].create(vals)
@@ -944,32 +946,208 @@ class TestS2299(TestESocialIntermediarioBase):
             }
         )
 
+    def _verbas(self, s2299):
+        with self._com_aviso_da_folha(True), mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
+        ):
+            return s2299._to_esociallib_dict()
+
+    def _detalhes(self, data):
+        return [
+            (d["cod_rubr"], d["vr_rubr"], d.get("ind_apur_ir"))
+            for dm in data["verbas_resc"]
+            for lot in dm["info_per_apur"]["ide_estab_lot"]
+            for d in lot["det_verbas"]
+        ]
+
     def test_s2299_verbas_rescisorias_levam_aviso_indenizado_e_reflexos(self):
-        """TG-103: o aviso indenizado e os reflexos saem em verbasResc/detVerbas."""
+        """TG-103: aviso, férias indenizadas, 13º e descontos saem em detVerbas."""
         s2299 = self._s2299_rescisao()
         slip = s2299.payslip_id
         self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
         self._linha_rescisao(slip, self._regra_rubrica("FERIAS_X", "FERIAS"), 1100.0)
+        self._linha_rescisao(
+            slip, self._regra_rubrica("INSS_X", "INSS", "DED", "2"), -250.0
+        )
         self._linha_rescisao(slip, self._regra_rubrica("ZERADA_X", "ZERO"), 0.0)
-        self._linha_rescisao(slip, self._regra_rubrica("SEM_CONFIG_X"), 50.0)
-        with self._com_aviso_da_folha(True), mute_logger(
-            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
-        ):
-            data = s2299._to_esociallib_dict()
+        data = self._verbas(s2299)
         self.assertEqual(data["ind_pagto_api"], "S")
         self.assertEqual(data["dt_proj_fim_api"], "2025-02-02")
         (dm,) = data["verbas_resc"]
-        self.assertEqual(dm["ide_dm_dev"], s2299.get_ide_dm_dev())
-        (estab,) = dm["info_per_apur"]["ide_estab_lot"]
+        self.assertEqual(dm["ide_dm_dev"], s2299.get_ide_dm_dev(slip))
+        # indApurIR é obrigatório a partir de 07/2021; valores sem sinal.
         self.assertEqual(
-            [(d["cod_rubr"], d["vr_rubr"]) for d in estab["det_verbas"]],
-            [("AVISO", "3300.0"), ("FERIAS", "1100.0")],
+            self._detalhes(data),
+            [("AVISO", "3300.0", 0), ("FERIAS", "1100.0", 0), ("INSS", "250.0", 0)],
         )
-        self.assertIn("SEM_CONFIG_X", s2299.avisos)
+        self.assertFalse(s2299.avisos)
+
+    def test_s2299_verba_sem_rubrica_vai_a_avisos_com_valor(self):
+        """TG-103 (Sério 1): PROV_INDENIZ sem rubrica não some calada."""
+        s2299 = self._s2299_rescisao()
+        slip = s2299.payslip_id
+        self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(slip, self._regra_rubrica("FERIAS_SEM"), 1100.0)
+        self._linha_rescisao(slip, self._regra_rubrica("MULTA_FGTS"), 900.0)
+        data = self._verbas(s2299)
+        self.assertEqual([d[0] for d in self._detalhes(data)], ["AVISO"])
+        self.assertIn("FERIAS_SEM", s2299.avisos)
+        self.assertIn("1100.00", s2299.avisos)
+        # A multa do FGTS vai à conta vinculada: não é verba, nem aviso.
+        self.assertNotIn("MULTA_FGTS", s2299.avisos)
+        evento = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-2299", "company_id": self.company.id}
+        )
+        evento.write({"origem_model": s2299._name, "origem_id": s2299.id})
+        self.assertIn("FERIAS_SEM", evento.avisos)
+
+    def test_s2299_linha_de_sinal_contrario_nao_vira_positiva(self):
+        s2299 = self._s2299_rescisao()
+        slip = s2299.payslip_id
+        self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(slip, self._regra_rubrica("SALDO_X", "SALDO"), -100.0)
+        data = self._verbas(s2299)
+        self.assertEqual([d[0] for d in self._detalhes(data)], ["AVISO"])
+        self.assertIn("SALDO_X", s2299.avisos)
+        self.assertIn("sinal contrário", s2299.avisos)
+
+    def test_s2299_rescisao_fora_de_done_nao_declara_verbas(self):
+        s2299 = self._s2299_rescisao()
+        slip = s2299.payslip_id
+        self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        for estado in ("verify", "cancel"):
+            slip.state = estado
+            self.assertNotIn("verbas_resc", self._verbas(s2299))
+
+    def test_s2299_motivo_que_proibe_verbas_nao_gera_o_grupo(self):
+        s2299 = self._s2299_rescisao()
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        motivo = self.env["l10n_br.esocial.motivo.desligamento"].search(
+            [("codigo", "=", "11")], limit=1
+        ) or self.env["l10n_br.esocial.motivo.desligamento"].create(
+            {"codigo": "11", "name": "Motivo 11"}
+        )
+        s2299.motivo_desligamento_id = motivo
+        self.assertNotIn("verbas_resc", self._verbas(s2299))
+
+    def test_s2299_xml_leva_ind_apur_ir_e_info_ag_nocivo(self):
+        """TG-103 (Sério 3): XML com indApurIR e infoAgNocivo (grauExp 1)."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        slip = s2299.payslip_id
+        self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        with self._com_aviso_da_folha(True), mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario",
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento",
+        ):
+            xml = s2299._gerar_xml()
+        raiz = etree.fromstring(xml.encode())
+        ns = {"e": etree.QName(raiz[0]).namespace}
+        det = raiz.findall(".//e:detVerbas", ns)
+        self.assertEqual(len(det), 1)
+        self.assertEqual(det[0].findtext("e:codRubr", namespaces=ns), "AVISO")
+        self.assertEqual(det[0].findtext("e:indApurIR", namespaces=ns), "0")
+        lote = raiz.find(".//e:ideEstabLot", ns)
+        # infoAgNocivo vem depois das detVerbas (ordem do XSD).
+        self.assertEqual(
+            [etree.QName(c).localname for c in lote][-2:],
+            ["detVerbas", "infoAgNocivo"],
+        )
+        self.assertEqual(lote.findtext("e:infoAgNocivo/e:grauExp", namespaces=ns), "1")
+
+    def test_s2299_declara_o_mes_do_desligamento_e_o_s1200_sai(self):
+        """TG-103 (Sério 2): mensal e rescisão no S-2299; o S-1200 as recusa."""
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        mensal = self.env["hr.payslip"].create(
+            {
+                "name": "Mensal",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "date_from": "2024-12-01",
+                "date_to": "2024-12-31",
+                "state": "done",
+            }
+        )
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(mensal, self._regra_rubrica("SAL_X", "SAL"), 5000.0)
+        data = self._verbas(s2299)
+        self.assertEqual(
+            [dm["ide_dm_dev"] for dm in data["verbas_resc"]],
+            [s2299.get_ide_dm_dev(resc), s2299.get_ide_dm_dev(mensal)],
+        )
+        self.assertNotEqual(
+            s2299.get_ide_dm_dev(resc), "DEM%06d" % s2299.id, "sem colisão com S-1200"
+        )
+        # Sem S-2299 vigente, o holerite ainda não é do S-2299.
+        self.assertFalse(mensal._esocial_s2299_declarante())
+        s2299.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-2299", "company_id": self.company.id, "state": "draft"}
+        )
+        self.assertEqual(mensal._esocial_s2299_declarante(), s2299)
+        with self.assertRaisesRegex(UserError, "S-2299 do desligamento"):
+            mensal.action_esocial_gerar_s1200()
+        # O S-1210 paga a rescisão com tpPgto 2, no demonstrativo do S-2299.
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 3050.0)
+        resc.l10n_br_esocial_data_pagamento = "2025-01-05"
+        with self.assertRaisesRegex(UserError, "ainda não foi aceito"):
+            resc._esocial_dados_pagamento()
+        s2299.evento_id.state = "success"
+        pgto = resc._esocial_dados_pagamento()
+        self.assertEqual(pgto["tp_pgto"], "2")
+        self.assertEqual(pgto["per_ref"], "2024-12")
+        self.assertEqual(pgto["ide_dm_dev"], s2299.get_ide_dm_dev(resc))
+        self.assertEqual(pgto["vr_liq"], 3050.0)
+
+    def test_s2299_s1200_vigente_do_mes_bloqueia_as_verbas(self):
+        s2299 = self._s2299_rescisao()
+        mensal = self.env["hr.payslip"].create(
+            {
+                "name": "Mensal",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "date_from": "2024-12-01",
+                "date_to": "2024-12-31",
+                "state": "done",
+            }
+        )
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        s1200 = self.env["l10n_br.esocial.s1200"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2024-12",
+                "ind_apuracao": "1",
+                "company_id": self.company.id,
+                "payslip_ids": [(6, 0, mensal.ids)],
+            }
+        )
+        s1200.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-1200", "company_id": self.company.id, "state": "success"}
+        )
+        mensal.l10n_br_esocial_s1200_id = s1200
+        with self.assertRaisesRegex(UserError, "S-3000"):
+            self._verbas(s2299)
 
     def test_s2299_sem_holerite_nao_leva_verbas_rescisorias(self):
         s2299 = self._s2299_rescisao(payslip_id=False)
         self.assertNotIn("verbas_resc", s2299._to_esociallib_dict())
+
+    def test_s2299_segunda_geracao_nao_duplica_o_evento(self):
+        s2299 = self._s2299_rescisao()
+        s2299.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-2299", "company_id": self.company.id, "state": "draft"}
+        )
+        slip = s2299.payslip_id
+        slip.struct_id = self.env["hr.payroll.structure"].create(
+            {"name": "Rescisão", "code": "RESCISAO"}
+        )
+        with self.assertRaisesRegex(UserError, "já tem S-2299"):
+            slip.action_esocial_gerar_s2299()
 
     def test_s2299_gerar_xml(self):
         """Deve gerar XML via esociallib."""
