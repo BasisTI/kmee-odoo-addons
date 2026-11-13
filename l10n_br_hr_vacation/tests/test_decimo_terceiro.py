@@ -159,6 +159,50 @@ class TestDecimoTerceiro(VacationCommon):
         self.assertAlmostEqualMoney(bruto, 5000.00)
         self.assertAlmostEqualMoney(fgts, 400.00)  # 8% de 5000
 
+    def test_fgts_primeira_parcela_na_competencia_do_pagamento(self):
+        """TG-93: a 1ª parcela recolhe FGTS (8%) no mês em que é paga."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=2500.00, date_start=date(2020, 1, 1))
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "13º 1ª Parcela FGTS",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "date_from": date(2024, 11, 1),
+                "date_to": date(2024, 11, 30),
+                "struct_id": self.structure_13_primeira.id,
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADIANTAMENTO_13"), 1250.00
+        )
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "FGTS"), 100.00)
+        # FGTS é encargo do empregador: não altera o líquido nem gera INSS/IRRF.
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "NET"), 1250.00)
+        self.assertFalse(payslip.line_ids.filtered(lambda ln: ln.code == "INSS_13"))
+
+    def test_fgts_segunda_parcela_so_sobre_a_diferenca(self):
+        """TG-93: a 2ª parcela recolhe FGTS só sobre o 13º menos a 1ª parcela."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=5000.00, date_start=date(2024, 1, 1))
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "13º 2ª Parcela FGTS diferença",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "date_from": date(2024, 12, 1),
+                "date_to": date(2024, 12, 31),
+                "struct_id": self.structure_13_segunda.id,
+                "l10n_br_primeira_parcela_13_paga": 2500.00,
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        # 8% de (5000 - 2500); a 1ª parcela já recolheu 8% de 2500 (200).
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "FGTS"), 200.00)
+
     def test_decimo_na_rescisao_proporcional(self):
         """13º na rescisão = proporcional aos meses trabalhados no ano."""
         emp = self._create_employee()

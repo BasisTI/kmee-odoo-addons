@@ -56,6 +56,26 @@ result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos
         </field>
     </record>
 
+    <!-- FGTS da 1ª parcela (8% do adiantamento), na competência do pagamento
+         (Lei 8.036/90, art. 15; TG-93). Informativo: não entra no NET. -->
+    <record id="hr_rule_fgts_13_primeira" model="hr.salary.rule">
+        <field name="name">FGTS (13º - 1ª parcela)</field>
+        <field name="sequence" eval="150" />
+        <field name="code">FGTS</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_comp"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = employee.l10n_br_tipo_contrato != 'aprendiz'
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.round_money(max(ADIANTAMENTO_13, 0) * 0.08)
+        </field>
+    </record>
+
     <!-- NET para 1ª parcela (sem descontos) -->
     <record id="hr_rule_net_13_primeira" model="hr.salary.rule">
         <field name="name">Líquido (1ª Parcela 13º)</field>
@@ -202,7 +222,7 @@ result = tools.br.irrf_mais_favoravel(max(categories.GROSS, 0), BASE_IRRF_13)
         </field>
     </record>
 
-    <!-- FGTS sobre 13º (8% do 13º bruto) -->
+    <!-- FGTS sobre 13º (8% do 13º bruto, menos a 1ª parcela já depositada) -->
     <record id="hr_rule_fgts_13" model="hr.salary.rule">
         <field name="name">FGTS (13º)</field>
         <field name="sequence" eval="150" />
@@ -217,7 +237,10 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.round_money(max(categories.GROSS, 0) * 0.08)
+# A 1ª parcela já recolheu o FGTS dela no mês em que foi paga (TG-93): a
+# 2ª incide só sobre a diferença entre o 13º bruto e o adiantamento.
+base = max(categories.GROSS - payslip.l10n_br_primeira_parcela_13_paga, 0)
+result = tools.br.round_money(base * 0.08)
         </field>
     </record>
 

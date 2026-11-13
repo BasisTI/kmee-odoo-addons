@@ -68,3 +68,11 @@ soma), para não contá-lo duas vezes. O saldo não pode ser negativo; zero é o
 mesmo que em branco e cai na estimativa. O
 FGTS do mensal integra a compensação entre holerites: alterá-lo recalcula a
 rescisão em rascunho e é recusado se ela já estiver confirmada.
+
+**FGTS do 13º (1ª e 2ª parcelas)**
+
+A 1ª parcela do 13º não tem INSS nem IRRF, mas gera FGTS (8% do adiantamento) na
+competência em que é paga (Lei 8.036/90, art. 15). A 2ª parcela recolhe 8% só
+sobre a diferença entre o 13º bruto e a 1ª parcela informada em
+``l10n_br_primeira_parcela_13_paga``, de modo que o total do ano é 8% do 13º.
+O FGTS é encargo do empregador e não entra no líquido.

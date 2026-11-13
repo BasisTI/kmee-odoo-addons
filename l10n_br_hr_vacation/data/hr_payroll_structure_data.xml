@@ -30,6 +30,7 @@
             name="rule_ids"
             eval="[(6, 0, [
                 ref('hr_rule_adiantamento_13'),
+                ref('hr_rule_fgts_13_primeira'),
                 ref('hr_rule_net_13_primeira'),
             ])]"
         />
