@@ -1,7 +1,7 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from datetime import timedelta
+from datetime import date, timedelta
 
 from dateutil.relativedelta import relativedelta
 
@@ -495,9 +495,17 @@ class HrPayslip(models.Model):
         for rec in self:
             if rec.contract_id and rec.date_to:
                 referencia = rec._l10n_br_data_projetada_rescisao()
-                rec.l10n_br_avos_13 = calc_decimo_avos(
-                    rec.contract_id.date_start, referencia
-                )
+                admissao = rec.contract_id.date_start
+                # Cada ano-base tem o seu 13º (Lei 4.090/62): o ano do
+                # desligamento vai até 31/12 e o ano projetado pelo aviso
+                # (Súmula 371 TST) conta de 1º/01 até a data projetada. Medir
+                # só o ano da referência zerava o 13º quando o aviso cruzava
+                # o ano e caía em menos de 15 dias de janeiro.
+                avos = 0
+                for ano in range(rec.date_to.year, referencia.year):
+                    avos += calc_decimo_avos(admissao, date(ano, 12, 31))
+                avos += calc_decimo_avos(admissao, referencia)
+                rec.l10n_br_avos_13 = avos
             else:
                 rec.l10n_br_avos_13 = 0
 
