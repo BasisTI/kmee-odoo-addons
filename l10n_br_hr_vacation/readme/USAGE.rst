@@ -76,3 +76,9 @@ competência em que é paga (Lei 8.036/90, art. 15). A 2ª parcela recolhe 8% s�
 sobre a diferença entre o 13º bruto e a 1ª parcela informada em
 ``l10n_br_primeira_parcela_13_paga``, de modo que o total do ano é 8% do 13º.
 O FGTS é encargo do empregador e não entra no líquido.
+
+Na rescisão, o FGTS do 13º proporcional abate o já recolhido nas 1ªs parcelas
+do mesmo ano (holerites de 1ª parcela confirmados e em vigor); se a 1ª parcela
+for maior que o FGTS do proporcional, o FGTS do 13º da rescisão é zero. A base
+da multa soma o FGTS do 13º da rescisão e o das 1ªs parcelas. O desconto do 13º
+já pago no líquido do TRCT não é tratado aqui.

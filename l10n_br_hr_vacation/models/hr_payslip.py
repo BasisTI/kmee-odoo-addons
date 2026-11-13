@@ -132,6 +132,14 @@ class HrPayslip(models.Model):
         "real; preencher com o extrato sempre que disponível.",
     )
 
+    @api.constrains("l10n_br_primeira_parcela_13_paga")
+    def _check_l10n_br_primeira_parcela_13_paga(self):
+        for rec in self:
+            if rec.l10n_br_primeira_parcela_13_paga < 0:
+                raise ValidationError(
+                    _("A 1ª parcela do 13º já paga não pode ser negativa.")
+                )
+
     @api.constrains("l10n_br_fgts_saldo_conta")
     def _check_l10n_br_fgts_saldo_conta(self):
         for rec in self:
@@ -207,6 +215,13 @@ class HrPayslip(models.Model):
                     # O FGTS do mensal entra na base da multa da rescisão (TG-92).
                     fgts = sum(ln.total for ln in slip.line_ids if ln.code == "FGTS")
                     valor = (salario, fgts) if salario or fgts else 0.0
+                elif slip.struct_id.code == "13_1PARCELA":
+                    # O FGTS da 1ª parcela é abatido da rescisão do mesmo ano
+                    # e entra na base da multa (TG-93).
+                    tipo = "decimo1"
+                    fgts = sum(ln.total for ln in slip.line_ids if ln.code == "FGTS")
+                    # Só o confirmado conta como recolhido para a rescisão.
+                    valor = fgts if fgts and slip.state == "done" else 0.0
                 elif slip.struct_id.code == "FERIAS":
                     tipo = "ferias"
                     linhas = {ln.code: ln.total for ln in slip.line_ids}
@@ -225,7 +240,7 @@ class HrPayslip(models.Model):
         return res
 
     def _l10n_br_reconciliar_participacao(self, antes, depois):
-        periodos = {"mensal": set(), "ferias": set()}
+        periodos = {"mensal": set(), "ferias": set(), "decimo1": set()}
         for slip_id, chave in antes.items():
             nova = depois.get(slip_id, self._L10N_BR_PARTICIPACAO_NULA)
             if nova == chave:
@@ -233,12 +248,25 @@ class HrPayslip(models.Model):
             for contrato, de, ate, valor, tipo in (chave, nova):
                 if valor and contrato:
                     periodos[tipo].add((contrato, de, ate))
-        if not periodos["mensal"] and not periodos["ferias"]:
+        if not any(periodos.values()):
             return
         mensais = self.browse()
         rescisoes = self.browse()
         for tipo, conjunto in periodos.items():
             for contrato, de, ate in conjunto:
+                if tipo == "decimo1":
+                    # Rescisões do mesmo ano da 1ª parcela, em qualquer mês.
+                    rescisoes |= self.search(
+                        [
+                            ("contract_id", "=", contrato),
+                            ("state", "!=", "cancel"),
+                            ("l10n_br_fora_de_vigor", "=", False),
+                            ("struct_id.code", "=", "RESCISAO"),
+                            ("date_to", ">=", date(ate.year, 1, 1)),
+                            ("date_to", "<=", date(ate.year, 12, 31)),
+                        ]
+                    )
+                    continue
                 dominio = [
                     ("contract_id", "=", contrato),
                     ("state", "!=", "cancel"),
@@ -625,6 +653,42 @@ class HrPayslip(models.Model):
         )
         return sum(
             mensais.mapped("line_ids")
+            .filtered(lambda ln: ln.code == "FGTS")
+            .mapped("total")
+        )
+
+    def _l10n_br_fgts_13_primeira_depositado(self, contract):
+        """FGTS já recolhido nas 1ªs parcelas do 13º do mesmo ano (TG-93).
+
+        Soma a linha ``FGTS`` dos holerites de 1ª parcela CONFIRMADOS e em
+        vigor (sem estorno) do contrato, no ano deste holerite. A rescisão
+        abate este valor do FGTS do 13º proporcional (a 1ª parcela já
+        recolheu a parte dela) e a base da multa o soma de volta, porque o
+        depósito existe na conta vinculada. Sem 1ª parcela, devolve 0.
+        """
+        self.ensure_one()
+        if not self.date_to or not contract:
+            return 0.0
+        estrutura = self.env.ref(
+            "l10n_br_hr_vacation.structure_13_primeira_parcela",
+            raise_if_not_found=False,
+        )
+        if not estrutura:
+            return 0.0
+        ano = self.date_to.year
+        primeiras = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("struct_id", "=", estrutura.id),
+                ("date_to", ">=", date(ano, 1, 1)),
+                ("date_to", "<=", date(ano, 12, 31)),
+            ]
+        )
+        return sum(
+            primeiras.mapped("line_ids")
             .filtered(lambda ln: ln.code == "FGTS")
             .mapped("total")
         )
