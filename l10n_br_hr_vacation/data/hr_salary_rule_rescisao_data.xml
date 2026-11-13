@@ -483,7 +483,12 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.round_money(max(DECIMO_RESCISAO, 0) * 0.08)
+# O FGTS das 1ªs parcelas do 13º do ano já foi recolhido na competência delas
+# (TG-93): a rescisão recolhe só o que falta, sem valor negativo.
+ja_recolhido = payslip._l10n_br_fgts_13_primeira_depositado(contract)
+result = max(
+    tools.br.round_money(max(DECIMO_RESCISAO, 0) * 0.08) - ja_recolhido, 0.0
+)
         </field>
     </record>
 
@@ -495,7 +500,7 @@ result = tools.br.round_money(max(DECIMO_RESCISAO, 0) * 0.08)
          (informado, ou a estimativa 8% x salário x meses completos, sem
          juros/correção) + depósito do mês da rescisão (o do mensal da mesma
          competência e o FGTS do saldo de salário desta rescisão) + FGTS do
-         13º + FGTS do aviso indenizado (Decreto 99.684/90, art. 9º, §1º).
+         13º (o da rescisão mais o das 1ªs parcelas do ano, TG-93) + FGTS do aviso indenizado (Decreto 99.684/90, art. 9º, §1º).
          INDENIZATÓRIA: sem INSS (Lei 8.212/91 art. 28 §9º "e", 1, c/c ADCT
          art. 10, I) nem IRRF (Lei 7.713/88 art. 6º V; Lei 8.036/90 art.
          28). -->
@@ -524,6 +529,7 @@ depositos = (
     payslip._l10n_br_fgts_depositado_mensal(contract)
     + FGTS
     + FGTS_13
+    + payslip._l10n_br_fgts_13_primeira_depositado(contract)
     + FGTS_AVISO
 )
 percentual = 0.20 if payslip.l10n_br_tipo_rescisao == 'acordo' else 0.40
