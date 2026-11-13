@@ -26,11 +26,22 @@ class HrContract(models.Model):
         string="Hora Noturna Reduzida",
         default=True,
         help="Marcado: o trabalho noturno conta pela hora de 52min30s (CLT, "
-        "art. 73, § 1º), e o holerite e a ponte convertem as horas noturnas "
-        "(x 8/7). Desmarque para quem não tem esse direito: trabalhador rural "
-        "(Lei 5.889/73, art. 7º: hora de 60 min com adicional de 25%) ou "
-        "convenção coletiva que afaste a redução. Súmula 60 do TST "
-        "(prorrogação após as 5h) não é tratada.",
+        "art. 73, § 1º) e o holerite converte as horas noturnas (x 8/7). "
+        "Desmarque para quem não tem esse direito, como o trabalhador rural "
+        "(Lei 5.889/73, art. 7º: hora de 60 min, adicional de 25%, noturno das "
+        "21h às 5h na lavoura e das 20h às 4h na pecuária) ou quem tem "
+        "convenção coletiva que afaste a redução. Para o rural, ajuste também o "
+        "Percentual do Adicional Noturno. O módulo não identifica o rural nem "
+        "aplica o horário noturno rural: as horas noturnas vêm informadas (ou "
+        "da apuração, que usa 22h às 5h). Súmula 60 do TST (prorrogação após as "
+        "5h) não é tratada. A mudança vale para holerites novos e em rascunho; "
+        "holerite confirmado ou pago não muda.",
+    )
+    l10n_br_adicional_noturno_perc = fields.Float(
+        string="Percentual do Adicional Noturno",
+        default=20.0,
+        help="Percentual do adicional noturno sobre o salário-hora: 20% na CLT "
+        "urbana (art. 73), 25% para o trabalhador rural (Lei 5.889/73, art. 7º).",
     )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
@@ -101,3 +112,17 @@ class HrContract(models.Model):
                         "(Súmula 364 do TST)."
                     )
                 )
+
+    def write(self, vals):
+        res = super().write(vals)
+        if "l10n_br_hora_noturna_reduzida" in vals:
+            # Só holerite em rascunho acompanha: o confirmado guarda o que valeu.
+            self.env["hr.payslip"].search(
+                [
+                    ("contract_id", "in", self.ids),
+                    ("state", "in", ("draft", "verify")),
+                ]
+            ).write(
+                {"l10n_br_usar_hora_reduzida": vals["l10n_br_hora_noturna_reduzida"]}
+            )
+        return res

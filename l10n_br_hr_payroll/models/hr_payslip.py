@@ -35,14 +35,12 @@ class HrPayslip(models.Model):
     )
     l10n_br_usar_hora_reduzida = fields.Boolean(
         string="Usar Hora Noturna Reduzida",
-        compute="_compute_l10n_br_usar_hora_reduzida",
-        store=True,
-        readonly=False,
+        default=True,
         help="Hora noturna = 52min30s: cada hora de relógio noturna conta como "
         "60/52,5 = 8/7 de hora (CLT, art. 73, § 1º). A conversão incide sobre as "
-        "Horas Noturnas, que são de relógio. Vem ligada para o contrato com "
-        "direito à hora reduzida (campo do contrato) e pode ser ajustada no "
-        "holerite.",
+        "Horas Noturnas, que são de relógio. Vem do contrato (campo Hora Noturna "
+        "Reduzida) ao criar o holerite e enquanto ele está em rascunho; holerite "
+        "confirmado ou pago guarda o que valeu no cálculo.",
     )
     l10n_br_horas_noturnas_computadas = fields.Float(
         string="Horas Noturnas Computadas",
@@ -192,15 +190,14 @@ class HrPayslip(models.Model):
                     )
                 )
 
-    @api.depends("contract_id.l10n_br_hora_noturna_reduzida")
-    def _compute_l10n_br_usar_hora_reduzida(self):
-        """Segue o contrato; sem contrato, vale o padrão (urbano, art. 73)."""
+    @api.onchange("contract_id")
+    def _onchange_contract_hora_reduzida(self):
+        """A marca segue o contrato; no formulário ela é só de leitura."""
         for rec in self:
-            rec.l10n_br_usar_hora_reduzida = (
-                rec.contract_id.l10n_br_hora_noturna_reduzida
-                if rec.contract_id
-                else True
-            )
+            if rec.contract_id:
+                rec.l10n_br_usar_hora_reduzida = (
+                    rec.contract_id.l10n_br_hora_noturna_reduzida
+                )
 
     @api.depends("l10n_br_horas_noturnas", "l10n_br_usar_hora_reduzida")
     def _compute_horas_noturnas_computadas(self):
@@ -398,6 +395,14 @@ class HrPayslip(models.Model):
             [v["employee_id"] for v in vals_list if v.get("employee_id")]
         )
         antes = self._l10n_br_dsr_participacao(empregados)
+        vals_list = [dict(v) for v in vals_list]
+        for vals in vals_list:
+            if vals.get("contract_id") and "l10n_br_usar_hora_reduzida" not in vals:
+                vals["l10n_br_usar_hora_reduzida"] = (
+                    self.env["hr.contract"]
+                    .browse(vals["contract_id"])
+                    .l10n_br_hora_noturna_reduzida
+                )
         slips = super().create(vals_list)
         self._l10n_br_dsr_reconciliar(antes, empregados | slips.employee_id, slips)
         return slips

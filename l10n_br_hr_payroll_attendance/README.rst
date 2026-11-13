@@ -72,8 +72,11 @@ reclamatória.
 
 A hora noturna reduzida (52min30s) segue o campo **Hora Noturna
 Reduzida** do contrato (``l10n_br_hora_noturna_reduzida``, ligado por
-padrão): para quem não tem o direito (rural, convenção coletiva), a
-apuração e o holerite pagam o relógio.
+padrão): ao preencher o holerite pela apuração, a ponte pega a marca do
+contrato e não força 8/7. Para quem não tem o direito (rural, convenção
+coletiva), o holerite paga o relógio. A apuração diária e o espelho de
+ponto continuam mostrando o noturno computado pela hora reduzida urbana:
+o valor pago é o do holerite.
 
 **Table of contents**
 

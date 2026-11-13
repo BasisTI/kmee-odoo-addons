@@ -132,7 +132,7 @@ result = payslip.l10n_br_horas_noturnas > 0
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()
-result = tools.br.round_money(salario_hora * 0.20 * payslip.l10n_br_horas_noturnas_computadas)
+result = tools.br.round_money(salario_hora * contract.l10n_br_adicional_noturno_perc / 100.0 * payslip.l10n_br_horas_noturnas_computadas)
         </field>
     </record>
 

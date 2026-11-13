@@ -9,6 +9,11 @@ from odoo.tests.common import TransactionCase
 from odoo.tools import file_path, mute_logger
 
 ANTIGAS = {
+    "jornada_computadas_0_20": (
+        "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()\n"
+        "result = tools.br.round_money("
+        "salario_hora * 0.20 * payslip.l10n_br_horas_noturnas_computadas)"
+    ),
     "220_sem_arredondar": (
         "salario_hora = contract.wage / 220\n"
         "result = salario_hora * 0.20 * payslip.l10n_br_horas_noturnas"
@@ -56,6 +61,59 @@ class TestMigracaoHoraReduzida(TransactionCase):
                     self.regra.amount_python_compute,
                 )
 
+    def test_divisor_220_e_mantido(self):
+        """M6: a migração não troca o divisor do banco antigo sem querer."""
+        self.regra.amount_python_compute = ANTIGAS["220_arredondada"]
+        self._migrar()
+        formula = self.regra.amount_python_compute
+        self.assertIn("contract.wage / 220", formula)
+        self.assertNotIn("_l10n_br_divisor_horas_mensais", formula)
+        self.assertIn("l10n_br_horas_noturnas_computadas", formula)
+        self.assertIn("l10n_br_adicional_noturno_perc", formula)
+
+    def test_divisor_da_jornada_e_mantido(self):
+        self.regra.amount_python_compute = ANTIGAS["jornada_arredondada"]
+        self._migrar()
+        self.assertIn(
+            "_l10n_br_divisor_horas_mensais", self.regra.amount_python_compute
+        )
+
+    def test_rascunho_alinha_ao_contrato_e_confirmado_fica(self):
+        """M5: rascunho anterior ao upgrade passa a seguir o contrato."""
+        emp = self.env["hr.employee"].create({"name": "Maria Rural Teste"})
+        contrato = self.env["hr.contract"].create(
+            {
+                "name": "Contrato Maria",
+                "employee_id": emp.id,
+                "wage": 3000.0,
+                "date_start": "2024-01-01",
+                "state": "open",
+                "struct_id": self.env.ref("l10n_br_hr_payroll.structure_clt").id,
+            }
+        )
+
+        def holerite(inicio, fim):
+            return self.env["hr.payslip"].create(
+                {
+                    "name": "H",
+                    "employee_id": emp.id,
+                    "contract_id": contrato.id,
+                    "struct_id": contrato.struct_id.id,
+                    "date_from": inicio,
+                    "date_to": fim,
+                    "l10n_br_usar_hora_reduzida": False,
+                }
+            )
+
+        rascunho = holerite("2024-03-01", "2024-03-31")
+        fechado = holerite("2024-04-01", "2024-04-30")
+        fechado.state = "done"
+        self._migrar()
+        rascunho.invalidate_recordset()
+        fechado.invalidate_recordset()
+        self.assertTrue(rascunho.l10n_br_usar_hora_reduzida)
+        self.assertFalse(fechado.l10n_br_usar_hora_reduzida)
+
     def test_formula_personalizada_e_preservada(self):
         custom = "result = contract.wage * 0.35 * payslip.l10n_br_horas_noturnas"
         self.regra.amount_python_compute = custom
@@ -63,7 +121,7 @@ class TestMigracaoHoraReduzida(TransactionCase):
         self.assertEqual(self.regra.amount_python_compute, custom)
 
     def test_idempotente(self):
-        self.regra.amount_python_compute = ANTIGAS["220_sem_arredondar"]
+        self.regra.amount_python_compute = ANTIGAS["jornada_arredondada"]
         self._migrar()
         primeira = self.regra.amount_python_compute
         self._migrar()
