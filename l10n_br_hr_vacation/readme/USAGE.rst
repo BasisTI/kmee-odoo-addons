@@ -53,6 +53,42 @@ vale o valor pago em cada mensal confirmado (mês de salário parcial entra pelo
 valor proporcional pago, como nas demais médias). O saldo de salário, que paga
 os dias trabalhados, usa só o adicional vigente.
 
+**Causas de rescisão (TG-96)**
+
+O ``Tipo de Rescisão`` define as verbas, a multa do FGTS e o ``mtvDeslig`` do
+S-2299 (tabela 19 do eSocial; o S-2299 usa o motivo do tipo e, sem tipo, o do
+contrato):
+
+* Justa causa (01): sem aviso, 13º, férias proporcionais nem multa.
+* Sem justa causa (02): aviso integral, 13º, férias proporcionais, multa de 40%.
+* Término antecipado pelo empregador, art. 479 (03): sem aviso; 13º e férias
+  proporcionais; indenização do art. 479; multa de 40%.
+* Término antecipado pelo empregado, art. 480 (04): sem aviso nem multa; 13º e
+  férias proporcionais; desconto do art. 480.
+* Culpa recíproca, art. 484 e Súmula 14 do TST (05): metade do aviso, do 13º e
+  das férias proporcionais; multa de 20%.
+* Término do contrato a prazo (06): sem aviso nem multa; 13º e férias
+  proporcionais.
+* Pedido de demissão (07): sem aviso do empregador nem multa; 13º e férias
+  proporcionais; desconto do aviso não cumprido, se for o caso.
+* Rescisão indireta, art. 483 (17): como a dispensa sem justa causa.
+* Força maior, art. 502 (27): sem aviso; 13º e férias proporcionais; multa de
+  20%.
+* Acordo, art. 484-A (33): metade do aviso; 13º e férias proporcionais; multa
+  de 20%.
+
+As férias vencidas são devidas em qualquer causa (CLT art. 146). O aviso só
+gera verba quando marcado ``Indenizado``; ``Trabalhado`` já foi pago na folha.
+
+* **Término antecipado do contrato a prazo:** informe o ``Termo do Contrato a
+  Prazo``. Pelo empregador, a rescisão paga a indenização do art. 479 (metade
+  da remuneração dos dias até o termo; indenizatória, sem INSS, IRRF nem FGTS).
+  Pelo empregado, desconta o ``Prejuízo do Empregador`` informado (art. 480),
+  limitado ao valor do art. 479 e a um mês de remuneração (art. 477, §5º);
+  em branco, não há desconto.
+* **Aviso não cumprido:** no pedido de demissão, ``Aviso Prévio`` = ``Não
+  Cumprido pelo Empregado`` desconta 30 dias de salário (art. 487, §2º).
+
 **Multa do FGTS na rescisão**
 
 A multa (40% na dispensa sem justa causa; 20% no acordo do art. 484-A) é

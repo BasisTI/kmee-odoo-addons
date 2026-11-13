@@ -8,9 +8,99 @@ from dateutil.relativedelta import relativedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
-# Tipos de rescisão que dão direito a aviso prévio indenizado pago pelo
-# empregador e à multa do FGTS (com percentuais distintos, ver as regras).
-L10N_BR_TIPOS_RESCISAO_COM_AVISO_E_MULTA = ("sem_justa_causa", "acordo")
+# Regras de cada tipo de rescisão (TG-96). ``mtv`` é o ``mtvDeslig`` do S-2299
+# (tabela 19 do eSocial); ``aviso``, ``decimo`` e ``ferias`` são a fração devida
+# do aviso prévio indenizado, do 13º e das férias proporcionais (+1/3); ``multa``
+# é o percentual da multa do FGTS (Lei 8.036/90, art. 18, §§1º e 2º). As férias
+# vencidas são devidas em qualquer causa (CLT art. 146, caput).
+L10N_BR_REGRAS_RESCISAO = {
+    # CLT art. 482: sem aviso, 13º, férias proporcionais nem multa.
+    "justa_causa": {
+        "mtv": "01",
+        "aviso": 0.0,
+        "decimo": 0.0,
+        "ferias": 0.0,
+        "multa": 0.0,
+    },
+    # Aviso integral, tudo devido e multa de 40%.
+    "sem_justa_causa": {
+        "mtv": "02",
+        "aviso": 1.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.40,
+    },
+    # Contrato a termo: art. 479 (empregador) e art. 480 (empregado), sem aviso.
+    "antecipado_empregador": {
+        "mtv": "03",
+        "aviso": 0.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.40,
+    },
+    "antecipado_empregado": {
+        "mtv": "04",
+        "aviso": 0.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.0,
+    },
+    # Súmula 14 do TST: metade do aviso, do 13º e das férias proporcionais.
+    "culpa_reciproca": {
+        "mtv": "05",
+        "aviso": 0.5,
+        "decimo": 0.5,
+        "ferias": 0.5,
+        "multa": 0.20,
+    },
+    # Termo certo: sem aviso nem multa (Súmula 171 do TST: férias proporcionais).
+    "termino_contrato": {
+        "mtv": "06",
+        "aviso": 0.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.0,
+    },
+    # Aviso devido pelo empregado (art. 487, §2º), nunca pelo empregador.
+    "pedido_demissao": {
+        "mtv": "07",
+        "aviso": 0.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.0,
+    },
+    # Art. 483 da CLT: o empregador faltoso responde como na dispensa sem justa causa.
+    "rescisao_indireta": {
+        "mtv": "17",
+        "aviso": 1.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.40,
+    },
+    # Art. 502 da CLT e art. 18, §2º, da Lei 8.036/90: multa de 20%, sem aviso.
+    "forca_maior": {
+        "mtv": "27",
+        "aviso": 0.0,
+        "decimo": 1.0,
+        "ferias": 1.0,
+        "multa": 0.20,
+    },
+    # Art. 484-A da CLT: metade do aviso e multa de 20%.
+    "acordo": {"mtv": "33", "aviso": 0.5, "decimo": 1.0, "ferias": 1.0, "multa": 0.20},
+}
+# Sem tipo informado (holerite antigo), vale o que o módulo sempre fez: 13º e
+# férias proporcionais devidos, sem aviso nem multa.
+L10N_BR_REGRA_RESCISAO_PADRAO = {
+    "mtv": False,
+    "aviso": 0.0,
+    "decimo": 1.0,
+    "ferias": 1.0,
+    "multa": 0.0,
+}
+# Tipos que dão direito a aviso prévio indenizado pago pelo empregador.
+L10N_BR_TIPOS_RESCISAO_COM_AVISO_E_MULTA = tuple(
+    tipo for tipo, regra in L10N_BR_REGRAS_RESCISAO.items() if regra["aviso"]
+)
 
 
 class HrPayslip(models.Model):
@@ -93,6 +183,18 @@ class HrPayslip(models.Model):
             ("pedido_demissao", "Pedido de Demissão"),
             ("justa_causa", "Justa Causa (CLT art. 482)"),
             ("acordo", "Comum Acordo (CLT art. 484-A)"),
+            ("rescisao_indireta", "Rescisão Indireta (CLT art. 483)"),
+            ("culpa_reciproca", "Culpa Recíproca (CLT art. 484)"),
+            ("forca_maior", "Força Maior (CLT art. 502)"),
+            ("termino_contrato", "Término do Contrato a Prazo"),
+            (
+                "antecipado_empregador",
+                "Término Antecipado pelo Empregador (CLT art. 479)",
+            ),
+            (
+                "antecipado_empregado",
+                "Término Antecipado pelo Empregado (CLT art. 480)",
+            ),
         ],
         string="Tipo de Rescisão",
         help="Determina quais verbas são devidas: aviso prévio indenizado "
@@ -103,13 +205,20 @@ class HrPayslip(models.Model):
         "SOMENTE na justa causa (Lei 4.090/62 art. 3º; Decreto 57.155/65 "
         "art. 7º) - devido inclusive no pedido de demissão (Súmula 157 "
         "TST); férias vencidas devidas em qualquer hipótese (CLT art. 146, "
-        "caput).",
+        "caput). Culpa recíproca (art. 484 CLT; Súmula 14 TST): metade do "
+        "aviso, do 13º e das férias proporcionais e multa de 20%. Força maior "
+        "(art. 502): multa de 20%, sem aviso. Rescisão indireta: como a "
+        "dispensa sem justa causa. Contrato a prazo: sem aviso nem multa no "
+        "término do prazo; antecipado pelo empregador, indenização do art. "
+        "479 e multa de 40%; antecipado pelo empregado, indenização do art. "
+        "480, sem multa.",
     )
     l10n_br_aviso_previo = fields.Selection(
         selection=[
             ("indenizado", "Indenizado"),
             ("trabalhado", "Trabalhado"),
             ("nao_aplicavel", "Não Aplicável"),
+            ("nao_cumprido", "Não Cumprido pelo Empregado"),
         ],
         string="Aviso Prévio",
         help="INDENIZADO: gera a verba AVISO_PREVIO_INDENIZADO e projeta o "
@@ -117,7 +226,23 @@ class HrPayslip(models.Model):
         "TRABALHADO: já remunerado pela folha mensal do próprio período; "
         "esta rescisão não gera verba adicional (date_to já reflete o fim "
         "do aviso trabalhado). NÃO APLICÁVEL: justa causa ou pedido de "
-        "demissão sem aviso indenizado pelo empregador.",
+        "demissão sem aviso indenizado pelo empregador. NÃO CUMPRIDO: o "
+        "empregado que pediu demissão não cumpriu o aviso e o empregador "
+        "desconta 30 dias de salário (CLT art. 487, §2º).",
+    )
+    l10n_br_data_termo_contrato = fields.Date(
+        string="Termo do Contrato a Prazo",
+        help="Data final pactuada do contrato de experiência ou por prazo "
+        "determinado. Base da indenização do término antecipado: metade da "
+        "remuneração dos dias que faltavam até esta data (CLT art. 479, "
+        "pelo empregador; art. 480, pelo empregado).",
+    )
+    l10n_br_prejuizo_art_480 = fields.Float(
+        string="Prejuízo do Empregador (art. 480)",
+        help="Prejuízo comprovado do empregador com o término antecipado pelo "
+        "empregado. O desconto é este valor, limitado ao que o empregado "
+        "receberia pelo art. 479 (CLT art. 480, §1º) e a um mês de "
+        "remuneração (CLT art. 477, §5º). Em branco, não há desconto.",
     )
     l10n_br_fgts_saldo_conta = fields.Float(
         string="Saldo FGTS na Conta Vinculada",
@@ -139,6 +264,50 @@ class HrPayslip(models.Model):
                 raise ValidationError(
                     _("A 1ª parcela do 13º já paga não pode ser negativa.")
                 )
+
+    @api.constrains(
+        "l10n_br_tipo_rescisao",
+        "l10n_br_aviso_previo",
+        "l10n_br_data_termo_contrato",
+        "l10n_br_prejuizo_art_480",
+        "date_to",
+    )
+    def _check_l10n_br_rescisao_prazo(self):
+        for rec in self:
+            tipo = rec.l10n_br_tipo_rescisao
+            if rec.l10n_br_aviso_previo == "nao_cumprido" and (
+                tipo != "pedido_demissao"
+            ):
+                raise ValidationError(
+                    _(
+                        "O aviso prévio 'Não Cumprido pelo Empregado' só vale "
+                        "no pedido de demissão (CLT art. 487, §2º)."
+                    )
+                )
+            if rec.l10n_br_prejuizo_art_480 < 0:
+                raise ValidationError(
+                    _("O prejuízo do art. 480 não pode ser negativo.")
+                )
+            if tipo in ("antecipado_empregador", "antecipado_empregado"):
+                if not rec.l10n_br_data_termo_contrato:
+                    raise ValidationError(
+                        _(
+                            "Informe o Termo do Contrato a Prazo: a "
+                            "indenização do término antecipado (CLT arts. 479 "
+                            "e 480) depende dos dias que faltavam."
+                        )
+                    )
+                if rec.date_to and rec.l10n_br_data_termo_contrato <= rec.date_to:
+                    raise ValidationError(
+                        _(
+                            "O termo do contrato (%(termo)s) deve ser posterior "
+                            "ao desligamento (%(deslig)s) no término antecipado."
+                        )
+                        % {
+                            "termo": rec.l10n_br_data_termo_contrato,
+                            "deslig": rec.date_to,
+                        }
+                    )
 
     @api.constrains("l10n_br_fgts_saldo_conta")
     def _check_l10n_br_fgts_saldo_conta(self):
@@ -702,8 +871,56 @@ class HrPayslip(models.Model):
         """
         self.ensure_one()
         return (
-            self.l10n_br_tipo_rescisao in L10N_BR_TIPOS_RESCISAO_COM_AVISO_E_MULTA
+            self._l10n_br_fator_rescisao("aviso") > 0
             and self.l10n_br_aviso_previo == "indenizado"
+        )
+
+    def _l10n_br_regra_rescisao(self):
+        self.ensure_one()
+        return L10N_BR_REGRAS_RESCISAO.get(
+            self.l10n_br_tipo_rescisao, L10N_BR_REGRA_RESCISAO_PADRAO
+        )
+
+    def _l10n_br_fator_rescisao(self, verba):
+        """Fração devida da verba ('aviso', 'decimo' ou 'ferias') na causa."""
+        return self._l10n_br_regra_rescisao()[verba]
+
+    def _l10n_br_percentual_multa_fgts(self):
+        """Percentual da multa do FGTS da causa (0, 0.20 ou 0.40)."""
+        return self._l10n_br_regra_rescisao()["multa"]
+
+    def _l10n_br_motivo_desligamento_esocial(self):
+        """``mtvDeslig`` (tabela 19) da causa; False se não houver tipo."""
+        return self._l10n_br_regra_rescisao()["mtv"]
+
+    def _l10n_br_dias_restantes_termo(self):
+        """Dias corridos do desligamento (exclusive) até o termo do contrato."""
+        self.ensure_one()
+        if not (self.l10n_br_data_termo_contrato and self.date_to):
+            return 0
+        return max((self.l10n_br_data_termo_contrato - self.date_to).days, 0)
+
+    def _l10n_br_indenizacao_art_479(self, remuneracao_mensal):
+        """Metade da remuneração dos dias que faltavam até o termo (CLT art. 479).
+
+        Mês comercial de 30 dias, como o aviso prévio e o saldo de salário. Sem
+        arredondar: a regra salarial arredonda o valor.
+        """
+        self.ensure_one()
+        dias = self._l10n_br_dias_restantes_termo()
+        return remuneracao_mensal / 30 * dias / 2
+
+    def _l10n_br_desconto_art_480(self, remuneracao_mensal):
+        """Indenização do empregado ao empregador (CLT art. 480).
+
+        O prejuízo informado, limitado ao que o empregado receberia pelo art. 479
+        (art. 480, §1º) e a um mês de remuneração (art. 477, §5º).
+        """
+        self.ensure_one()
+        return min(
+            self.l10n_br_prejuizo_art_480,
+            self._l10n_br_indenizacao_art_479(remuneracao_mensal),
+            remuneracao_mensal,
         )
 
     def _l10n_br_data_projetada_rescisao(self):
@@ -823,6 +1040,10 @@ class HrPayslip(models.Model):
             "FERIAS_VENCIDAS",
             "ADICIONAL_FERIAS_VENCIDAS",
             "AVISO_PREVIO_INDENIZADO",
+            # TG-96: indenização do art. 479 e descontos dos arts. 480 e 487 §2º.
+            "INDENIZACAO_ART_479",
+            "DESCONTO_ART_480",
+            "DESCONTO_AVISO_PREVIO",
             "FGTS_AVISO",
             "FGTS",
             "FGTS_13",

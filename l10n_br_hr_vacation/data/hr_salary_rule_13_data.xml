@@ -299,14 +299,15 @@ result = categories.BASIC + categories.ALW - categories.DED
 # 57.155/65 art. 7º: "salvo na hipótese de rescisão com justa causa"). É
 # devido em qualquer outra hipótese, inclusive pedido de demissão
 # (Súmula 157 TST).
-result = payslip.l10n_br_tipo_rescisao != 'justa_causa'
+result = payslip._l10n_br_fator_rescisao('decimo') > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
+fator = payslip._l10n_br_fator_rescisao('decimo')
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
         </field>
     </record>
 </odoo>
