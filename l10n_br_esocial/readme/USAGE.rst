@@ -222,6 +222,12 @@ rescisão, o indicativo é ``S`` só quando a folha apurou a verba de aviso
 indenizado (sem justa causa ou acordo), e ``dtProjFimAPI`` é o desligamento mais
 os dias de aviso (Lei 12.506/2011). Sem o holerite vale o que foi digitado, e
 ``S`` exige a data projetada, igual ou posterior ao desligamento.
+Com o holerite, as linhas com valor e com código e natureza de rubrica eSocial
+na regra (aviso indenizado, 13º, férias e demais verbas da rescisão) saem em
+``verbasResc`` (um ``detVerbas`` por linha, ``ideDmDev`` do próprio evento); a
+linha com valor e sem essa configuração fica fora e é listada em **Avisos da
+geração**. ``dtAvPrv`` (data da concessão do aviso) não é gerada: a rescisão não
+a registra.
 
 Holerite estornado: o estorno (Devolução) e o holerite que ele desfez ficam
 fora de vigor e não vão ao eSocial: a geração do S-1200, do S-1210 e do S-2299

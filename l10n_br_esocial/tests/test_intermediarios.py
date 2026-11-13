@@ -909,6 +909,68 @@ class TestS2299(TestESocialIntermediarioBase):
             "<dtProjFimAPI>2025-02-02</dtProjFimAPI>", s2299.evento_id.xml_envio
         )
 
+    def _regra_rubrica(self, code, cod_rubr=None):
+        categoria = self.env["hr.salary.rule.category"].search(
+            [("code", "=", "ALW")], limit=1
+        ) or self.env["hr.salary.rule.category"].create(
+            {"name": "Provento", "code": "ALW"}
+        )
+        vals = {"name": code, "code": code, "category_id": categoria.id}
+        if cod_rubr:
+            vals.update(
+                {
+                    "l10n_br_esocial_cod_rubr": cod_rubr,
+                    "l10n_br_esocial_ide_tab_rubr": "1",
+                    "l10n_br_esocial_nat_rubr_id": self.env.ref(
+                        "l10n_br_esocial.nat_rubr_1000"
+                    ).id,
+                    "l10n_br_esocial_tp_rubr": "1",
+                }
+            )
+        return self.env["hr.salary.rule"].create(vals)
+
+    def _linha_rescisao(self, slip, regra, valor):
+        self.env["hr.payslip.line"].create(
+            {
+                "slip_id": slip.id,
+                "salary_rule_id": regra.id,
+                "name": regra.code,
+                "code": regra.code,
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "quantity": 1,
+                "amount": valor,
+                "rate": 100,
+            }
+        )
+
+    def test_s2299_verbas_rescisorias_levam_aviso_indenizado_e_reflexos(self):
+        """TG-103: o aviso indenizado e os reflexos saem em verbasResc/detVerbas."""
+        s2299 = self._s2299_rescisao()
+        slip = s2299.payslip_id
+        self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(slip, self._regra_rubrica("FERIAS_X", "FERIAS"), 1100.0)
+        self._linha_rescisao(slip, self._regra_rubrica("ZERADA_X", "ZERO"), 0.0)
+        self._linha_rescisao(slip, self._regra_rubrica("SEM_CONFIG_X"), 50.0)
+        with self._com_aviso_da_folha(True), mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
+        ):
+            data = s2299._to_esociallib_dict()
+        self.assertEqual(data["ind_pagto_api"], "S")
+        self.assertEqual(data["dt_proj_fim_api"], "2025-02-02")
+        (dm,) = data["verbas_resc"]
+        self.assertEqual(dm["ide_dm_dev"], s2299.get_ide_dm_dev())
+        (estab,) = dm["info_per_apur"]["ide_estab_lot"]
+        self.assertEqual(
+            [(d["cod_rubr"], d["vr_rubr"]) for d in estab["det_verbas"]],
+            [("AVISO", "3300.0"), ("FERIAS", "1100.0")],
+        )
+        self.assertIn("SEM_CONFIG_X", s2299.avisos)
+
+    def test_s2299_sem_holerite_nao_leva_verbas_rescisorias(self):
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        self.assertNotIn("verbas_resc", s2299._to_esociallib_dict())
+
     def test_s2299_gerar_xml(self):
         """Deve gerar XML via esociallib."""
         if not HAS_ESOCIALLIB:

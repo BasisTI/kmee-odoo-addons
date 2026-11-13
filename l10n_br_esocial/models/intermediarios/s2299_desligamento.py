@@ -1,10 +1,16 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+import logging
+
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, fields, models
 from odoo.exceptions import UserError
+
+from .s1200_remuneracao import CATEGORIAS_DECLARAVEIS
+
+_logger = logging.getLogger(__name__)
 
 
 class ESocialS2299(models.Model):
@@ -75,6 +81,90 @@ class ESocialS2299(models.Model):
                 return "S", self.dt_deslig + relativedelta(days=dias)
             return "N", False
         return self.ind_pagto_api or "N", self.dt_proj_fim_api
+
+    avisos = fields.Text(
+        string="Avisos da geração",
+        readonly=True,
+        copy=False,
+        help="Regras da rescisão com valor e sem código ou natureza de rubrica "
+        "eSocial: ficam fora das verbas rescisórias do S-2299.",
+    )
+
+    def get_ide_dm_dev(self):
+        """Identificador do demonstrativo das verbas rescisórias (ideDmDev).
+
+        O S-1210 de tpPgto 2 aponta para este mesmo identificador; por isso
+        sai do id do registro, como no S-1200.
+        """
+        self.ensure_one()
+        return "DEM%06d" % (self.id or 1)
+
+    def _build_verbas_resc(self):
+        """``verbasResc`` do holerite de rescisão: uma ``detVerbas`` por rubrica.
+
+        Entram as linhas com valor, código e natureza de rubrica eSocial, o que
+        inclui a verba de aviso prévio indenizado e os reflexos (13º, férias,
+        FGTS da rescisão). Linha com valor e sem configuração fica fora e é
+        avisada no campo ``avisos``.
+        """
+        self.ensure_one()
+        slip = self.payslip_id
+        if not slip:
+            self.avisos = False
+            return []
+        itens = []
+        sem_config = {}
+        for line in slip.line_ids:
+            rule = line.salary_rule_id
+            if not line.total:
+                continue
+            if (
+                not rule.l10n_br_esocial_nat_rubr_id
+                or not rule.l10n_br_esocial_cod_rubr
+            ):
+                if rule.category_id.code in CATEGORIAS_DECLARAVEIS:
+                    sem_config.setdefault(rule, []).append(line.total)
+                continue
+            itens.append(
+                {
+                    "cod_rubr": rule.l10n_br_esocial_cod_rubr,
+                    "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
+                    "vr_rubr": str(abs(line.total)),
+                }
+            )
+        if sem_config:
+            linhas = []
+            for regra in sem_config:
+                linhas.append(
+                    _(
+                        "Regra '%(regra)s' (%(code)s) com valor na rescisão e sem "
+                        "código ou natureza de rubrica eSocial: fora do S-2299."
+                    )
+                    % {"regra": regra.name, "code": regra.code}
+                )
+            self.avisos = "\n".join(linhas)
+            _logger.warning("eSocial S-2299 %s: %s", self.id, self.avisos)
+        else:
+            self.avisos = False
+        if not itens:
+            return []
+        company = self.company_id
+        cnpj_estab = "".join(c for c in (company.partner_id.vat or "") if c.isdigit())
+        return [
+            {
+                "ide_dm_dev": self.get_ide_dm_dev(),
+                "info_per_apur": {
+                    "ide_estab_lot": [
+                        {
+                            "tp_insc": 1,
+                            "nr_insc": cnpj_estab,
+                            "cod_lotacao": company.l10n_br_esocial_cod_lotacao or "1",
+                            "det_verbas": itens,
+                        }
+                    ],
+                },
+            }
+        ]
 
     def _get_event_type(self):
         return "S-2299"
@@ -147,5 +237,9 @@ class ESocialS2299(models.Model):
 
         if ind_pagto_api == "S":
             data["dt_proj_fim_api"] = str(dt_proj_fim_api)
+
+        verbas_resc = self._build_verbas_resc()
+        if verbas_resc:
+            data["verbas_resc"] = verbas_resc
 
         return data
