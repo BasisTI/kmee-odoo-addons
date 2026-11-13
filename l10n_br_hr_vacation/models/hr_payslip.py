@@ -124,11 +124,21 @@ class HrPayslip(models.Model):
         help="Base da multa de 40% (ou 20% no acordo) do FGTS (Lei "
         "8.036/90 art. 18 §1º; CLT art. 484-A, I, 'b'): "
         "total depositado na conta vinculada durante o contrato, conforme "
-        "o extrato oficial (FGTS Digital). Quando deixado em branco (0), a "
+        "o extrato oficial (FGTS Digital), posicionado ANTES do mês da "
+        "rescisão: o depósito do mês é somado pela regra. Não aceita valor "
+        "negativo. Zero e em branco são a mesma coisa: a "
         "regra usa o FALLBACK 8% x salário x meses trabalhados - uma "
         "ESTIMATIVA sem juros/correção monetária, que subestima o saldo "
         "real; preencher com o extrato sempre que disponível.",
     )
+
+    @api.constrains("l10n_br_fgts_saldo_conta")
+    def _check_l10n_br_fgts_saldo_conta(self):
+        for rec in self:
+            if rec.l10n_br_fgts_saldo_conta < 0:
+                raise ValidationError(
+                    _("O saldo do FGTS na conta vinculada não pode ser negativo.")
+                )
 
     @api.depends("l10n_br_ferias_allocation_id.number_of_days")
     def _compute_dias_direito_ferias(self):
@@ -152,7 +162,8 @@ class HrPayslip(models.Model):
     #
     # A "participação" de um holerite é o que ele entrega aos dependentes: do
     # mensal, o total do salário (SALARIO_BASE e SALARIO_MATERNIDADE) e dos
-    # adicionais fixos (periculosidade e insalubridade, TG-130); do recibo,
+    # adicionais fixos (periculosidade e insalubridade, TG-130) e o FGTS (base
+    # da multa da rescisão, TG-92); do recibo,
     # o gozo (dias e fim), a base e o INSS retido; 0 se cancelado ou de outra
     # estrutura. UM ÚNICO gancho
     # (write/create/unlink, a exclusão de linhas e o compute_sheet) compara a
@@ -186,13 +197,16 @@ class HrPayslip(models.Model):
             if slip.state != "cancel" and not slip.l10n_br_fora_de_vigor:
                 if slip._l10n_br_eh_mensal():
                     tipo = "mensal"
-                    valor = sum(
+                    salario = sum(
                         ln.total
                         for ln in slip.line_ids
                         if ln.code
                         in self._L10N_BR_CODIGOS_SALARIO_MENSAL
                         + self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS
                     )
+                    # O FGTS do mensal entra na base da multa da rescisão (TG-92).
+                    fgts = sum(ln.total for ln in slip.line_ids if ln.code == "FGTS")
+                    valor = (salario, fgts) if salario or fgts else 0.0
                 elif slip.struct_id.code == "FERIAS":
                     tipo = "ferias"
                     linhas = {ln.code: ln.total for ln in slip.line_ids}
@@ -587,6 +601,34 @@ class HrPayslip(models.Model):
 
         return calc_aviso_previo_dias(self.contract_id.date_start, self.date_to)
 
+    def _l10n_br_fgts_depositado_mensal(self, contract):
+        """FGTS já depositado nos holerites MENSAIS do mesmo período (sem cancelados).
+
+        Base da multa (Decreto 99.684/90, art. 9º, § 1º): o depósito do mês da
+        rescisão entra mesmo quando foi feito pelo mensal e a rescisão o
+        compensou no saldo de salário (mesmo conjunto de holerites de
+        ``_l10n_br_salario_pago_mensal``). Sem mensal sobreposto, devolve 0.
+        """
+        self.ensure_one()
+        if not self.date_from or not self.date_to:
+            return 0.0
+        mensais = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
+                ("date_from", "<=", self.date_to),
+                ("date_to", ">=", self.date_from),
+            ]
+        )
+        return sum(
+            mensais.mapped("line_ids")
+            .filtered(lambda ln: ln.code == "FGTS")
+            .mapped("total")
+        )
+
     def _l10n_br_aviso_indenizado_devido(self):
         """Aviso prévio indenizado é devido pelo empregador (RF-06).
 
@@ -718,6 +760,8 @@ class HrPayslip(models.Model):
             "ADICIONAL_FERIAS_VENCIDAS",
             "AVISO_PREVIO_INDENIZADO",
             "FGTS_AVISO",
+            "FGTS",
+            "FGTS_13",
             "MULTA_FGTS",
         ):
             localdict.setdefault(code, 0.0)

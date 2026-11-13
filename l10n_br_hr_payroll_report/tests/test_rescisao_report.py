@@ -10,7 +10,17 @@ Cobertura:
 """
 from datetime import date
 
+from lxml import etree
+
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
+
+
+def _numero(texto):
+    """Converte "R$ 1.234,56" ou "$ 1,234.56" em float (último separador = decimal)."""
+    limpo = "".join(c for c in texto if c.isdigit() or c in ".,")
+    pos = max(limpo.rfind("."), limpo.rfind(","))
+    inteiro = "".join(c for c in limpo[:pos] if c.isdigit())
+    return float(f"{inteiro}.{limpo[pos + 1:]}")
 
 
 class TestRescisaoReport(PayrollCommon):
@@ -63,3 +73,38 @@ class TestRescisaoReport(PayrollCommon):
         )
         self.assertIn("TERMO DE RESCISÃO", html_content.upper())
         self.assertIn(payslip.employee_id.name, html_content)
+
+    def test_rescisao_report_multa_fgts_informativa_e_total_fecha(self):
+        """TG-92: a multa do FGTS fica fora de Proventos e dos totais, e
+        Proventos - Descontos = Líquido Rescisório no TRCT impresso."""
+        payslip = self._create_rescisao_payslip()
+        payslip.write(
+            {
+                "l10n_br_tipo_rescisao": "sem_justa_causa",
+                "l10n_br_aviso_previo": "indenizado",
+            }
+        )
+        payslip.compute_sheet()
+        multa = payslip.line_ids.filtered(lambda ln: ln.code == "MULTA_FGTS")
+        self.assertGreater(multa.total, 0.0)
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
+        html = self.env["ir.actions.report"]._render_qweb_html(report.id, payslip.ids)[
+            0
+        ]
+        arvore = etree.fromstring(html, etree.HTMLParser())
+        # Linha da multa só na nota informativa, nunca na tabela de verbas.
+        codigos = [
+            td.text.strip()
+            for td in arvore.xpath(
+                "//table[@class='rescisao-table']//td[contains(@class, 'text-center')]/span"
+            )
+            if td.text
+        ]
+        self.assertNotIn("MULTA_FGTS", codigos)
+        self.assertTrue(arvore.xpath("//p[@class='multa-fgts-informativa']"))
+        totais = [
+            _numero("".join(td.itertext()))
+            for td in arvore.xpath("//tr[@class='rescisao-totals']/td[position()>1]")
+        ]
+        liquido = payslip.line_ids.filtered(lambda ln: ln.code == "NET").total
+        self.assertAlmostEqual(totais[0] - totais[1], liquido, places=2)

@@ -13,6 +13,7 @@ from datetime import date
 
 from dateutil.relativedelta import relativedelta
 
+from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
 from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import (
@@ -196,19 +197,32 @@ class TestTRCTSemJustaCausa(VacationCommon):
         self.assertAlmostEqualMoney(self.g("AVISO_PREVIO_INDENIZADO"), esperado)
         self.assertAlmostEqualMoney(self.g("FGTS_AVISO"), round_money(esperado * 0.08))
 
+    def _depositos_rescisao(self):
+        """Depósitos da rescisão (saldo, 13º e aviso), lidos das próprias linhas."""
+        g = self.g
+        return g("FGTS") + g("FGTS_13") + g("FGTS_AVISO")
+
     def test_08_multa_40_por_cento_fgts_fallback(self):
-        """Sem saldo informado: fallback 8% x salário x meses trabalhados."""
+        """Sem saldo informado: estimativa 8% x salário x meses + depósitos."""
         meses = calc_meses_trabalhados(self.date_start, self.date_to)
-        base_esperada = round_money(self.wage * 0.08 * meses)
-        multa_esperada = round_money(base_esperada * 0.40)
+        saldo_estimado = round_money(self.wage * 0.08 * meses)
+        self.assertGreater(self.g("FGTS_13"), 0)
+        self.assertGreater(self.g("FGTS_AVISO"), 0)
+        multa_esperada = round_money(
+            (saldo_estimado + self._depositos_rescisao()) * 0.40
+        )
         self.assertAlmostEqualMoney(self.g("MULTA_FGTS"), multa_esperada)
 
-    def test_09_multa_usa_saldo_informado_quando_preenchido(self):
-        """Com saldo real informado, o fallback não é usado."""
+    def test_09_multa_usa_saldo_informado_e_soma_os_depositos_da_rescisao(self):
+        """Com saldo real informado, o fallback não é usado; a base soma o FGTS
+        do saldo de salário, do 13º e do aviso indenizado (TG-92)."""
         self.rescisao.l10n_br_fgts_saldo_conta = 10000.00
         self.rescisao.compute_sheet()
+        depositos = self._depositos_rescisao()
+        self.assertGreater(depositos, 0)
         self.assertAlmostEqualMoney(
-            self._get_line_total(self.rescisao, "MULTA_FGTS"), 4000.00
+            self._get_line_total(self.rescisao, "MULTA_FGTS"),
+            round_money((10000.00 + depositos) * 0.40),
         )
 
     def test_10_net_soma_todas_as_verbas(self):
@@ -221,7 +235,6 @@ class TestTRCTSemJustaCausa(VacationCommon):
             + g("FERIAS_VENCIDAS")
             + g("ADICIONAL_FERIAS_VENCIDAS")
             + g("AVISO_PREVIO_INDENIZADO")
-            + g("MULTA_FGTS")
             - g("INSS")
             - g("INSS_13")
             - g("IRRF")
@@ -229,6 +242,17 @@ class TestTRCTSemJustaCausa(VacationCommon):
         )
         self.assertAlmostEqualMoney(g("NET"), esperado)
         self.assertGreater(g("NET"), 0.0)
+
+    def test_11_multa_informativa_fica_fora_do_liquido(self):
+        """TG-92: a multa vai à conta vinculada (guia do FGTS), não ao líquido."""
+        multa = self.g("MULTA_FGTS")
+        net = self.g("NET")
+        self.assertGreater(multa, 0.0)
+        # Saldo de FGTS maior muda a multa, nunca o líquido.
+        self.rescisao.l10n_br_fgts_saldo_conta = 50000.00
+        self.rescisao.compute_sheet()
+        self.assertGreater(self.g("MULTA_FGTS"), multa)
+        self.assertAlmostEqualMoney(self.g("NET"), net)
 
 
 @tagged("post_install", "-at_install")
@@ -276,8 +300,12 @@ class TestTiposDeRescisao(VacationCommon):
             self._get_line_total(acordo, "AVISO_PREVIO_INDENIZADO"),
             self._get_line_total(sem_justa, "AVISO_PREVIO_INDENIZADO") / 2,
         )
+        depositos_acordo = sum(
+            self._get_line_total(acordo, c) for c in ("FGTS", "FGTS_13", "FGTS_AVISO")
+        )
         self.assertAlmostEqualMoney(
-            self._get_line_total(acordo, "MULTA_FGTS"), 10000.00 * 0.20
+            self._get_line_total(acordo, "MULTA_FGTS"),
+            round_money((10000.00 + depositos_acordo) * 0.20),
         )
         # 13º e férias proporcionais NÃO são reduzidos no acordo (CLT
         # art. 484-A, II: demais verbas na integralidade).
@@ -285,6 +313,61 @@ class TestTiposDeRescisao(VacationCommon):
             self._get_line_total(acordo, "DECIMO_RESCISAO"),
             self._get_line_total(sem_justa, "DECIMO_RESCISAO"),
         )
+
+    def test_multa_soma_o_deposito_do_mensal_do_mes_da_rescisao(self):
+        """TG-92: o FGTS do mensal da mesma competência entra na base da multa,
+        mesmo com o saldo de salário compensado na rescisão (Decreto 99.684/90,
+        art. 9º, § 1º)."""
+        emp = self._create_employee("Rescisão com mensal")
+        contract = self._create_contract(emp, wage=3000.00, date_start=date(2023, 1, 1))
+        fim = date(2025, 6, 30)
+        mensal = self.env["hr.payslip"].create(
+            {
+                "name": "Mensal da rescisão",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_clt.id,
+                "date_from": fim.replace(day=1),
+                "date_to": fim,
+                "company_id": self.env.company.id,
+            }
+        )
+        mensal.compute_sheet()
+        fgts_mensal = self._get_line_total(mensal, "FGTS")
+        self.assertAlmostEqualMoney(fgts_mensal, round_money(3000.00 * 0.08))
+        resc = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão com mensal",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_rescisao.id,
+                "date_from": fim.replace(day=1),
+                "date_to": fim,
+                "l10n_br_tipo_rescisao": "sem_justa_causa",
+                "l10n_br_aviso_previo": "indenizado",
+                "l10n_br_fgts_saldo_conta": 10000.00,
+                "company_id": self.env.company.id,
+            }
+        )
+        resc.compute_sheet()
+        # O mensal já pagou o saldo: a rescisão não o paga nem deposita de novo.
+        self.assertEqual(self._get_line_total(resc, "SALDO_SALARIO"), 0.0)
+        self.assertEqual(self._get_line_total(resc, "FGTS"), 0.0)
+        depositos = (
+            fgts_mensal
+            + self._get_line_total(resc, "FGTS_13")
+            + self._get_line_total(resc, "FGTS_AVISO")
+        )
+        self.assertAlmostEqualMoney(
+            self._get_line_total(resc, "MULTA_FGTS"),
+            round_money((10000.00 + depositos) * 0.40),
+        )
+
+    def test_saldo_fgts_negativo_e_recusado(self):
+        """TG-92: saldo de FGTS negativo não é base válida de multa."""
+        payslip = self._rescisao("sem_justa_causa", aviso="indenizado")
+        with self.assertRaises(ValidationError):
+            payslip.l10n_br_fgts_saldo_conta = -1.0
 
     def test_pedido_demissao_sem_aviso_indenizado_nem_multa(self):
         """Súmula 157 TST: 13º devido; mas sem aviso indenizado nem multa."""

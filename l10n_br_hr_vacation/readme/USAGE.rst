@@ -52,3 +52,19 @@ pagos recebe a média, e não zero. Não há histórico do indicador no contrato
 vale o valor pago em cada mensal confirmado (mês de salário parcial entra pelo
 valor proporcional pago, como nas demais médias). O saldo de salário, que paga
 os dias trabalhados, usa só o adicional vigente.
+
+**Multa do FGTS na rescisão**
+
+A multa (40% na dispensa sem justa causa; 20% no acordo do art. 484-A) é
+informativa: aparece no TRCT, mas vai à conta vinculada pela guia do FGTS
+Digital e **não entra no líquido** (``NET``). A base soma o saldo da conta
+vinculada (``Saldo FGTS na Conta Vinculada``, do extrato; sem ele, a estimativa
+de 8% do salário por mês completo, sem juros) ao depósito do mês da rescisão: o
+FGTS do holerite mensal da mesma competência (mesmo quando a rescisão já o
+compensou no saldo de salário), o FGTS do saldo de salário desta rescisão, o
+do 13º e o do aviso prévio indenizado. Informe no campo o saldo **para fins rescisórios**, isto é,
+o do extrato anterior ao mês da rescisão (sem o depósito do mês, que a regra
+soma), para não contá-lo duas vezes. O saldo não pode ser negativo; zero é o
+mesmo que em branco e cai na estimativa. O
+FGTS do mensal integra a compensação entre holerites: alterá-lo recalcula a
+rescisão em rascunho e é recusado se ela já estiver confirmada.
