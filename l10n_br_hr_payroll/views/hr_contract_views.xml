@@ -15,6 +15,9 @@
                         required="l10n_br_insalubridade"
                     />
                 </group>
+                <group string="Jornada Noturna" name="l10n_br_hr_noturno">
+                    <field name="l10n_br_hora_noturna_reduzida" />
+                </group>
                 <group string="Encargos Patronais" name="l10n_br_hr_encargos">
                     <field name="l10n_br_hr_simples_anexo" />
                 </group>

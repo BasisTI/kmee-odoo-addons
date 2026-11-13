@@ -32,3 +32,7 @@ Rubricas novas:
 Por fim, holerite que diverge de uma apuração **fechada** não é validado sem
 justificativa registrada: fechar a competência e depois digitar outro número
 sem dizer por quê é o caminho mais curto para perder uma reclamatória.
+
+A hora noturna reduzida (52min30s) segue o campo **Hora Noturna Reduzida** do
+contrato (`l10n_br_hora_noturna_reduzida`, ligado por padrão): para quem não tem
+o direito (rural, convenção coletiva), a apuração e o holerite pagam o relógio.

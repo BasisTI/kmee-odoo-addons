@@ -22,6 +22,16 @@ class HrContract(models.Model):
         "para os empregados dessa atividade, ainda que o anexo preponderante "
         "seja outro. É eixo INDEPENDENTE da desoneração/CPRB.",
     )
+    l10n_br_hora_noturna_reduzida = fields.Boolean(
+        string="Hora Noturna Reduzida",
+        default=True,
+        help="Marcado: o trabalho noturno conta pela hora de 52min30s (CLT, "
+        "art. 73, § 1º), e o holerite e a ponte convertem as horas noturnas "
+        "(x 8/7). Desmarque para quem não tem esse direito: trabalhador rural "
+        "(Lei 5.889/73, art. 7º: hora de 60 min com adicional de 25%) ou "
+        "convenção coletiva que afaste a redução. Súmula 60 do TST "
+        "(prorrogação após as 5h) não é tratada.",
+    )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
         help="Adicional de periculosidade (30% do salário base)",

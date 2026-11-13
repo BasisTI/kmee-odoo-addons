@@ -35,9 +35,14 @@ class HrPayslip(models.Model):
     )
     l10n_br_usar_hora_reduzida = fields.Boolean(
         string="Usar Hora Noturna Reduzida",
+        compute="_compute_l10n_br_usar_hora_reduzida",
+        store=True,
+        readonly=False,
         help="Hora noturna = 52min30s: cada hora de relógio noturna conta como "
         "60/52,5 = 8/7 de hora (CLT, art. 73, § 1º). A conversão incide sobre as "
-        "Horas Noturnas, que são de relógio.",
+        "Horas Noturnas, que são de relógio. Vem ligada para o contrato com "
+        "direito à hora reduzida (campo do contrato) e pode ser ajustada no "
+        "holerite.",
     )
     l10n_br_horas_noturnas_computadas = fields.Float(
         string="Horas Noturnas Computadas",
@@ -186,6 +191,16 @@ class HrPayslip(models.Model):
                         fim=rec.date_to,
                     )
                 )
+
+    @api.depends("contract_id.l10n_br_hora_noturna_reduzida")
+    def _compute_l10n_br_usar_hora_reduzida(self):
+        """Segue o contrato; sem contrato, vale o padrão (urbano, art. 73)."""
+        for rec in self:
+            rec.l10n_br_usar_hora_reduzida = (
+                rec.contract_id.l10n_br_hora_noturna_reduzida
+                if rec.contract_id
+                else True
+            )
 
     @api.depends("l10n_br_horas_noturnas", "l10n_br_usar_hora_reduzida")
     def _compute_horas_noturnas_computadas(self):

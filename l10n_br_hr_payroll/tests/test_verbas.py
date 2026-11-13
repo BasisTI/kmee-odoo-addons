@@ -105,16 +105,16 @@ class TestAdicionalNoturno(PayrollCommon):
     """Testes do adicional noturno (art. 73 CLT)."""
 
     def test_adicional_noturno_20_porcento(self):
-        """Adicional noturno = 20% sobre as horas noturnas (sem hora reduzida)."""
+        """Adicional noturno = 20% sobre as horas noturnas, com a hora reduzida."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00)
         payslip = self._create_payslip(emp, contract)
         payslip.write({"l10n_br_horas_noturnas": 176})
         payslip.compute_sheet()
-        self.assertFalse(payslip.l10n_br_usar_hora_reduzida)
+        self.assertTrue(payslip.l10n_br_usar_hora_reduzida)
         adicional = self._get_line_total(payslip, "ADICIONAL_NOTURNO")
         divisor = contract._l10n_br_divisor_horas_mensais()
-        esperado = (3000.00 / divisor) * 0.20 * 176
+        esperado = (3000.00 / divisor) * 0.20 * 176 * 8 / 7
         self.assertAlmostEqualMoney(adicional, esperado)
 
     def _adicional_noturno(self, horas, reduzida, wage=3500.00):
@@ -170,6 +170,45 @@ class TestAdicionalNoturno(PayrollCommon):
         self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 7.0)
         payslip.l10n_br_usar_hora_reduzida = True
         self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 8.0)
+
+
+class TestHoraReduzidaPorContrato(PayrollCommon):
+    """TG-128: a hora reduzida segue o contrato e é desligável por ele."""
+
+    def _holerite(self, direito, horas=40):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.00)
+        contract.l10n_br_hora_noturna_reduzida = direito
+        payslip = self._create_payslip(emp, contract)
+        payslip.write({"l10n_br_horas_noturnas": horas})
+        payslip.compute_sheet()
+        return payslip, 3500.00 / contract._l10n_br_divisor_horas_mensais()
+
+    def test_contrato_novo_tem_direito_por_padrao(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.00)
+        self.assertTrue(contract.l10n_br_hora_noturna_reduzida)
+
+    def test_horas_digitadas_a_mao_saem_reduzidas(self):
+        payslip, hora = self._holerite(True)
+        self.assertTrue(payslip.l10n_br_usar_hora_reduzida)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADICIONAL_NOTURNO"),
+            hora * 0.20 * 40 * 8 / 7,
+        )
+
+    def test_contrato_sem_direito_paga_o_relogio(self):
+        payslip, hora = self._holerite(False)
+        self.assertFalse(payslip.l10n_br_usar_hora_reduzida)
+        self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 40.0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "ADICIONAL_NOTURNO"), hora * 0.20 * 40
+        )
+
+    def test_holerite_pode_ajustar_o_caso(self):
+        payslip, _hora = self._holerite(True)
+        payslip.l10n_br_usar_hora_reduzida = False
+        self.assertAlmostEqual(payslip.l10n_br_horas_noturnas_computadas, 40.0)
 
 
 class TestPericulosidadeInsalubridade(PayrollCommon):
