@@ -137,8 +137,11 @@ result = payslip.l10n_br_abono_pecuniario or payslip.l10n_br_dias_abono > 0
 # RF-19: dias vendidos vêm de l10n_br_dias_ferias_vendidas, que já resolve
 # o caminho novo (l10n_br_dias_abono, com alocação/fracionamento) e o
 # legado (30 - dias gozados, sem alocação, venda fixa de 1/3 de 30 dias).
+# TG-94: mesma remuneração das férias (CLT art. 143 §1º): salário + média das
+# verbas variáveis habituais (RF-18) + adicionais fixos, por dia vendido.
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 dias_vendidos = payslip.l10n_br_dias_ferias_vendidas
-result = tools.br.round_money(((contract.wage + tools.br.adicionais_fixos(contract)) / 30) * dias_vendidos)
+result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract)) / 30) * dias_vendidos)
         </field>
     </record>
 

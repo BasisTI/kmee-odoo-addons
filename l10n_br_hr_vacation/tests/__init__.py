@@ -18,3 +18,4 @@ from . import test_dsr_ferias
 from . import test_adicionais_fixos_integridade
 from . import test_avos_13_aviso_projetado
 from . import test_fgts_13_primeira_parcela_rescisao
+from . import test_abono_medias
