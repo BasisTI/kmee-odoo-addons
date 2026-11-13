@@ -329,32 +329,28 @@ class TestEstornoEsocial(ESocialCicloCommon):
         payslip.action_esocial_gerar_s1200()
         self.assertTrue(payslip.l10n_br_esocial_s1200_id)
 
-    # ── Estorno cancelado ──────────────────────────────────────────────────
+    # ── Estorno não pode ser cancelado (TG-90#P2) ──────────────────────────
 
-    def test_estorno_cancelado_antes_da_retificacao_apaga_o_aviso(self):
+    def test_estorno_nao_pode_ser_cancelado_e_o_aviso_permanece(self):
         if not HAS_ESOCIALLIB:
             self.skipTest("esociallib não instalada")
         original = self._criar_payslip()
         original.action_esocial_gerar_s1200()
         estorno = self._estornar(original)
         self.assertTrue(original.l10n_br_esocial_a_retificar)
-        estorno.write({"state": "cancel"})
-        self.assertFalse(original.l10n_br_fora_de_vigor)
-        self.assertFalse(original.l10n_br_esocial_a_retificar)
+        with self.assertRaisesRegex(UserError, "não pode ser cancelado"):
+            estorno.write({"state": "cancel"})
+        with self.assertRaisesRegex(UserError, "não pode ser cancelado"):
+            estorno.action_payslip_cancel()
+        self.assertTrue(original.l10n_br_fora_de_vigor)
+        self.assertTrue(original.l10n_br_esocial_a_retificar)
 
-    def test_estorno_cancelado_depois_da_retificacao_deixa_o_original_sem_evento(
-        self,
-    ):
+    def test_estorno_nao_pode_ser_cancelado_depois_da_retificacao(self):
         if not HAS_ESOCIALLIB:
             self.skipTest("esociallib não instalada")
         original, s1200_orig, novo = self._cenario_s1200_aceito()
         novo.action_esocial_gerar_s1200()
         novo.l10n_br_esocial_s1200_id.evento_id.registrar_aceite(nr_recibo=RECIBO_RETIF)
-        original.refunded_id.write({"state": "cancel"})
-        self.assertFalse(original.l10n_br_fora_de_vigor)
-        conferencia = self.env["l10n_br.esocial.conferencia"].create(
-            {"company_id": self.company.id, "per_apur": "2024-03"}
-        )
-        # O original voltou a valer, mas o evento dele foi retificado pelo do
-        # novo: a conferência o aponta como sem evento aceito.
-        self.assertIn(original, conferencia.payslip_sem_evento_ids)
+        with self.assertRaisesRegex(UserError, "não pode ser cancelado"):
+            original.refunded_id.write({"state": "cancel"})
+        self.assertTrue(original.l10n_br_fora_de_vigor)

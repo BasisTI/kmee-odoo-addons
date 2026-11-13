@@ -34,6 +34,16 @@ vai de segunda a domingo.
 * Semana que atravessa a virada do mês é descontada uma vez só, no holerite que
   traz a primeira falta dela.
 * Falta justificada não entra na contagem.
+* Falta descoberta depois do fechamento do mês em que ocorreu: lance-a no
+  holerite do mês seguinte com a data real e a marca *Competência anterior*. O
+  salário do dia é descontado no holerite atual (pela contagem de faltas), mas o
+  repouso só se desconta se a semana ainda não foi descontada por falta de
+  outro holerite. Falta sem data nunca ocupa uma semana que outro holerite já
+  descontou.
+* Criar um recibo de férias, validar, recusar ou alterar um afastamento
+  previdenciário muda quais faltas valem: os holerites do empregado que mudam
+  de desconto de DSR em rascunho são recalculados na hora; se algum já está
+  confirmado, a ação é recusada até voltá-lo para rascunho.
 
 **Estrutura mensal e médias**
 
@@ -132,7 +142,9 @@ holerites. O período aceita então um holerite novo, calculado do zero.
 * Estornar muda a participação do original: holerites dependentes (DSR da
   semana, férias, rescisão) em rascunho são recalculados; confirmado recusa o
   estorno até voltar a rascunho, como em qualquer outra alteração.
-* Cancelar o estorno devolve a vigência ao original.
+* O holerite de estorno **não pode ser cancelado** (mesmo com o cancelamento de
+  holerites liberado em *Folha de pagamento*): quem errou o estorno calcula um
+  holerite novo no período, que agora aceita.
 * Os eventos do eSocial já gerados (S-1200 e semelhantes) **não** são
   retificados pelo estorno: isso fica para o usuário.
 
