@@ -969,6 +969,10 @@ class TestS2299(TestESocialIntermediarioBase):
         self._linha_rescisao(
             slip, self._regra_rubrica("INSS_X", "INSS", "DED", "2"), -250.0
         )
+        # A folha grava o desconto da rescisão com qualquer sinal.
+        self._linha_rescisao(
+            slip, self._regra_rubrica("IRRF_X", "IRRF", "DED", "2"), 80.0
+        )
         self._linha_rescisao(slip, self._regra_rubrica("ZERADA_X", "ZERO"), 0.0)
         data = self._verbas(s2299)
         self.assertEqual(data["ind_pagto_api"], "S")
@@ -978,7 +982,12 @@ class TestS2299(TestESocialIntermediarioBase):
         # indApurIR é obrigatório a partir de 07/2021; valores sem sinal.
         self.assertEqual(
             self._detalhes(data),
-            [("AVISO", "3300.0", 0), ("FERIAS", "1100.0", 0), ("INSS", "250.0", 0)],
+            [
+                ("AVISO", "3300.0", 0),
+                ("FERIAS", "1100.0", 0),
+                ("INSS", "250.0", 0),
+                ("IRRF", "80.0", 0),
+            ],
         )
         self.assertFalse(s2299.avisos)
 
@@ -1001,7 +1010,7 @@ class TestS2299(TestESocialIntermediarioBase):
         evento.write({"origem_model": s2299._name, "origem_id": s2299.id})
         self.assertIn("FERIAS_SEM", evento.avisos)
 
-    def test_s2299_linha_de_sinal_contrario_nao_vira_positiva(self):
+    def test_s2299_provento_negativo_nao_vira_positivo(self):
         s2299 = self._s2299_rescisao()
         slip = s2299.payslip_id
         self._linha_rescisao(slip, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
@@ -1009,7 +1018,7 @@ class TestS2299(TestESocialIntermediarioBase):
         data = self._verbas(s2299)
         self.assertEqual([d[0] for d in self._detalhes(data)], ["AVISO"])
         self.assertIn("SALDO_X", s2299.avisos)
-        self.assertIn("sinal contrário", s2299.avisos)
+        self.assertIn("valor negativo", s2299.avisos)
 
     def test_s2299_rescisao_fora_de_done_nao_declara_verbas(self):
         s2299 = self._s2299_rescisao()

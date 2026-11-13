@@ -280,8 +280,8 @@ indenizadas e terço, 13º rescisório, saldo de salário e descontos. ``indApur
 (0, apuração normal) e ``infoAgNocivo`` saem conforme o leiaute S-1.3;
 ``grauExp`` é 1 (não ensejador), ou o grau do adicional de aposentadoria
 especial do contrato quando o módulo de SST está instalado. Linha com valor e
-sem código ou natureza de rubrica, ou de sinal contrário ao da rubrica (provento
-negativo, desconto positivo), fica fora e é listada em **Avisos da geração** (na
+sem código ou natureza de rubrica, ou provento com valor negativo (o desconto
+vale pelo módulo, em qualquer sinal), fica fora e é listada em **Avisos da geração** (na
 tela do evento e no log): nada com valor some em silêncio. A multa do FGTS
 (``MULTA_FGTS``) vai à conta vinculada e não é verba paga ao trabalhador, por
 isso não entra no ``verbasResc``. Rescisão que não está confirmada, e os

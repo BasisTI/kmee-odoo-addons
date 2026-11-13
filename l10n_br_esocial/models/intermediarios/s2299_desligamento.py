@@ -93,7 +93,7 @@ class ESocialS2299(models.Model):
         copy=False,
         help="Linhas da rescisão com valor que ficaram fora das verbas "
         "rescisórias do S-2299: regra sem código ou natureza de rubrica "
-        "eSocial, ou valor com sinal contrário ao da rubrica.",
+        "eSocial, ou provento com valor negativo.",
     )
 
     def get_ide_dm_dev(self, slip):
@@ -193,24 +193,22 @@ class ESocialS2299(models.Model):
                         }
                     )
                 continue
-            # vrRubr não tem sinal: o provento (tpRubr 1) é positivo e o
-            # desconto (tpRubr 2) negativo no holerite. Sinal contrário não
-            # se declara trocado em silêncio.
+            # vrRubr não tem sinal. O desconto (tpRubr 2) já é a dedução pelo
+            # tipo da rubrica e a folha o grava com qualquer sinal (o INSS da
+            # rescisão é positivo), então vale o módulo. Provento negativo, que
+            # seria declarado como positivo, não se troca em silêncio.
             tp_rubr = rule.l10n_br_esocial_tp_rubr
-            if (tp_rubr == "1" and line.total < 0) or (
-                tp_rubr == "2" and line.total > 0
-            ):
+            if tp_rubr == "1" and line.total < 0:
                 sem_config.append(
                     _(
-                        "Regra '%(regra)s' (%(code)s) com valor %(valor).2f de "
-                        "sinal contrário ao da rubrica (tpRubr %(tp)s): fora do "
+                        "Regra '%(regra)s' (%(code)s) com valor negativo "
+                        "%(valor).2f em rubrica de provento (tpRubr 1): fora do "
                         "S-2299; ajuste a rescisão."
                     )
                     % {
                         "regra": rule.name,
                         "code": rule.code,
                         "valor": line.total,
-                        "tp": tp_rubr,
                     }
                 )
                 continue
