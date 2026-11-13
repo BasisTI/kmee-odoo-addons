@@ -397,18 +397,7 @@ class HrPayslip(models.Model):
         antes = self._l10n_br_dsr_participacao(empregados)
         vals_list = [dict(v) for v in vals_list]
         for vals in vals_list:
-            if vals.get("contract_id") and "l10n_br_usar_hora_reduzida" not in vals:
-                vals["l10n_br_usar_hora_reduzida"] = (
-                    self.env["hr.contract"]
-                    .browse(vals["contract_id"])
-                    .l10n_br_hora_noturna_reduzida
-                )
-        slips = super().create(vals_list)
-        self._l10n_br_dsr_reconciliar(antes, empregados | slips.employee_id, slips)
-        return slips
-
-    def write(self, vals):
-        if vals.get("state") == "cancel":
+            if vals.get("state") == "cancel":
             self._l10n_br_recusar_cancelar_estorno()
         if (
             not self
@@ -711,30 +700,52 @@ class HrPayslip(models.Model):
             competencia.year, competencia.month, self._l10n_br_feriados_competencia()
         )
 
-    def _l10n_br_adicionais_fixos(self, contract):
-        """Periculosidade e insalubridade MENSAIS CHEIAS do contrato (TG-88).
+    def _l10n_br_adicionais_fixos_vigentes(self, contract, dias=30):
+        """Periculosidade e insalubridade VIGENTES no contrato, por ``dias``.
 
-        Adicionais contratuais fixos: percentual constante do salário (30% da
-        periculosidade; 10/20/40% do salário mínimo na insalubridade), sem
-        proporcionalidade por dias. Integram a remuneração que serve de base
-        a férias, 13º, aviso prévio e demais verbas rescisórias (CLT art. 142,
-        § 5º; Súmulas 132 e 139 do TST), ao lado da média das variáveis.
-        Não acumulam (Súmula 364 TST), mas cada flag é lida de forma
-        independente, como nas rubricas do holerite mensal.
+        Percentual constante do salário (30% da periculosidade; 10/20/40% do
+        salário mínimo na insalubridade). Não acumulam (Súmula 364 TST), mas
+        cada flag é lida de forma independente, como nas rubricas do holerite
+        mensal. Cada rubrica é arredondada sozinha, como a rubrica do mensal
+        (``ADICIONAL_PERICULOSIDADE`` e ``ADICIONAL_INSALUBRIDADE``): a soma
+        dos valores arredondados é o que o mensal pagou (TG-130).
         """
         self.ensure_one()
         total = 0.0
         if contract.l10n_br_periculosidade:
-            total += contract.wage * 0.30
+            total += salary_rules_br.round_money(contract.wage * 0.30 * dias / 30)
         if contract.l10n_br_insalubridade:
             salario_minimo = self.env["l10n_br.hr.payroll.inss.faixa"]._salario_minimo(
                 self._get_competencia()
             )
             percentuais = {"minimo": 0.10, "medio": 0.20, "maximo": 0.40}
-            total += salario_minimo * percentuais.get(
-                contract.l10n_br_grau_insalubridade, 0.10
+            total += salary_rules_br.round_money(
+                salario_minimo
+                * percentuais.get(contract.l10n_br_grau_insalubridade, 0.10)
+                * dias
+                / 30
             )
         return salary_rules_br.round_money(total)
+
+    def _l10n_br_adicionais_fixos(self, contract):
+        """Periculosidade e insalubridade na remuneração-base das verbas.
+
+        Integram a base de férias, 13º, aviso prévio e demais verbas
+        rescisórias (CLT art. 142, § 5º; Súmulas 132 e 139 do TST). Valem o
+        MAIOR entre o valor mensal cheio vigente no contrato e a média do
+        que foi pago nos mensais confirmados dos últimos 12 meses (CLT art.
+        142, § 6º): quem tem o adicional hoje recebe o valor cheio; quem o
+        perdeu depois de meses pagos recebe a média, não zero (TG-130).
+
+        O histórico é o pago nos holerites mensais confirmados
+        (``_l10n_br_media_habitual``): não há histórico do indicador no
+        contrato. Mês de salário parcial (admissão, afastamento) entra com o
+        valor proporcional pago, como nas demais médias.
+        """
+        self.ensure_one()
+        vigente = self._l10n_br_adicionais_fixos_vigentes(contract)
+        media = self._l10n_br_media_habitual(self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS)
+        return max(vigente, media)
 
     def _l10n_br_salario_pago_mensal(self, contract, com_adicionais=False):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
@@ -1040,6 +1051,11 @@ class HrPayslip(models.Model):
             salario_pago_mensal=salario_pago_mensal,
             # Adicionais fixos na remuneração-base das verbas (TG-88).
             adicionais_fixos=self._l10n_br_adicionais_fixos,
+            # Os mesmos adicionais pelos dias do mês, rubrica a rubrica, para
+            # compensar o que o mensal pagou sem resíduo (TG-130).
+            adicionais_fixos_dias=lambda contrato, dias: (
+                self._l10n_br_adicionais_fixos_vigentes(contrato, dias)
+            ),
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,

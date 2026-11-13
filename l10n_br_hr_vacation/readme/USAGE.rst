@@ -30,3 +30,25 @@ excluir um recibo de férias, os holerites mensais e as rescisões sobrepostos e
 rascunho/verificação são recalculados na mesma transação; se algum já estiver
 confirmado, a alteração do recibo é recusada com mensagem (volte o confirmado
 para rascunho primeiro).
+
+**Periculosidade e insalubridade entre mensal e rescisão**
+
+O que o holerite mensal paga de periculosidade e insalubridade conta como
+participação do mensal, ao lado do salário, no mesmo ponto único da
+compensação acima. Se só o adicional do mensal muda (por exemplo, o indicador
+do contrato é marcado entre o cálculo do mensal e o da rescisão), a rescisão
+em rascunho/verificação é recalculada na mesma transação; a rescisão
+confirmada recusa a alteração (volte-a para rascunho antes). O saldo de
+salário compensa o mensal parcela a parcela (salário, salário-maternidade e
+cada adicional, arredondados como no mensal), sem resíduo de R$ 0,01.
+
+**Média dos adicionais em férias, 13º e rescisão**
+
+A base de férias, 13º, aviso prévio e verbas rescisórias leva o MAIOR entre o
+adicional mensal cheio vigente no contrato e a média do que foi pago nos
+holerites mensais confirmados dos últimos 12 meses (CLT art. 142, § 6º): quem
+tem o adicional hoje recebe o valor cheio; quem o perdeu depois de meses
+pagos recebe a média, e não zero. Não há histórico do indicador no contrato:
+vale o valor pago em cada mensal confirmado (mês de salário parcial entra pelo
+valor proporcional pago, como nas demais médias). O saldo de salário, que paga
+os dias trabalhados, usa só o adicional vigente.
