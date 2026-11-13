@@ -90,3 +90,18 @@ dia vendido (CLT art. 143 §1º): salário, mais a média das verbas variáveis
 habituais dos holerites mensais confirmados (Súmula 45 do TST), mais os
 adicionais fixos do contrato. Abono e 1/3 do abono não entram na base de INSS
 nem de FGTS; o 1/3 do abono segue tributável pelo IRRF (COSIT 209/2021).
+
+**Férias de período aquisitivo vencido**
+
+A alocação de férias vale até o fim do período concessivo, os 12 meses
+seguintes ao fim do período aquisitivo (CLT art. 134): o tipo Férias aparece no
+seletor do tipo de folga, com o saldo da alocação, e a ausência é aceita sem
+criar um segundo saldo sem data final. O saldo e os dias tomados seguem a mesma
+regra do padrão do ``hr_holidays``, só com a validade estendida; o total
+consumido por alocação não passa dos dias de direito, qualquer que seja a ordem
+em que as ausências são lançadas. ``date_to`` da alocação continua sendo o fim
+do período aquisitivo (dobra, férias vencidas e recibo o leem).
+
+Depois do concessivo as férias são devidas em dobro (CLT art. 137): o módulo só
+aplica a dobra na rescisão (férias vencidas); a ausência, ou a parte dela que
+passa do concessivo, não é aceita pelo saldo vencido.
