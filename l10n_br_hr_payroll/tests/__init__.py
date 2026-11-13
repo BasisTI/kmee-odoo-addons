@@ -21,3 +21,4 @@ from . import test_estorno
 from . import test_gilrat_estabelecimento
 from . import test_dsr_afastamento_tardia
 from . import test_hora_reduzida_migracao
+from . import test_hora_reduzida_contrato

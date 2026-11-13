@@ -397,7 +397,33 @@ class HrPayslip(models.Model):
         antes = self._l10n_br_dsr_participacao(empregados)
         vals_list = [dict(v) for v in vals_list]
         for vals in vals_list:
-            if vals.get("state") == "cancel":
+            if vals.get("contract_id") and "l10n_br_usar_hora_reduzida" not in vals:
+                vals["l10n_br_usar_hora_reduzida"] = (
+                    self.env["hr.contract"]
+                    .browse(vals["contract_id"])
+                    .l10n_br_hora_noturna_reduzida
+                )
+        slips = super().create(vals_list)
+        self._l10n_br_dsr_reconciliar(antes, empregados | slips.employee_id, slips)
+        return slips
+
+    def write(self, vals):
+        if vals.get("contract_id") and "l10n_br_usar_hora_reduzida" not in vals:
+            # Trocar o contrato de um rascunho leva a marca do contrato novo,
+            # também fora do formulário (o onchange não roda no ``write``).
+            # Holerite confirmado guarda o que valeu.
+            abertos = self.filtered(lambda s: s.state in ("draft", "verify"))
+            if abertos and abertos != self:
+                (self - abertos).write(vals)
+                return abertos.write(vals)
+            if abertos:
+                vals = dict(
+                    vals,
+                    l10n_br_usar_hora_reduzida=self.env["hr.contract"]
+                    .browse(vals["contract_id"])
+                    .l10n_br_hora_noturna_reduzida,
+                )
+        if vals.get("state") == "cancel":
             self._l10n_br_recusar_cancelar_estorno()
         if (
             not self

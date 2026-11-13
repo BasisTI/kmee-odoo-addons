@@ -274,6 +274,16 @@ módulo não guarda histórico de endereço. Ao transferir um empregado de filia
 recalcular um holerite de competência anterior usa o RAT/FAP da filial nova, não
 o da filial onde ele estava na época; holerites confirmados não mudam.
 
+**Hora noturna reduzida e percentual do noturno no contrato**
+
+A marca "Usar Hora Noturna Reduzida" do holerite em rascunho segue o contrato,
+inclusive ao trocar o contrato do holerite (no formulário e na gravação
+direta); holerite confirmado guarda o que valeu. O gerente de contratos sem
+acesso à folha pode alterar a marca do contrato. O "Percentual do Adicional
+Noturno" aceita valores maiores que 0 e até 100. Só a regra salarial padrão do
+adicional noturno lê esse percentual: regra personalizada usa a própria fórmula
+e o ignora.
+
 Bug Tracker
 ===========
 
