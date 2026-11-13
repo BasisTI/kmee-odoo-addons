@@ -14,7 +14,7 @@
                         </group>
                         <group string="Adicional Noturno">
                             <field name="l10n_br_horas_noturnas" />
-                            <field name="l10n_br_usar_hora_reduzida" />
+                            <field name="l10n_br_usar_hora_reduzida" readonly="1" />
                             <field name="l10n_br_horas_noturnas_computadas" />
                         </group>
                         <group string="Faltas">

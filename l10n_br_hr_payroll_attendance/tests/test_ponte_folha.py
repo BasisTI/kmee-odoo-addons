@@ -174,6 +174,19 @@ class TestPonteFolha(TransactionCase):
             holerite.l10n_br_horas_noturnas_computadas, 8 / 7, places=2
         )
 
+    def test_contrato_sem_direito_nao_converte_na_ponte(self):
+        """TG-128: rural/convenção: a ponte não força 8/7, paga o relógio."""
+        self.contract.l10n_br_hora_noturna_reduzida = False
+        self._marcar(2, (22, 0), (23, 0))
+        self._apurar_marco()
+        holerite = self._holerite()
+        self.assertFalse(holerite.l10n_br_usar_hora_reduzida)
+        self.assertAlmostEqual(holerite.l10n_br_horas_noturnas, 1.0, places=2)
+        self.assertAlmostEqual(
+            holerite.l10n_br_horas_noturnas_computadas, 1.0, places=2
+        )
+        self.assertGreater(self._valor(holerite, "ADICIONAL_NOTURNO"), 0.0)
+
     def test_faltas_vem_da_apuracao(self):
         """Março de 2026 tem 22 dias úteis; sem marcação, todos são falta."""
         self._apurar_marco()

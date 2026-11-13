@@ -30,7 +30,7 @@ Implementa os cálculos de:
 * IRRF (tabela progressiva por vigência, desconto simplificado e redutor)
 * FGTS (8% CLT, 2% aprendiz)
 * Hora extra 50% e 100%
-* Adicional noturno (20%) sobre as horas noturnas pela hora reduzida (52min30s, art. 73 §1º): as horas informadas são de relógio e a conversão (x 8/7) é feita uma vez só
+* Adicional noturno (20%) sobre as horas noturnas pela hora reduzida (52min30s, art. 73 §1º): as horas informadas são de relógio e a conversão (x 8/7) é feita uma vez só. A hora reduzida vem ligada em todo contrato e se desliga no campo "Hora Noturna Reduzida" do contrato (rural, convenção); a prorrogação após as 5h (Súmula 60 do TST) não é tratada
 * Adicional de periculosidade (30%)
 * Adicional de insalubridade (10%, 20%, 40% do salário mínimo)
 * Salário família
