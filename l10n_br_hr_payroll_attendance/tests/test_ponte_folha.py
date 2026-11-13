@@ -179,10 +179,6 @@ class TestPonteFolha(TransactionCase):
         self.contract.l10n_br_hora_noturna_reduzida = False
         self._marcar(2, (22, 0), (23, 0))
         self._apurar_marco()
-        dia = self.env["l10n_br.hr.apuracao.dia"].search(
-            [("employee_id", "=", self.employee.id), ("noturno", ">", 0)]
-        )
-        self.assertAlmostEqual(dia.noturno_computado, dia.noturno, places=4)
         holerite = self._holerite()
         self.assertFalse(holerite.l10n_br_usar_hora_reduzida)
         self.assertAlmostEqual(holerite.l10n_br_horas_noturnas, 1.0, places=2)

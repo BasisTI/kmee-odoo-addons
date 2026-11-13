@@ -156,11 +156,12 @@ class HrPayslip(models.Model):
             slip.l10n_br_horas_extras_50 = totais["he_50"]
             slip.l10n_br_horas_extras_100 = totais["he_100"]
             slip.l10n_br_horas_noturnas = totais["noturno"]
-            # As horas chegam de relógio; a apuração já diz se a hora reduzida
-            # vale (computado > relógio). A conversão fica no holerite, uma só.
+            # As horas chegam de relógio e a conversão fica no holerite, uma só.
+            # Quem tem direito à hora reduzida vem do contrato (TG-128): a ponte
+            # não força 8/7 para rural nem para convenção que a afaste.
             if totais["noturno"]:
                 slip.l10n_br_usar_hora_reduzida = (
-                    totais["noturno_computado"] > totais["noturno"]
+                    slip.contract_id.l10n_br_hora_noturna_reduzida
                 )
             datas_falta = dias.filtered("falta_injustificada").mapped("date")
             # A contagem e as datas juntas: com a data, o DSR é descontado
