@@ -9,12 +9,12 @@ from odoo import api, fields, models
 class HrLeaveType(models.Model):
     _inherit = "hr.leave.type"
 
-    def get_allocation_data(self, employees, target_date=None):
+    def get_allocation_data(self, employees, *args, **kwargs):
         """Saldo exibido e validação da ausência até o fim do concessivo."""
         Allocation = self.env["hr.leave.allocation"]
         originais = Allocation._l10n_br_estender_concessivo(employees)
         try:
-            return super().get_allocation_data(employees, target_date=target_date)
+            return super().get_allocation_data(employees, *args, **kwargs)
         finally:
             Allocation._l10n_br_restaurar_concessivo(originais)
 
