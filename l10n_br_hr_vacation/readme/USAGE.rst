@@ -62,7 +62,9 @@ vinculada (``Saldo FGTS na Conta Vinculada``, do extrato; sem ele, a estimativa
 de 8% do salário por mês completo, sem juros) ao depósito do mês da rescisão: o
 FGTS do holerite mensal da mesma competência (mesmo quando a rescisão já o
 compensou no saldo de salário), o FGTS do saldo de salário desta rescisão, o
-do 13º e o do aviso prévio indenizado. Informe no campo o saldo do extrato
-anterior ao mês da rescisão, para não contar o depósito do mês duas vezes. O
+do 13º e o do aviso prévio indenizado. Informe no campo o saldo **para fins rescisórios**, isto é,
+o do extrato anterior ao mês da rescisão (sem o depósito do mês, que a regra
+soma), para não contá-lo duas vezes. O saldo não pode ser negativo; zero é o
+mesmo que em branco e cai na estimativa. O
 FGTS do mensal integra a compensação entre holerites: alterá-lo recalcula a
 rescisão em rascunho e é recusado se ela já estiver confirmada.

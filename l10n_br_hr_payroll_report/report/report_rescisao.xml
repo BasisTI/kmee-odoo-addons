@@ -133,7 +133,7 @@
                         <!-- DISCRIMINAÇÃO DAS VERBAS RESCISÓRIAS -->
                         <t
                             t-set="proventos"
-                            t-value="o.line_ids.filtered(lambda l: l.appears_on_payslip and l.total &gt; 0 and l.category_id.code not in ('DED', 'NET', 'INFO', 'COMP'))"
+                            t-value="o.line_ids.filtered(lambda l: l.appears_on_payslip and l.total &gt; 0 and l.category_id.code not in ('DED', 'NET', 'INFO', 'COMP') and l.code != 'MULTA_FGTS')"
                         />
                         <t
                             t-set="descontos"
@@ -212,6 +212,27 @@
                                 </td>
                             </tr>
                         </table>
+
+                        <!-- Multa do FGTS: informativa (TG-92). Vai à conta
+                             vinculada pela guia do FGTS Digital; fica fora de
+                             Proventos, dos totais e do líquido. -->
+                        <t
+                            t-set="multa_fgts"
+                            t-value="o.line_ids.filtered(lambda l: l.code == 'MULTA_FGTS' and l.total &gt; 0)[:1]"
+                        />
+                        <t t-if="multa_fgts">
+                            <p class="multa-fgts-informativa" style="font-size: 9px;">
+                                <span t-field="multa_fgts.name" />
+                                (informativa, depositada na conta vinculada; não
+                                integra proventos, totais nem o líquido):
+                                <strong>
+                                <span
+                                    t-esc="multa_fgts.total"
+                                    t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
+                                />
+                            </strong>
+                            </p>
+                        </t>
 
                         <br />
 

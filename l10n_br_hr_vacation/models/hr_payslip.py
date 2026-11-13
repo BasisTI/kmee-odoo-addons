@@ -124,11 +124,21 @@ class HrPayslip(models.Model):
         help="Base da multa de 40% (ou 20% no acordo) do FGTS (Lei "
         "8.036/90 art. 18 §1º; CLT art. 484-A, I, 'b'): "
         "total depositado na conta vinculada durante o contrato, conforme "
-        "o extrato oficial (FGTS Digital). Quando deixado em branco (0), a "
+        "o extrato oficial (FGTS Digital), posicionado ANTES do mês da "
+        "rescisão: o depósito do mês é somado pela regra. Não aceita valor "
+        "negativo. Zero e em branco são a mesma coisa: a "
         "regra usa o FALLBACK 8% x salário x meses trabalhados - uma "
         "ESTIMATIVA sem juros/correção monetária, que subestima o saldo "
         "real; preencher com o extrato sempre que disponível.",
     )
+
+    @api.constrains("l10n_br_fgts_saldo_conta")
+    def _check_l10n_br_fgts_saldo_conta(self):
+        for rec in self:
+            if rec.l10n_br_fgts_saldo_conta < 0:
+                raise ValidationError(
+                    _("O saldo do FGTS na conta vinculada não pode ser negativo.")
+                )
 
     @api.depends("l10n_br_ferias_allocation_id.number_of_days")
     def _compute_dias_direito_ferias(self):

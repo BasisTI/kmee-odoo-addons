@@ -13,6 +13,7 @@ from datetime import date
 
 from dateutil.relativedelta import relativedelta
 
+from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 
 from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import (
@@ -361,6 +362,12 @@ class TestTiposDeRescisao(VacationCommon):
             self._get_line_total(resc, "MULTA_FGTS"),
             round_money((10000.00 + depositos) * 0.40),
         )
+
+    def test_saldo_fgts_negativo_e_recusado(self):
+        """TG-92: saldo de FGTS negativo não é base válida de multa."""
+        payslip = self._rescisao("sem_justa_causa", aviso="indenizado")
+        with self.assertRaises(ValidationError):
+            payslip.l10n_br_fgts_saldo_conta = -1.0
 
     def test_pedido_demissao_sem_aviso_indenizado_nem_multa(self):
         """Súmula 157 TST: 13º devido; mas sem aviso indenizado nem multa."""

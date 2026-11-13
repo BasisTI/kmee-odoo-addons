@@ -66,7 +66,9 @@ def migrate(cr, version):
         regra = env.ref(f"l10n_br_hr_vacation.{xmlid}", raise_if_not_found=False)
         if not regra:
             continue
-        if (regra.amount_python_compute or "").strip() == antiga.strip():
+        # Fórmula regravada com CRLF (editada no Windows) ainda é a original.
+        gravada = (regra.amount_python_compute or "").replace("\r\n", "\n")
+        if gravada.strip() == antiga.strip():
             valores = {"amount_python_compute": _formula_nova(xmlid)}
             if xmlid == "hr_rule_multa_fgts":
                 valores["sequence"] = 152
