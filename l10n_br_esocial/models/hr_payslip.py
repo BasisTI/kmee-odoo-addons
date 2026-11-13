@@ -1,6 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from dateutil.relativedelta import relativedelta
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
@@ -250,9 +252,40 @@ class HrPayslip(models.Model):
             )
         )
 
+    def _esocial_s2299_declarante(self):
+        """S-2299 vigente que declara as verbas deste holerite (ou vazio).
+
+        O S-2299 com ``verbasResc`` declara a remuneração do mês do
+        desligamento; o leiaute recusa o S-1200 dessa competência e o
+        pagamento vai no S-1210 de ``tpPgto`` 2.
+        """
+        self.ensure_one()
+        inicio = self.date_from.replace(day=1)
+        candidatos = self.env["l10n_br.esocial.s2299"].search(
+            [
+                ("employee_id", "=", self.employee_id.id),
+                ("company_id", "=", self.company_id.id),
+                ("dt_deslig", ">=", inicio),
+                ("dt_deslig", "<", inicio + relativedelta(months=1)),
+                ("evento_id.state", "in", EVENTO_VIGENTE),
+            ]
+        )
+        return candidatos.filtered(lambda s2299: self in s2299._slips_verbas())[:1]
+
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self._esocial_em_vigor()
+        no_s2299 = payslips.filtered(lambda slip: slip._esocial_s2299_declarante())
+        if no_s2299 == payslips:
+            raise UserError(
+                _(
+                    "As verbas destes holerites estão no S-2299 do desligamento "
+                    "(verbasResc): o leiaute recusa o S-1200 da competência do "
+                    "desligamento rescisório. O pagamento vai no S-1210 "
+                    "(tpPgto 2), apontando para o S-2299."
+                )
+            )
+        payslips -= no_s2299
         # Segunda chamada não duplica o retificador: o holerite que já tem um
         # retificador vigente fica como está.
         pendentes = payslips.filtered(
@@ -392,9 +425,37 @@ class HrPayslip(models.Model):
             )
         return s1200
 
+    def _esocial_dados_pagamento_rescisorio(self, s2299):
+        """infoPgto de ``tpPgto`` 2: verbas rescisórias apuradas no S-2299."""
+        self.ensure_one()
+        if s2299.evento_id.state != "success":
+            raise UserError(
+                _(
+                    "O S-2299 do holerite %(nome)s ainda não foi aceito pelo "
+                    "eSocial (situação atual: %(estado)s). O governo rejeita o "
+                    "S-1210 cujo demonstrativo não existe na base dele."
+                )
+                % {
+                    "nome": self.number or self.display_name,
+                    "estado": s2299.evento_id.state or _("sem evento"),
+                }
+            )
+        return {
+            "dt_pgto": self.l10n_br_esocial_data_pagamento,
+            "tp_pgto": "2",
+            # tpPgto 2: perRef é o mês/ano da data de desligamento.
+            "per_ref": s2299.dt_deslig.strftime("%Y-%m"),
+            "ide_dm_dev": s2299.get_ide_dm_dev(self),
+            "vr_liq": self._esocial_valor_liquido(),
+            "payslip_id": self.id,
+        }
+
     def _esocial_dados_pagamento(self):
         """Valores do infoPgto correspondente a este holerite."""
         self.ensure_one()
+        s2299 = self._esocial_s2299_declarante()
+        if s2299:
+            return self._esocial_dados_pagamento_rescisorio(s2299)
         s1200 = self._esocial_s1200_para_pagamento()
         return {
             "dt_pgto": self.l10n_br_esocial_data_pagamento,
@@ -489,6 +550,21 @@ class HrPayslip(models.Model):
             )
         eventos = self.env["l10n_br.esocial.evento"]
         for slip in payslips:
+            anterior = slip.l10n_br_esocial_s2299_ids.filtered(
+                lambda s: s.evento_id.state in EVENTO_VIGENTE
+            )[:1]
+            if anterior:
+                raise UserError(
+                    _(
+                        "O holerite '%(name)s' já tem S-2299 gerado (%(evento)s). "
+                        "Use o evento existente; para regerar, exclua-o antes por "
+                        "S-3000."
+                    )
+                    % {
+                        "name": slip.number or slip.name,
+                        "evento": anterior.evento_id.name,
+                    }
+                )
             motivo = slip.contract_id.l10n_br_esocial_motivo_deslig_id
             if not motivo:
                 raise UserError(

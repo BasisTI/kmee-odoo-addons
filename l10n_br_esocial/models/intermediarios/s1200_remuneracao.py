@@ -3,6 +3,8 @@
 
 import logging
 
+from dateutil.relativedelta import relativedelta
+
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
@@ -11,7 +13,11 @@ _logger = logging.getLogger(__name__)
 # Categorias de regra que carregam verba ou desconto do trabalhador. Totais
 # (GROSS, NET), informativas, encargos do empregador e provisões não são
 # rubricas do S-1200 e não geram aviso.
-CATEGORIAS_DECLARAVEIS = ("BASIC", "ALW", "DED")
+CATEGORIAS_DECLARAVEIS = ("BASIC", "ALW", "DED", "PROV_INDENIZ", "PROV_TRIB_IRRF")
+# Regras que o holerite calcula mas que não são verba paga ao trabalhador: a
+# multa do FGTS vai à conta vinculada (FGTS Digital), não ao líquido, e não tem
+# natureza de rubrica no leiaute (a 6101 é a indenização paga ao empregado).
+CODIGOS_FORA_DAS_VERBAS = ("MULTA_FGTS",)
 
 
 class ESocialS1200(models.Model):
@@ -129,7 +135,10 @@ class ESocialS1200(models.Model):
                     not rule.l10n_br_esocial_nat_rubr_id
                     or not rule.l10n_br_esocial_cod_rubr
                 ):
-                    if rule.category_id.code in CATEGORIAS_DECLARAVEIS:
+                    if (
+                        rule.category_id.code in CATEGORIAS_DECLARAVEIS
+                        and rule.code not in CODIGOS_FORA_DAS_VERBAS
+                    ):
                         sem_config.setdefault(rule, []).append(line.total)
                     continue
                 valor = abs(line.total)
@@ -138,12 +147,35 @@ class ESocialS1200(models.Model):
         self._registrar_avisos_sem_config(sem_config)
         return itens
 
+    def _exige_ind_apur_ir(self):
+        """``indApurIR`` é obrigatório a partir de 07/2021 (mensal) ou 2021 (13º)."""
+        return self.per_apur >= ("2021-07" if self.ind_apuracao == "1" else "2021")
+
     def _item_remun(self, rule, valor):
-        return {
+        item = {
             "cod_rubr": rule.l10n_br_esocial_cod_rubr,
             "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
             "vr_rubr": str(valor),
         }
+        if self._exige_ind_apur_ir():
+            # 0 = apuração normal, sob a folha declarada no eSocial.
+            item["ind_apur_ir"] = 0
+        return item
+
+    def _gerar_xml(self):
+        xml = super()._gerar_xml()
+        categoria = self.employee_id.l10n_br_esocial_categoria_id.codigo
+        if not self._categoria_rgps(categoria):
+            return xml
+        contrato = self.employee_id.contract_id
+        if self.ind_apuracao == "1":
+            ano, mes = (int(x) for x in self.per_apur.split("-"))
+            inicio = fields.Date.to_date("%04d-%02d-01" % (ano, mes))
+        else:
+            inicio = fields.Date.to_date("%s-12-01" % self.per_apur)
+        fim = inicio + relativedelta(months=1, days=-1)
+        grau = self._grau_exp(contrato, inicio, fim)
+        return self._xml_com_info_ag_nocivo(xml, "S-1200", "remunPerApur", grau)
 
     def _registrar_avisos_sem_config(self, sem_config):
         """Avisa (log e campo ``avisos``) das regras que ficaram fora do XML."""

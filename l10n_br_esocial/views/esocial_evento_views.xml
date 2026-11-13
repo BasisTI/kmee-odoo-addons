@@ -77,6 +77,7 @@
                             />
                             <field name="origem_model" />
                             <field name="origem_id" />
+                            <field name="avisos" invisible="not avisos" />
                             <field
                                 name="evento_excluido_id"
                                 invisible="not evento_excluido_id"
