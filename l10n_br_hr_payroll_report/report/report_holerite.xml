@@ -104,31 +104,15 @@
                         <br />
 
                         <!-- ══ PROVENTOS E DESCONTOS ══ -->
-                        <t
-                            t-set="proventos"
-                            t-value="o.line_ids.filtered(lambda l: l.appears_on_payslip and l.total &gt; 0 and l.category_id.code not in ('DED', 'NET', 'INFO', 'COMP'))"
-                        />
-                        <t
-                            t-set="descontos"
-                            t-value="o.line_ids.filtered(lambda l: l.appears_on_payslip and l.total &gt; 0 and l.category_id.code == 'DED')"
-                        />
-                        <t
-                            t-set="informativos"
-                            t-value="o.line_ids.filtered(lambda l: l.appears_on_payslip and l.total &gt; 0 and l.category_id.code == 'INFO')"
-                        />
-
+                        <t t-set="c" t-value="contracheque[o.id]" />
                         <table class="holerite-table">
                             <tr class="holerite-header">
-                                <td style="width:8%;" class="text-center">
-                                    Cód
-                                </td>
+                                <td style="width:8%;" class="text-center">Cód</td>
                                 <td style="width:42%;">Descrição</td>
                                 <td style="width:25%;" class="text-right">Proventos</td>
                                 <td style="width:25%;" class="text-right">Descontos</td>
                             </tr>
-
-                            <!-- Proventos -->
-                            <t t-foreach="proventos" t-as="line">
+                            <t t-foreach="c['proventos']" t-as="line">
                                 <tr>
                                     <td class="text-center">
                                         <span t-field="line.code" />
@@ -145,9 +129,7 @@
                                     <td />
                                 </tr>
                             </t>
-
-                            <!-- Descontos -->
-                            <t t-foreach="descontos" t-as="line">
+                            <t t-foreach="c['descontos']" t-as="line">
                                 <tr>
                                     <td class="text-center">
                                         <span t-field="line.code" />
@@ -164,33 +146,28 @@
                                     </td>
                                 </tr>
                             </t>
-
-                            <!-- Totais -->
-                            <t
-                                t-set="total_proventos"
-                                t-value="sum(proventos.mapped('total'))"
-                            />
-                            <t
-                                t-set="total_descontos"
-                                t-value="sum(descontos.mapped('total'))"
-                            />
-                            <t
-                                t-set="line_net"
-                                t-value="o.line_ids.filtered(lambda l: l.code == 'NET')[:1]"
-                            />
                             <tr class="holerite-totals">
-                                <td colspan="2" class="text-center">
-                                    TOTAIS
-                                </td>
+                                <td colspan="2" class="text-center">TOTAIS</td>
                                 <td class="text-right">
                                     <span
-                                        t-esc="total_proventos"
+                                        t-esc="c['total_proventos']"
                                         t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                     />
                                 </td>
                                 <td class="text-right">
                                     <span
-                                        t-esc="total_descontos"
+                                        t-esc="c['total_descontos']"
+                                        t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
+                                    />
+                                </td>
+                            </tr>
+                            <tr class="holerite-totals">
+                                <td colspan="2" class="text-center">
+                                    LÍQUIDO A RECEBER
+                                </td>
+                                <td colspan="2" class="text-right">
+                                    <span
+                                        t-esc="c['liquido']"
                                         t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                     />
                                 </td>
@@ -199,80 +176,37 @@
 
                         <br />
 
-                        <!-- ══ LÍQUIDO + BASES ══ -->
-                        <table class="holerite-table">
-                            <tr class="holerite-header">
-                                <td class="text-center" style="width:25%;">
-                                    LÍQUIDO A RECEBER
-                                </td>
-                                <td class="text-center" style="width:25%;">
-                                    Base INSS
-                                </td>
-                                <td class="text-center" style="width:25%;">
-                                    Base IRRF
-                                </td>
-                                <td class="text-center" style="width:25%;">
-                                    Base FGTS / FGTS Mês
-                                </td>
-                            </tr>
-                            <tr>
-                                <td class="text-right">
-                                    <strong>
-                                        <span
-                                            t-esc="line_net.total if line_net else 0.0"
-                                            t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
-                                        />
-                                    </strong>
-                                </td>
-                                <t
-                                    t-set="base_inss_line"
-                                    t-value="o.line_ids.filtered(lambda l: l.code == 'BASE_INSS')[:1]"
-                                />
-                                <td class="text-right">
-                                    <span
-                                        t-esc="base_inss_line.total if base_inss_line else 0.0"
-                                        t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
-                                    />
-                                </td>
-                                <t
-                                    t-set="base_irrf_line"
-                                    t-value="o.line_ids.filtered(lambda l: l.code == 'BASE_IRRF')[:1]"
-                                />
-                                <td class="text-right">
-                                    <span
-                                        t-esc="base_irrf_line.total if base_irrf_line else 0.0"
-                                        t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
-                                    />
-                                </td>
-                                <t
-                                    t-set="fgts_line"
-                                    t-value="o.line_ids.filtered(lambda l: l.code == 'FGTS')[:1]"
-                                />
-                                <t
-                                    t-set="base_fgts_line"
-                                    t-value="o.line_ids.filtered(lambda l: l.code == 'BASE_FGTS')[:1]"
-                                />
-                                <td class="text-right">
-                                    <span
-                                    t-esc="base_fgts_line.total if base_fgts_line else 0.0"
-                                    t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
-                                /> /
-                                    <span
-                                    t-esc="fgts_line.total if fgts_line else 0.0"
-                                    t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
-                                />
-                                </td>
-                            </tr>
-                        </table>
+                        <!-- ══ BASES ══ -->
+                        <t t-if="c['bases']">
+                            <table class="holerite-table">
+                                <tr class="holerite-header">
+                                    <t t-foreach="c['bases']" t-as="base">
+                                        <td class="text-center">
+                                            <t t-esc="base[0]" />
+                                        </td>
+                                    </t>
+                                </tr>
+                                <tr>
+                                    <t t-foreach="c['bases']" t-as="base">
+                                        <td class="text-right">
+                                            <span
+                                                t-esc="base[1]"
+                                                t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
+                                            />
+                                        </td>
+                                    </t>
+                                </tr>
+                            </table>
+                        </t>
 
                         <!-- ══ INFORMATIVOS ══ -->
-                        <t t-if="informativos">
+                        <t t-if="c['informativos']">
                             <br />
                             <table class="holerite-table">
                                 <tr class="holerite-header">
                                     <td colspan="3">INFORMATIVOS</td>
                                 </tr>
-                                <t t-foreach="informativos" t-as="line">
+                                <t t-foreach="c['informativos']" t-as="line">
                                     <tr>
                                         <td style="width:8%;" class="text-center">
                                             <span t-field="line.code" />

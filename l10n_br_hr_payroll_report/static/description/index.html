@@ -376,10 +376,16 @@ com layout brasileiro:</p>
 <ul class="simple">
 <li>Cabeçalho com dados da empresa (CNPJ, endereço)</li>
 <li>Dados do empregado (CPF, PIS/PASEP, cargo, departamento)</li>
-<li>Proventos e descontos separados em colunas</li>
-<li>Totais: bruto, descontos, líquido</li>
-<li>Base INSS, base IRRF, base FGTS, FGTS do mês</li>
+<li>Proventos e descontos em colunas separadas, sem o subtotal da remuneração
+bruta nem as provisões e encargos patronais, que não são verba paga</li>
+<li>Totais de proventos e de descontos, e o líquido</li>
+<li>Quadro de bases: salário de contribuição do INSS, base do IRRF, base do FGTS e FGTS
+do mês. No 13º e na rescisão, o INSS e o IRRF do 13º têm base própria</li>
+<li>Rubricas informativas (inclusive a multa do FGTS) fora das colunas de valor</li>
 </ul>
+<p>O relatório “Holerite” da OCA (<tt class="docutils literal">payroll.action_report_payslip</tt>) deixa de aparecer
+no menu Imprimir do holerite, para o usuário não ver dois com o mesmo nome. O
+relatório continua instalado, porque o módulo <tt class="docutils literal">payroll</tt> o usa no envio por e-mail.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
