@@ -231,7 +231,10 @@ class ReportAvisoFerias(models.AbstractModel):
 
     @api.model
     def _get_report_values(self, docids, data=None):
-        docs = self.env["hr.leave"].browse(docids)
+        # Grupo e empresa conferidos antes de ler qualquer coisa; só então a
+        # ausência vai para ``sudo``: a folha não lê ``hr.leave`` (a regra de
+        # acesso é do empregado e do Ausências: Oficial).
+        docs = self._ausencias_emissao(docids)
         return {
             "doc_ids": docids,
             "doc_model": "hr.leave",
@@ -240,7 +243,14 @@ class ReportAvisoFerias(models.AbstractModel):
         }
 
     @api.model
-    def _verificar_ausencia(self, leave):
+    def _ausencias_emissao(self, docids):
+        self._verificar_grupo()
+        ausencias = self.env["hr.leave"].sudo().browse(docids).exists()
+        self._verificar_empresa(ausencias)
+        return ausencias
+
+    @api.model
+    def _verificar_grupo(self):
         """Só gestão de ausências ou da folha emite o aviso.
 
         Emitir grava a data de comunicação e lê holerites e contrato com
@@ -256,6 +266,21 @@ class ReportAvisoFerias(models.AbstractModel):
                     "gestor de ausências ou da folha."
                 )
             )
+
+    @api.model
+    def _verificar_empresa(self, ausencias):
+        """Nunca emite a ausência de empresa fora de ``env.companies``."""
+        if self.env.su:
+            return
+        for leave in ausencias:
+            if leave.employee_id.company_id not in self.env.companies:
+                raise AccessError(
+                    _("A ausência de %s é de uma empresa que você não acessa.")
+                    % leave.employee_id.name
+                )
+
+    @api.model
+    def _verificar_ausencia(self, leave):
         tipo = self.env.ref("l10n_br_hr_vacation.leave_type_ferias")
         if leave.holiday_status_id != tipo:
             raise UserError(
@@ -295,6 +320,8 @@ class ReportAvisoFerias(models.AbstractModel):
         alerta (art. 135 da CLT).
         """
         leave.ensure_one()
+        self._verificar_grupo()
+        leave = self._ausencias_emissao(leave.ids)
         self._verificar_ausencia(leave)
         inicio, fim = leave.request_date_from, leave.request_date_to
         empregado = leave.employee_id

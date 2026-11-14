@@ -22,17 +22,25 @@ class HrLeave(models.Model):
         string="Fim Avisado", copy=False, readonly=True
     )
 
-    def _split_leaves(self, split_date_from, split_date_to):
-        # As peças de uma ausência dividida herdam a comunicação já feita.
-        return super(
-            HrLeave, self.with_context(l10n_br_herdar_aviso_ferias=True)
-        )._split_leaves(split_date_from, split_date_to)
-
     def copy_data(self, default=None):
+        """Peça de ausência dividida herda a comunicação já feita.
+
+        O Odoo divide a ausência em dois lugares (``_split_leaves``, na folga
+        em lote, e ``hr.contract.write``, na mudança de contrato) e os dois
+        criam as peças por ``copy_data`` com as novas datas. Aqui mora a regra
+        única: a peça cujo período cabe no avisado leva a data e o período.
+        """
         valores = super().copy_data(default)
-        if self.env.context.get("l10n_br_herdar_aviso_ferias"):
+        novas = default or {}
+        if "request_date_from" in novas and "request_date_to" in novas:
             for leave, vals in zip(self, valores, strict=False):
-                if leave.l10n_br_aviso_ferias_data:
+                if (
+                    leave.l10n_br_aviso_ferias_data
+                    and leave.l10n_br_aviso_ferias_inicio
+                    <= novas["request_date_from"]
+                    <= novas["request_date_to"]
+                    <= leave.l10n_br_aviso_ferias_fim
+                ):
                     vals.update(
                         {
                             "l10n_br_aviso_ferias_data": leave.l10n_br_aviso_ferias_data,
