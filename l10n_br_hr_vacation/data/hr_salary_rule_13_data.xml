@@ -284,6 +284,34 @@ result = categories.BASIC + categories.ALW - categories.DED
          13º NA RESCISÃO
          ══════════════════════════════════════════════════════════════ -->
 
+    <!-- TG-141: o 13º que a rescisão reconhece como devido no ano, ANTES de
+         abater o que as parcelas já pagaram. Linha informativa (fora do NET):
+         é a base única do INSS, do IRRF, da pensão e do FGTS do 13º, e a
+         referência do excesso quando a 2ª parcela já pagou mais que isso. -->
+    <record id="hr_rule_decimo_devido" model="hr.salary.rule">
+        <field name="name">13º Devido na Rescisão (Informativo)</field>
+        <field name="sequence" eval="4" />
+        <field name="code">DECIMO_DEVIDO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+# Mesma condição do 13º da rescisão: não é devido na justa causa (Lei 4.090/62
+# art. 3º; Decreto 57.155/65 art. 7º).
+result = payslip._l10n_br_fator_rescisao('decimo') > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+# RF-18: base soma a média de horas extras/adicional noturno habituais.
+avos = payslip.l10n_br_avos_13
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+fator = payslip._l10n_br_fator_rescisao('decimo')
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
+        </field>
+    </record>
+
     <record id="hr_rule_decimo_rescisao" model="hr.salary.rule">
         <field name="name">13º Salário (Rescisão)</field>
         <field name="sequence" eval="5" />
@@ -303,16 +331,13 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-# RF-18: base soma a média de horas extras/adicional noturno habituais.
-avos = payslip.l10n_br_avos_13
-media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-fator = payslip._l10n_br_fator_rescisao('decimo')
-devido = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
 # TG-97: o 13º que a 2ª parcela (ou o 13º integral) confirmada já quitou no
 # ano não se paga de novo: só a diferença dos avos. A 1ª parcela (adiantamento)
-# não entra aqui: sai como desconto próprio (ADIANTAMENTO_13).
+# não entra aqui: sai como desconto próprio (ADIANTAMENTO_13). O que a 2ª
+# parcela pagou ALÉM do devido não vira valor negativo: sai como desconto
+# (DESCONTO_13_EXCESSO, TG-141).
 quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
-result = max(devido - quitado, 0.0)
+result = max(DECIMO_DEVIDO - quitado, 0.0)
         </field>
     </record>
 </odoo>
