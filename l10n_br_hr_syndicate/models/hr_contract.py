@@ -41,13 +41,15 @@ class HrContract(models.Model):
             self.partner_union = self.l10n_br_cct_id.partner_union_id
 
     def _l10n_br_cct_resolver(self, data):
-        """``(CCT, vencida)`` do contrato em ``data``.
+        """``(CCT, motivo)`` do contrato em ``data``; ``motivo`` falso se a CCT cobre.
 
         A CCT do contrato vale se a vigência cobre ``data``; senão vale a ativa
         do mesmo sindicato que cobre (a CCT trocada no meio do ano). Sem nenhuma
-        cobrindo, vale a última CCT vencida do mesmo sindicato (``vencida``
-        verdadeiro): o desconto nunca zera em silêncio por falta de CCT nova.
-        Antes da primeira CCT do sindicato, ou sem CCT no contrato: vazio.
+        cobrindo, o desconto nunca zera em silêncio: vale a última vencida do
+        mesmo sindicato (``motivo`` "vencida"), a primeira se ``data`` é anterior
+        a todas ("futura") ou a própria CCT do contrato se ela foi arquivada e o
+        sindicato não tem outra ativa ("arquivada"). O holerite mostra o aviso.
+        Sem CCT no contrato: vazio.
         """
         self.ensure_one()
         convencao = self.env["l10n.br.hr.collective.convention"]
@@ -56,25 +58,24 @@ class HrContract(models.Model):
             return convencao, False
         if cct.active and cct.date_start <= data <= cct.date_end:
             return cct, False
+        sindicato = [("partner_union_id", "=", cct.partner_union_id.id)]
         cobre = convencao.search(
-            [
-                ("partner_union_id", "=", cct.partner_union_id.id),
-                ("date_start", "<=", data),
-                ("date_end", ">=", data),
-            ],
+            sindicato + [("date_start", "<=", data), ("date_end", ">=", data)],
             limit=1,
         )
         if cobre:
             return cobre, False
         vencida = convencao.search(
-            [
-                ("partner_union_id", "=", cct.partner_union_id.id),
-                ("date_end", "<", data),
-            ],
-            order="date_end desc",
-            limit=1,
+            sindicato + [("date_end", "<", data)], order="date_end desc", limit=1
         )
-        return vencida, bool(vencida)
+        if vencida:
+            return vencida, "vencida"
+        futura = convencao.search(
+            sindicato + [("date_start", ">", data)], order="date_start", limit=1
+        )
+        if futura:
+            return futura, "futura"
+        return cct, "arquivada"
 
     def _l10n_br_cct_vigente(self, data):
         """CCT do contrato em ``data``, a última vencida se nenhuma cobre."""

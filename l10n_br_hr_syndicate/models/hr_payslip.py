@@ -27,21 +27,41 @@ class HrPayslip(models.Model):
             for r in self._get_salary_rules()
         )
 
+    @staticmethod
+    def _l10n_br_cct_aviso_texto(cct, motivo):
+        dados = {
+            "cct": cct.name,
+            "ini": fields.Date.to_string(cct.date_start),
+            "fim": fields.Date.to_string(cct.date_end),
+        }
+        if motivo == "vencida":
+            return _(
+                "Nenhuma CCT cobre a competência: usada a última vencida, "
+                "%(cct)s (vigência até %(fim)s).",
+                **dados,
+            )
+        if motivo == "futura":
+            return _(
+                "Nenhuma CCT cobre a competência (anterior à primeira): usada a "
+                "primeira, %(cct)s (vigência de %(ini)s).",
+                **dados,
+            )
+        return _(
+            "O sindicato não tem CCT ativa: usada a CCT arquivada %(cct)s "
+            "(vigência de %(ini)s a %(fim)s).",
+            **dados,
+        )
+
     def compute_sheet(self):
         res = super().compute_sheet()
         for slip in self:
             aviso = False
             if slip.contract_id and slip._l10n_br_le_cct():
-                cct, vencida = slip.contract_id._l10n_br_cct_resolver(
+                cct, motivo = slip.contract_id._l10n_br_cct_resolver(
                     slip._get_competencia()
                 )
-                if vencida:
-                    aviso = _(
-                        "Nenhuma CCT cobre a competência: usada a última vencida, "
-                        "%(cct)s (vigência até %(fim)s).",
-                        cct=cct.name,
-                        fim=fields.Date.to_string(cct.date_end),
-                    )
+                if motivo:
+                    aviso = self._l10n_br_cct_aviso_texto(cct, motivo)
             if slip.l10n_br_cct_aviso != aviso:
                 slip.l10n_br_cct_aviso = aviso
         return res

@@ -185,22 +185,28 @@ class L10nBrHrCollectiveConvention(models.Model):
         """Taxa (fração) de desconto de VA/VR da faixa do salário, ou ``None``.
 
         A faixa vale até o teto informado (inclusive); a primeira que cobre o
-        salário vale. ``None`` só quando a CCT não tem faixa nenhuma (não define
-        desconto de VA/VR); salário acima da última faixa é erro, nunca desconto 0.
+        salário vale. A faixa sem teto vale "acima de" todas as outras. ``None``
+        só quando a CCT não tem faixa nenhuma (não define desconto de VA/VR); se
+        há faixas e nenhuma cobre o salário, é erro claro, nunca desconto 0.
         """
         self.ensure_one()
-        faixas = self.vavr_range_ids.sorted("wage_ceiling")
-        for faixa in faixas:
+        faixas = self.vavr_range_ids
+        com_teto = faixas.filtered("wage_ceiling").sorted("wage_ceiling")
+        for faixa in com_teto:
             if wage <= faixa.wage_ceiling:
                 return faixa.rate_pct / 100.0
+        aberta = faixas.filtered(lambda f: not f.wage_ceiling)[:1]
+        if aberta:
+            return aberta.rate_pct / 100.0
         if faixas:
             raise UserError(
                 _(
                     "O salário %(wage).2f está acima da última faixa de VA/VR da "
-                    "CCT %(cct)s (até %(teto).2f). Cadastre uma faixa que o cubra.",
+                    'CCT %(cct)s (até %(teto).2f). Cadastre uma faixa "acima '
+                    'de" (sem teto).',
                     wage=wage,
                     cct=self.display_name,
-                    teto=faixas[-1].wage_ceiling,
+                    teto=com_teto[-1].wage_ceiling,
                 )
             )
         return None
@@ -242,7 +248,6 @@ class L10nBrHrCollectiveConvention(models.Model):
                     [
                         ("state", "!=", "cancel"),
                         ("l10n_br_fora_de_vigor", "=", False),
-                        ("date_to", ">=", rec.date_start),
                         (
                             "contract_id.l10n_br_cct_id.partner_union_id",
                             "=",
@@ -258,47 +263,31 @@ class L10nBrHrCollectiveConvention(models.Model):
 
     @api.model
     def _cct_aplicar_aos_holerites(self, holerites):
-        """Recalcula os abertos afetados; recusa só confirmado da competência aberta.
+        """Recalcula os rascunhos da competência corrente em diante; recusa o confirmado.
 
-        Só entram os holerites cuja estrutura lê a CCT. Holerite confirmado de
-        competência fechada guarda o que valeu e não trava nada. A competência
-        está aberta para o confirmado quando o mesmo contrato tem, no mesmo mês,
-        outro holerite em rascunho ou verificação: mudar a CCT ali deixaria os
-        dois holerites do mês em desacordo, e a mudança é recusada.
+        Só entram os holerites cuja estrutura lê a CCT. O corte é pela data, o
+        mesmo do vale-transporte (``l10n_br_hr_benefit``): holerite confirmado
+        com ``date_to`` no mês corrente ou depois ficaria com valor que a CCT já
+        não sustenta e a mudança é recusada; o de competência anterior guarda o
+        que valeu. Rascunho de competência anterior também fica como está, e o
+        que nunca foi calculado não ganha linhas.
         """
-        holerites = holerites.sudo().filtered(lambda s: s._l10n_br_le_cct())
-        abertos = holerites.filtered(lambda s: s.state in ESTADOS_ABERTOS)
-        confirmados = holerites.filtered(lambda s: s.state in ESTADOS_CONFIRMADOS)
+        holerites = holerites.sudo().filtered(
+            lambda s: s.date_to and s._l10n_br_le_cct()
+        )
+        inicio_mes = fields.Date.context_today(self).replace(day=1)
+        vigentes = holerites.filtered(lambda s: s.date_to >= inicio_mes)
+        confirmados = vigentes.filtered(lambda s: s.state in ESTADOS_CONFIRMADOS)
         if confirmados:
-            outros_abertos = (
-                self.env["hr.payslip"]
-                .sudo()
-                .search(
-                    [
-                        ("contract_id", "in", confirmados.contract_id.ids),
-                        ("state", "in", ESTADOS_ABERTOS),
-                        ("l10n_br_fora_de_vigor", "=", False),
-                    ]
+            raise UserError(
+                _(
+                    "A mudança altera o cálculo de holerite confirmado da "
+                    "competência corrente ou futura: %s. Volte-o para rascunho "
+                    "antes.",
+                    ", ".join(confirmados.mapped(lambda r: r.number or r.name)),
                 )
             )
-            meses = {
-                (s.contract_id.id, s.date_to.year, s.date_to.month)
-                for s in outros_abertos
-                if s.date_to
-            }
-            travados = confirmados.filtered(
-                lambda s: s.date_to
-                and (s.contract_id.id, s.date_to.year, s.date_to.month) in meses
-            )
-            if travados:
-                raise UserError(
-                    _(
-                        "A mudança altera o cálculo de holerite confirmado de "
-                        "competência aberta (o mesmo contrato tem outro holerite "
-                        "aberto no mês): %s. Volte-o para rascunho antes.",
-                        ", ".join(travados.mapped("display_name")),
-                    )
-                )
+        abertos = vigentes.filtered(lambda s: s.state in ESTADOS_ABERTOS and s.line_ids)
         if abertos:
             abertos.compute_sheet()
 
@@ -441,8 +430,9 @@ class L10nBrHrConventionVavrRange(models.Model):
     wage_ceiling = fields.Float(
         string="Salário até",
         digits="Payroll",
-        required=True,
-        help="Teto da faixa (inclusive): vale para o salário até este valor.",
+        help="Teto da faixa (inclusive): vale para o salário até este valor. "
+        'Vazio (0) é a faixa "acima de": vale para o salário que as outras '
+        "não cobrem, sem limite.",
     )
     rate_pct = fields.Float(
         string="Desconto (%)",
@@ -450,9 +440,17 @@ class L10nBrHrConventionVavrRange(models.Model):
         help="Percentual do VA/VR descontado do empregado nesta faixa.",
     )
 
-    @api.constrains("convention_id", "wage_ceiling")
-    def _check_teto_unico(self):
+    @api.constrains("convention_id", "wage_ceiling", "rate_pct")
+    def _check_faixa(self):
         for rec in self:
+            if rec.wage_ceiling < 0:
+                raise ValidationError(
+                    _("O teto da faixa de VA/VR não pode ser negativo.")
+                )
+            if not 0 <= rec.rate_pct <= 100:
+                raise ValidationError(
+                    _("O desconto da faixa de VA/VR deve estar entre 0 e 100%.")
+                )
             repetida = rec.convention_id.vavr_range_ids.filtered(
                 lambda f: f.id != rec.id and f.wage_ceiling == rec.wage_ceiling
             )
@@ -460,8 +458,8 @@ class L10nBrHrConventionVavrRange(models.Model):
                 raise ValidationError(
                     _(
                         "A CCT %(cct)s tem duas faixas de VA/VR com o mesmo teto "
-                        "(%(teto).2f).",
+                        "(%(teto)s).",
                         cct=rec.convention_id.display_name,
-                        teto=rec.wage_ceiling,
+                        teto=rec.wage_ceiling or _("sem teto"),
                     )
                 )

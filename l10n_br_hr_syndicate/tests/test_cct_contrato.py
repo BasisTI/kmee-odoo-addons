@@ -3,6 +3,9 @@
 """CCT ligada ao contrato e lida pelas regras na competência do holerite (TG-109)."""
 from datetime import date
 
+from dateutil.relativedelta import relativedelta
+
+from odoo import fields
 from odoo.exceptions import UserError, ValidationError
 
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
@@ -61,11 +64,48 @@ class TestCctContrato(PayrollCommon):
             }
         )
         cls.structure_clt.write({"rule_ids": [(4, cls.regra.id)]})
+        # Competência corrente: o corte da integridade é pela data de hoje.
+        cls.hoje = fields.Date.context_today(cls.env["hr.payslip"])
+        cls.sind_hoje = Partner.create(
+            {"name": "Sindicato Hoje", "union_entity_code": "SH1", "is_company": True}
+        )
+        cls.cct_hoje = Cct.create(
+            {
+                "name": "CCT Hoje",
+                "partner_union_id": cls.sind_hoje.id,
+                "date_start": date(cls.hoje.year - 1, 1, 1),
+                "date_end": date(cls.hoje.year + 1, 12, 31),
+                "assistencial_amount": 35.0,
+            }
+        )
 
     def setUp(self):
         super().setUp()
         self.empregado = self._create_employee("Empregado CCT")
         self.contrato = self._create_contract(self.empregado)
+
+    def _holerite_hoje(self, contrato, meses=0, calcular=True):
+        """Holerite do mês corrente (``meses`` = 0) ou de outro, a partir de hoje."""
+        mes = self.hoje.replace(day=1) + relativedelta(months=meses)
+        slip = self.env["hr.payslip"].create(
+            {
+                "name": f"Holerite {mes}",
+                "employee_id": contrato.employee_id.id,
+                "contract_id": contrato.id,
+                "struct_id": contrato.struct_id.id,
+                "date_from": mes,
+                "date_to": mes.replace(day=28),
+                "company_id": self.env.company.id,
+            }
+        )
+        if calcular:
+            slip.compute_sheet()
+        return slip
+
+    def _contrato_hoje(self):
+        contrato = self._create_contract(self._create_employee("Empregado Hoje"))
+        contrato.l10n_br_cct_id = self.cct_hoje
+        return contrato
 
     def _holerite(self, contrato, mes, calcular=True, ano=2026, dias=(1, 28)):
         slip = self.env["hr.payslip"].create(
@@ -223,19 +263,55 @@ class TestCctContrato(PayrollCommon):
         self.assertFalse(slip._l10n_br_le_cct())
 
     def test_mudar_valor_da_cct_recalcula_holerite_aberto(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        slip = self._holerite(self.contrato, 3)
-        self.cct1.assistencial_amount = 40.0
+        slip = self._holerite_hoje(self._contrato_hoje())
+        self.cct_hoje.assistencial_amount = 40.0
         self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 40.0)
 
-    def test_confirmado_de_competencia_fechada_guarda_o_que_valeu(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        fechado = self._holerite(self.contrato, 3)
+    def test_recalculo_so_do_rascunho_ja_calculado_da_competencia_corrente(self):
+        contrato = self._contrato_hoje()
+        antigo = self._holerite_hoje(contrato, meses=-3)
+        nunca = self._holerite_hoje(contrato, meses=1, calcular=False)
+        corrente = self._holerite_hoje(contrato)
+        self.cct_hoje.assistencial_amount = 40.0
+        self.assertAlmostEqualMoney(self._get_line_total(corrente, "TESTE_CCT"), 40.0)
+        self.assertAlmostEqualMoney(self._get_line_total(antigo, "TESTE_CCT"), 35.0)
+        self.assertFalse(nunca.line_ids)
+
+    def test_confirmado_de_competencia_anterior_guarda_o_que_valeu(self):
+        contrato = self._contrato_hoje()
+        fechado = self._holerite_hoje(contrato, meses=-2)
         fechado.action_payslip_done()
-        aberto = self._holerite(self.contrato, 4)
-        self.cct1.assistencial_amount = 40.0
+        aberto = self._holerite_hoje(contrato)
+        self.cct_hoje.assistencial_amount = 40.0
         self.assertAlmostEqualMoney(self._get_line_total(fechado, "TESTE_CCT"), 35.0)
         self.assertAlmostEqualMoney(self._get_line_total(aberto, "TESTE_CCT"), 40.0)
+        self.assertEqual(fechado.state, "done")
+
+    def test_confirmado_da_competencia_corrente_recusa(self):
+        contrato = self._contrato_hoje()
+        slip = self._holerite_hoje(contrato)
+        slip.action_payslip_done()
+        with self.assertRaises(UserError):
+            self.cct_hoje.assistencial_amount = 45.0
+        with self.assertRaises(UserError):
+            contrato.l10n_br_cct_id = False
+        self.assertEqual(self.cct_hoje.assistencial_amount, 35.0)
+        # Campo que não entra no cálculo segue livre.
+        self.cct_hoje.notes = "ok"
+
+    def test_confirmado_de_competencia_futura_recusa(self):
+        slip = self._holerite_hoje(self._contrato_hoje(), meses=1)
+        slip.action_payslip_done()
+        with self.assertRaises(UserError):
+            self.cct_hoje.assistencial_amount = 45.0
+
+    def test_rascunho_irmao_de_outra_estrutura_nao_trava_competencia_fechada(self):
+        contrato = self._contrato_hoje()
+        fechado = self._holerite_hoje(contrato, meses=-2)
+        fechado.action_payslip_done()
+        irmao = self._holerite_hoje(contrato, meses=-2, calcular=False)
+        irmao.write({"struct_id": self.structure_estatuto.id})
+        self.cct_hoje.wage_floor = 2000.0
         self.assertEqual(fechado.state, "done")
 
     def test_fluxo_de_cadastro_com_folha_fechada(self):
@@ -271,32 +347,21 @@ class TestCctContrato(PayrollCommon):
         )
         self.assertEqual(slip.state, "done")
 
-    def test_confirmado_com_aberto_no_mesmo_mes_recusa(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        confirmado = self._holerite(self.contrato, 3, dias=(1, 15))
-        confirmado.action_payslip_done()
-        self._holerite(self.contrato, 3, dias=(16, 31))
-        with self.assertRaises(UserError):
-            self.cct1.assistencial_amount = 40.0
-        self.assertEqual(self.cct1.assistencial_amount, 35.0)
-        # Campo que não entra no cálculo segue livre.
-        self.cct1.notes = "ok"
-
     def test_trocar_a_cct_do_contrato_recalcula_aberto_e_poupa_fechado(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        fechado = self._holerite(self.contrato, 2)
+        contrato = self._contrato_hoje()
+        fechado = self._holerite_hoje(contrato, meses=-2)
         fechado.action_payslip_done()
-        aberto = self._holerite(self.contrato, 3)
+        aberto = self._holerite_hoje(contrato)
         outra = self.env["l10n.br.hr.collective.convention"].create(
             {
-                "name": "CCT B",
+                "name": "CCT B Hoje",
                 "partner_union_id": self.outro_sindicato.id,
-                "date_start": date(2026, 1, 1),
-                "date_end": date(2026, 12, 31),
+                "date_start": date(self.hoje.year - 1, 1, 1),
+                "date_end": date(self.hoje.year + 1, 12, 31),
                 "assistencial_amount": 99.0,
             }
         )
-        self.contrato.write(
+        contrato.write(
             {"l10n_br_cct_id": outra.id, "partner_union": self.outro_sindicato.id}
         )
         self.assertAlmostEqualMoney(self._get_line_total(aberto, "TESTE_CCT"), 99.0)
@@ -333,24 +398,53 @@ class TestCctContrato(PayrollCommon):
         self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 60.0)
         self.assertFalse(slip.l10n_br_cct_aviso)
 
-    def test_antes_da_primeira_cct_segue_sem_cct(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        self.assertFalse(self.contrato._l10n_br_cct_vigente(date(2025, 12, 31)))
-
     # --- faixas de VA/VR ---------------------------------------------------
-    def test_faixas_com_o_mesmo_teto_sao_recusadas(self):
-        Faixa = self.env["l10n.br.hr.convention.vavr.range"]
-        Faixa.create(
-            {"convention_id": self.cct1.id, "wage_ceiling": 3000, "rate_pct": 1}
+    def _faixa(self, cct, teto, taxa):
+        return self.env["l10n.br.hr.convention.vavr.range"].create(
+            {"convention_id": cct.id, "wage_ceiling": teto, "rate_pct": taxa}
         )
-        with self.assertRaises(ValidationError):
-            Faixa.create(
-                {"convention_id": self.cct1.id, "wage_ceiling": 3000, "rate_pct": 5}
-            )
 
-    def test_salario_acima_da_ultima_faixa_e_erro_claro(self):
-        self.env["l10n.br.hr.convention.vavr.range"].create(
-            {"convention_id": self.cct1.id, "wage_ceiling": 3000, "rate_pct": 1}
-        )
+    def test_faixas_com_o_mesmo_teto_sao_recusadas(self):
+        self._faixa(self.cct1, 3000, 1)
+        with self.assertRaises(ValidationError):
+            self._faixa(self.cct1, 3000, 5)
+
+    def test_duas_faixas_abertas_sao_recusadas(self):
+        self._faixa(self.cct1, 0, 20)
+        with self.assertRaises(ValidationError):
+            self._faixa(self.cct1, 0, 30)
+
+    def test_teto_negativo_e_percentual_fora_de_0_a_100_sao_recusados(self):
+        with self.assertRaises(ValidationError):
+            self._faixa(self.cct1, -1, 5)
+        with self.assertRaises(ValidationError):
+            self._faixa(self.cct1, 100, 150)
+        with self.assertRaises(ValidationError):
+            self._faixa(self.cct1, 100, -1)
+
+    def test_faixa_aberta_acima_de(self):
+        self._faixa(self.cct1, 3000, 1)
+        self._faixa(self.cct1, 0, 20)
+        self.assertAlmostEqual(self.cct1.vavr_rate(3000), 0.01)
+        self.assertAlmostEqual(self.cct1.vavr_rate(3000.01), 0.20)
+        self.assertAlmostEqual(self.cct1.vavr_rate(1000000), 0.20)
+
+    def test_salario_sem_faixa_que_cubra_e_erro_claro(self):
+        self._faixa(self.cct1, 3000, 1)
         with self.assertRaises(UserError):
             self.cct1.vavr_rate(3000.01)
+
+    # --- CCT arquivada e antes da primeira ---------------------------------
+    def test_arquivar_a_unica_cct_do_sindicato_da_aviso(self):
+        contrato = self._contrato_hoje()
+        self.cct_hoje.active = False
+        slip = self._holerite_hoje(contrato)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 35.0)
+        self.assertIn("CCT Hoje", slip.l10n_br_cct_aviso)
+        self.assertIn("arquivada", slip.l10n_br_cct_aviso)
+
+    def test_antes_da_primeira_cct_usa_a_primeira_com_aviso(self):
+        self.contrato.l10n_br_cct_id = self.cct1
+        slip = self._holerite(self.contrato, 12, ano=2025)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 35.0)
+        self.assertIn("anterior à primeira", slip.l10n_br_cct_aviso)
