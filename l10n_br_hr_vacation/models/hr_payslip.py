@@ -932,6 +932,19 @@ class HrPayslip(models.Model):
             res["adiantamento"] = total(pagos, "ADIANTAMENTO_13")
         return res
 
+    def _l10n_br_pensao_13_devolvida(self, pensao_paga, pensao_devida):
+        """Pensão do 13º que volta ao empregado quando a 2ª parcela reteve a mais.
+
+        Hoje, nenhuma (TG-141#P1, opção recomendada): a pensão retida foi
+        repassada ao beneficiário por ordem judicial e alimentos pagos não se
+        repetem; devolvê-la seria custo definitivo da empresa. Só INSS e IRRF
+        voltam (``DEVOLUCAO_INSS_13`` e ``DEVOLUCAO_IRRF_13``) e a base do IRRF
+        do 13º deduz a pensão efetivamente paga. Se a decisão for devolver,
+        troque o retorno por ``max(pensao_paga - pensao_devida, 0.0)`` e some
+        essa devolução ao NET e ao disponível do ``DESCONTO_13_EXCESSO``.
+        """
+        return 0.0
+
     def _l10n_br_aviso_indenizado_devido(self):
         """Aviso prévio indenizado é devido pelo empregador (RF-06).
 
@@ -1139,6 +1152,12 @@ class HrPayslip(models.Model):
             "DESCONTO_ART_480",
             "DESCONTO_AVISO_PREVIO",
             "NAO_DESCONTADO_ADIANTAMENTO_13",
+            # TG-141: 13º devido (base única dos encargos do 13º), devolução dos
+            # encargos retidos a mais e desconto do 13º pago além do devido.
+            "DECIMO_DEVIDO",
+            "DEVOLUCAO_INSS_13",
+            "DEVOLUCAO_IRRF_13",
+            "DESCONTO_13_EXCESSO",
             "FGTS_AVISO",
             "FGTS",
             "FGTS_13",
