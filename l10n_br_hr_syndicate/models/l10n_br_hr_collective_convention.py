@@ -185,12 +185,24 @@ class L10nBrHrCollectiveConvention(models.Model):
         """Taxa (fração) de desconto de VA/VR da faixa do salário, ou ``None``.
 
         A faixa vale até o teto informado (inclusive); a primeira que cobre o
-        salário vale. ``None`` quando a CCT não tem faixa que o cubra.
+        salário vale. ``None`` só quando a CCT não tem faixa nenhuma (não define
+        desconto de VA/VR); salário acima da última faixa é erro, nunca desconto 0.
         """
         self.ensure_one()
-        for faixa in self.vavr_range_ids.sorted("wage_ceiling"):
+        faixas = self.vavr_range_ids.sorted("wage_ceiling")
+        for faixa in faixas:
             if wage <= faixa.wage_ceiling:
                 return faixa.rate_pct / 100.0
+        if faixas:
+            raise UserError(
+                _(
+                    "O salário %(wage).2f está acima da última faixa de VA/VR da "
+                    "CCT %(cct)s (até %(teto).2f). Cadastre uma faixa que o cubra.",
+                    wage=wage,
+                    cct=self.display_name,
+                    teto=faixas[-1].wage_ceiling,
+                )
+            )
         return None
 
     def wage_floor_for(self, job=None):
@@ -231,7 +243,6 @@ class L10nBrHrCollectiveConvention(models.Model):
                         ("state", "!=", "cancel"),
                         ("l10n_br_fora_de_vigor", "=", False),
                         ("date_to", ">=", rec.date_start),
-                        ("date_to", "<=", rec.date_end),
                         (
                             "contract_id.l10n_br_cct_id.partner_union_id",
                             "=",
@@ -247,18 +258,47 @@ class L10nBrHrCollectiveConvention(models.Model):
 
     @api.model
     def _cct_aplicar_aos_holerites(self, holerites):
-        """Recusa se algum holerite afetado está confirmado; recalcula os abertos."""
-        holerites = holerites.sudo()
+        """Recalcula os abertos afetados; recusa só confirmado da competência aberta.
+
+        Só entram os holerites cuja estrutura lê a CCT. Holerite confirmado de
+        competência fechada guarda o que valeu e não trava nada. A competência
+        está aberta para o confirmado quando o mesmo contrato tem, no mesmo mês,
+        outro holerite em rascunho ou verificação: mudar a CCT ali deixaria os
+        dois holerites do mês em desacordo, e a mudança é recusada.
+        """
+        holerites = holerites.sudo().filtered(lambda s: s._l10n_br_le_cct())
+        abertos = holerites.filtered(lambda s: s.state in ESTADOS_ABERTOS)
         confirmados = holerites.filtered(lambda s: s.state in ESTADOS_CONFIRMADOS)
         if confirmados:
-            raise UserError(
-                _(
-                    "A mudança altera o cálculo de holerite já confirmado: "
-                    "%s. Volte-os para rascunho antes.",
-                    ", ".join(confirmados.mapped("display_name")),
+            outros_abertos = (
+                self.env["hr.payslip"]
+                .sudo()
+                .search(
+                    [
+                        ("contract_id", "in", confirmados.contract_id.ids),
+                        ("state", "in", ESTADOS_ABERTOS),
+                        ("l10n_br_fora_de_vigor", "=", False),
+                    ]
                 )
             )
-        abertos = holerites.filtered(lambda s: s.state in ESTADOS_ABERTOS)
+            meses = {
+                (s.contract_id.id, s.date_to.year, s.date_to.month)
+                for s in outros_abertos
+                if s.date_to
+            }
+            travados = confirmados.filtered(
+                lambda s: s.date_to
+                and (s.contract_id.id, s.date_to.year, s.date_to.month) in meses
+            )
+            if travados:
+                raise UserError(
+                    _(
+                        "A mudança altera o cálculo de holerite confirmado de "
+                        "competência aberta (o mesmo contrato tem outro holerite "
+                        "aberto no mês): %s. Volte-o para rascunho antes.",
+                        ", ".join(travados.mapped("display_name")),
+                    )
+                )
         if abertos:
             abertos.compute_sheet()
 
@@ -303,6 +343,22 @@ class L10nBrHrCollectiveConvention(models.Model):
         )
 
     def unlink(self):
+        contratos = (
+            self.env["hr.contract"]
+            .sudo()
+            .with_context(active_test=False)
+            .search([("l10n_br_cct_id", "in", self.ids)])
+        )
+        if contratos:
+            raise UserError(
+                _(
+                    "A CCT %(cct)s é a CCT de %(n)s contrato(s): o contrato perderia "
+                    "também as CCT sucessoras. Aponte-os para outra CCT ou arquive "
+                    "esta.",
+                    cct=", ".join(contratos.l10n_br_cct_id.mapped("display_name")),
+                    n=len(contratos),
+                )
+            )
         return self._cct_guardar(
             lambda recs: super(L10nBrHrCollectiveConvention, recs).unlink()
         )
@@ -393,3 +449,19 @@ class L10nBrHrConventionVavrRange(models.Model):
         required=True,
         help="Percentual do VA/VR descontado do empregado nesta faixa.",
     )
+
+    @api.constrains("convention_id", "wage_ceiling")
+    def _check_teto_unico(self):
+        for rec in self:
+            repetida = rec.convention_id.vavr_range_ids.filtered(
+                lambda f: f.id != rec.id and f.wage_ceiling == rec.wage_ceiling
+            )
+            if repetida:
+                raise ValidationError(
+                    _(
+                        "A CCT %(cct)s tem duas faixas de VA/VR com o mesmo teto "
+                        "(%(teto).2f).",
+                        cct=rec.convention_id.display_name,
+                        teto=rec.wage_ceiling,
+                    )
+                )

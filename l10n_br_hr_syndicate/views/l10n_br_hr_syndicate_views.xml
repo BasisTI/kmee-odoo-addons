@@ -196,4 +196,18 @@
             </field>
         </field>
     </record>
+
+    <record id="hr_payslip_view_form_cct" model="ir.ui.view">
+        <field name="name">hr.payslip.form.cct</field>
+        <field name="model">hr.payslip</field>
+        <field name="inherit_id" ref="l10n_br_hr_payroll.view_payslip_form_br" />
+        <field name="arch" type="xml">
+            <xpath
+                expr="//field[@name='l10n_br_faltas_injustificadas']"
+                position="after"
+            >
+                <field name="l10n_br_cct_aviso" invisible="not l10n_br_cct_aviso" />
+            </xpath>
+        </field>
+    </record>
 </odoo>

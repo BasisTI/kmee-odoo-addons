@@ -16,9 +16,16 @@
        if cct:
            result = cct.assistencial_amount
 
-**Holerites.** Mudar o que a CCT entrega às regras (valores, faixas, pisos, vigência) ou a
-CCT do contrato recalcula os holerites em rascunho ou verificação da competência e recusa a
-mudança se algum estiver confirmado ou pago: volte-o para rascunho antes.
+**Holerites.** Mudar o que a CCT entrega às regras (valores, faixas, pisos, vigência), a
+contribuição ou a CCT do contrato recalcula os holerites em rascunho ou verificação cuja
+estrutura lê a CCT. Holerite confirmado ou pago guarda o que valeu: só a mudança que alteraria
+um confirmado cujo contrato tem outro holerite aberto no mesmo mês é recusada (volte o
+confirmado para rascunho antes).
+
+**Sem CCT cobrindo a competência.** Vale a última CCT vencida do mesmo sindicato e o holerite
+mostra o aviso com o nome e o fim da vigência dela (a decisão do que fazer na lacuna é do DP:
+art. 614, §3º, da CLT e ADPF 323). Antes da primeira CCT do sindicato, o contrato segue sem CCT.
+Salário acima da última faixa de VA/VR e CCT apontada por contrato apagada são recusados.
 
 **O que o módulo não decide.** Quem paga a contribuição assistencial ou sindical
 (autorização expressa do empregado, direito de oposição, art. 545 e 578 da CLT depois da

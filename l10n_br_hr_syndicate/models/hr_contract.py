@@ -40,20 +40,23 @@ class HrContract(models.Model):
         if self.l10n_br_cct_id:
             self.partner_union = self.l10n_br_cct_id.partner_union_id
 
-    def _l10n_br_cct_vigente(self, data):
-        """CCT do contrato vigente em ``data`` (vazio sem CCT ou fora de vigência).
+    def _l10n_br_cct_resolver(self, data):
+        """``(CCT, vencida)`` do contrato em ``data``.
 
         A CCT do contrato vale se a vigência cobre ``data``; senão vale a ativa
-        do mesmo sindicato que cobre (a CCT trocada no meio do ano).
+        do mesmo sindicato que cobre (a CCT trocada no meio do ano). Sem nenhuma
+        cobrindo, vale a última CCT vencida do mesmo sindicato (``vencida``
+        verdadeiro): o desconto nunca zera em silêncio por falta de CCT nova.
+        Antes da primeira CCT do sindicato, ou sem CCT no contrato: vazio.
         """
         self.ensure_one()
         convencao = self.env["l10n.br.hr.collective.convention"]
         cct = self.l10n_br_cct_id
         if not cct or not data:
-            return convencao
+            return convencao, False
         if cct.active and cct.date_start <= data <= cct.date_end:
-            return cct
-        return convencao.search(
+            return cct, False
+        cobre = convencao.search(
             [
                 ("partner_union_id", "=", cct.partner_union_id.id),
                 ("date_start", "<=", data),
@@ -61,6 +64,22 @@ class HrContract(models.Model):
             ],
             limit=1,
         )
+        if cobre:
+            return cobre, False
+        vencida = convencao.search(
+            [
+                ("partner_union_id", "=", cct.partner_union_id.id),
+                ("date_end", "<", data),
+            ],
+            order="date_end desc",
+            limit=1,
+        )
+        return vencida, bool(vencida)
+
+    def _l10n_br_cct_vigente(self, data):
+        """CCT do contrato em ``data``, a última vencida se nenhuma cobre."""
+        self.ensure_one()
+        return self._l10n_br_cct_resolver(data)[0]
 
     def _l10n_br_holerites_cct(self):
         return (
