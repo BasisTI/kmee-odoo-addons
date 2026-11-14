@@ -1,6 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from dateutil.relativedelta import relativedelta
+
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
@@ -19,6 +21,10 @@ class HrContract(models.Model):
         "(a sucessora, depois de um dissídio). Sem CCT, o contrato segue como "
         "antes: as regras usam os parâmetros que tiverem.",
     )
+
+    # Tipo de contratação que não conta como período de experiência (regra do DP).
+    _L10N_BR_PRAZO_DETERMINADO = "prazo determinado"
+    _L10N_BR_CAMPOS_CONTRIBUICAO = ("contract_type_id", "trial_date_end")
 
     @api.constrains("l10n_br_cct_id", "partner_union")
     def _check_l10n_br_cct_sindicato(self):
@@ -82,6 +88,83 @@ class HrContract(models.Model):
         self.ensure_one()
         return self._l10n_br_cct_resolver(data)[0]
 
+    def _l10n_br_prazo_determinado(self):
+        self.ensure_one()
+        nome = (self.contract_type_id.name or "").strip().casefold()
+        return nome == self._L10N_BR_PRAZO_DETERMINADO
+
+    def _l10n_br_em_experiencia(self, competencia):
+        """Em experiência no último dia da competência.
+
+        Contrato por prazo determinado não conta como experiência, mesmo com as
+        datas de experiência preenchidas. Quem termina a experiência no meio do
+        mês já deve o mês inteiro.
+        """
+        self.ensure_one()
+        if self._l10n_br_prazo_determinado() or not self.trial_date_end:
+            return False
+        fim_do_mes = competencia.replace(day=1) + relativedelta(months=1, days=-1)
+        return self.trial_date_end >= fim_do_mes
+
+    def _l10n_br_contribuicao_resolver(self, competencia, tipo):
+        """``(valor, motivo)`` da contribuição sindical do contrato na competência.
+
+        ``valor`` ``None`` é célula em branco: sem CCT, sem regra cadastrada para
+        o sindicato na competência e sem valor individual, a lacuna de cadastro
+        não vira isenção. ``motivo`` diz por que o valor não é o cheio:
+        ``oposicao``, ``tipo_contratacao``, ``experiencia``,
+        ``sindicalizado_metade``, ``sindicalizado_isento`` ou
+        ``valor_individual``.
+
+        617 (``assistencial``): a oposição vence a marca de sindicalista; depois
+        as isenções da CCT (tipo de contratação, experiência); depois o
+        sindicalista paga integral, metade ou nada conforme a CCT. 602
+        (``sindical``): o valor individual do funcionário prevalece e é devido
+        mesmo sem a marca; senão só o sindicalista paga o valor da CCT. Os demais
+        tipos seguem o valor cadastrado, sem regra individual.
+        """
+        self.ensure_one()
+        base = None
+        cct = self._l10n_br_cct_vigente(competencia) if competencia else False
+        if cct and competencia:
+            contribuicoes = self.env["l10n.br.hr.syndicate.contribution"].search(
+                [
+                    ("partner_union_id", "=", cct.partner_union_id.id),
+                    ("year", "=", competencia.year),
+                    ("month", "=", str(competencia.month)),
+                    ("contribution_type", "=", tipo),
+                ]
+            )
+            if contribuicoes:
+                base = sum(c.amount_for(self.wage) for c in contribuicoes)
+        empregado = self.employee_id.sudo()
+        if tipo == "sindical" and competencia:
+            individual = empregado.l10n_br_contribuicao_individual_ids._valor_do_mes(
+                competencia
+            )
+            if individual is not None:
+                return individual, "valor_individual"
+            if base is None or not empregado.l10n_br_sindicalista:
+                return None, False
+            return base, False
+        if base is None:
+            return None, False
+        if tipo != "assistencial":
+            return base, False
+        if empregado.l10n_br_oposicao_contribuicao:
+            return 0.0, "oposicao"
+        if self.contract_type_id in cct.assistencial_exempt_contract_type_ids:
+            return 0.0, "tipo_contratacao"
+        if cct.assistencial_exempt_trial and self._l10n_br_em_experiencia(competencia):
+            return 0.0, "experiencia"
+        if empregado.l10n_br_sindicalista:
+            fator = cct.assistencial_fator_sindicalizado()
+            if fator == 1.0:
+                return base, False
+            motivo = "sindicalizado_metade" if fator else "sindicalizado_isento"
+            return round(base * fator, 2), motivo
+        return base, False
+
     def _l10n_br_holerites_cct(self):
         return (
             self.env["hr.payslip"]
@@ -110,7 +193,23 @@ class HrContract(models.Model):
             vals = dict(vals, partner_union=cct.partner_union_id.id)
         return vals
 
+    def _l10n_br_write_contribuicao(self, vals):
+        """Tipo de contratação e experiência mudam a 617: recalcula o aberto."""
+        antes = {c.id: (c.contract_type_id, c.trial_date_end) for c in self.sudo()}
+        res = self.with_context(l10n_br_contribuicao_guardando=True).write(vals)
+        mudaram = self.sudo().filtered(
+            lambda c: (c.contract_type_id, c.trial_date_end) != antes[c.id]
+        )
+        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(
+            mudaram._l10n_br_holerites_cct()
+        )
+        return res
+
     def write(self, vals):
+        if set(vals) & set(self._L10N_BR_CAMPOS_CONTRIBUICAO) and not (
+            self.env.context.get("l10n_br_contribuicao_guardando")
+        ):
+            return self._l10n_br_write_contribuicao(vals)
         if "l10n_br_cct_id" not in vals and "partner_union" not in vals:
             return super().write(vals)
         if vals.get("l10n_br_cct_id") and "partner_union" not in vals:

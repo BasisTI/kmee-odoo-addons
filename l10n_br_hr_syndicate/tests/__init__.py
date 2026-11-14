@@ -3,3 +3,4 @@
 
 from . import test_syndicate
 from . import test_cct_contrato
+from . import test_contribuicao_individual

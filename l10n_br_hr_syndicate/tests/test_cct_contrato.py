@@ -240,10 +240,13 @@ class TestCctContrato(PayrollCommon):
         slip = self._holerite(self.contrato, 3)
         tools = slip._get_tools_dict()["br"]
         self.assertAlmostEqual(
-            tools.contribuicao_sindical(self.contrato, "sindical"), 5000 / 30, places=2
-        )
-        self.assertAlmostEqual(
             tools.contribuicao_sindical(self.contrato, "assistencial"), 100.0
+        )
+        # 602: só o sindicalista paga o valor cadastrado (TG-142).
+        self.assertEqual(tools.contribuicao_sindical(self.contrato, "sindical"), 0.0)
+        self.empregado.l10n_br_sindicalista = True
+        self.assertAlmostEqual(
+            tools.contribuicao_sindical(self.contrato, "sindical"), 5000 / 30, places=2
         )
         self.assertEqual(
             tools.contribuicao_sindical(self.contrato, "confederativa"), 0.0
