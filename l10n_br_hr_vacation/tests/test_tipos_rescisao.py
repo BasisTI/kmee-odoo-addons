@@ -12,6 +12,8 @@ from odoo.addons.l10n_br_hr_vacation.models.hr_payslip import L10N_BR_REGRAS_RES
 from .common import VacationCommon
 
 SALDO_FGTS = 10000.00
+INICIO = date(2024, 1, 1)
+DESLIGAMENTO = date(2024, 9, 30)
 
 
 @tagged("post_install", "-at_install")
@@ -22,15 +24,22 @@ class TestTiposRescisao(VacationCommon):
     quando o aviso indenizado projeta o contrato até 30/10).
     """
 
-    def _rescisao(self, tipo, aviso="nao_aplicavel", **extra):
+    def _rescisao(
+        self,
+        tipo,
+        aviso="nao_aplicavel",
+        inicio=INICIO,
+        desligamento=DESLIGAMENTO,
+        **extra
+    ):
         emp = self._create_employee("Rescisão %s" % tipo)
-        contract = self._create_contract(emp, wage=3000.00, date_start=date(2024, 1, 1))
+        contract = self._create_contract(emp, wage=3000.00, date_start=inicio)
         vals = {
             "name": "Rescisão",
             "employee_id": emp.id,
             "contract_id": contract.id,
-            "date_from": date(2024, 9, 1),
-            "date_to": date(2024, 9, 30),
+            "date_from": desligamento.replace(day=1),
+            "date_to": desligamento,
             "struct_id": self.structure_rescisao.id,
             "company_id": self.env.company.id,
             "l10n_br_tipo_rescisao": tipo,
@@ -148,8 +157,8 @@ class TestTiposRescisao(VacationCommon):
         r = self._rescisao(
             "antecipado_empregador", l10n_br_data_termo_contrato=date(2024, 12, 31)
         )
-        # 92 dias até o termo: metade de 3000/30 x 92.
-        self.assertAlmostEqualMoney(self._g(r, "INDENIZACAO_ART_479"), 4600.00)
+        # 3 meses comerciais (90 dias) até o termo: metade de 3000/30 x 90.
+        self.assertAlmostEqualMoney(self._g(r, "INDENIZACAO_ART_479"), 4500.00)
         self.assertEqual(self._g(r, "AVISO_PREVIO_INDENIZADO"), 0)
         self.assertAlmostEqualMoney(
             self._g(r, "MULTA_FGTS"), self._multa_esperada(r, 0.40)
@@ -158,7 +167,7 @@ class TestTiposRescisao(VacationCommon):
         sem = self._rescisao("termino_contrato")
         for code in ("INSS", "IRRF", "FGTS"):
             self.assertAlmostEqualMoney(self._g(r, code), self._g(sem, code), code)
-        self.assertAlmostEqualMoney(self._g(r, "NET"), self._g(sem, "NET") + 4600.00)
+        self.assertAlmostEqualMoney(self._g(r, "NET"), self._g(sem, "NET") + 4500.00)
 
     def test_antecipado_empregado_art_480_sem_multa(self):
         r = self._rescisao(
@@ -173,14 +182,14 @@ class TestTiposRescisao(VacationCommon):
         self.assertAlmostEqualMoney(self._g(r, "NET"), self._g(sem, "NET") - 500.00)
 
     def test_antecipado_empregado_desconto_limitado_ao_art_479_e_a_um_mes(self):
-        # Termo em 31/10: 31 dias, art. 479 = 1550,00.
+        # Termo em 31/10: um mês comercial (30 dias), art. 479 = 1500,00.
         r = self._rescisao(
             "antecipado_empregado",
             l10n_br_data_termo_contrato=date(2024, 10, 31),
             l10n_br_prejuizo_art_480=9000.00,
         )
-        self.assertAlmostEqualMoney(self._g(r, "DESCONTO_ART_480"), 1550.00)
-        # Termo em 31/12: art. 479 = 4600,00; teto de um mês de remuneração.
+        self.assertAlmostEqualMoney(self._g(r, "DESCONTO_ART_480"), 1500.00)
+        # Termo em 31/12: art. 479 = 4500,00; teto de um mês de remuneração.
         r = self._rescisao(
             "antecipado_empregado",
             l10n_br_data_termo_contrato=date(2024, 12, 31),
@@ -193,6 +202,71 @@ class TestTiposRescisao(VacationCommon):
             "antecipado_empregado", l10n_br_data_termo_contrato=date(2024, 12, 31)
         )
         self.assertEqual(self._g(r, "DESCONTO_ART_480"), 0)
+
+    def test_art_479_mes_de_31_dias_vale_meio_salario(self):
+        # 30/09 a 31/10 é um mês: metade de 3000,00, e não 1550,00.
+        r = self._rescisao(
+            "antecipado_empregador", l10n_br_data_termo_contrato=date(2024, 10, 31)
+        )
+        self.assertAlmostEqualMoney(self._g(r, "INDENIZACAO_ART_479"), 1500.00)
+        # Fevereiro: 28/02 a 31/03 também é um mês.
+        r = self._rescisao(
+            "antecipado_empregador",
+            desligamento=date(2025, 2, 28),
+            l10n_br_data_termo_contrato=date(2025, 3, 31),
+        )
+        self.assertAlmostEqualMoney(self._g(r, "INDENIZACAO_ART_479"), 1500.00)
+
+    # ── descontos nunca deixam o líquido negativo ──────────────────────
+
+    def _assert_liquido_nao_negativo(self, r, desconto, nao_descontado, devido):
+        self.assertGreaterEqual(self._g(r, "NET"), 0)
+        self.assertAlmostEqualMoney(self._g(r, "NET"), 0.0)
+        self.assertLess(self._g(r, desconto), devido)
+        # O que não coube aparece no holerite, fora do líquido.
+        self.assertAlmostEqualMoney(
+            self._g(r, desconto) + self._g(r, nao_descontado), devido
+        )
+        self.assertGreater(self._g(r, nao_descontado), 0)
+
+    def test_aviso_nao_cumprido_limitado_ao_liquido_pouco_tempo_de_casa(self):
+        r = self._rescisao(
+            "pedido_demissao",
+            "nao_cumprido",
+            inicio=date(2024, 8, 20),
+            desligamento=date(2024, 9, 5),
+        )
+        self._assert_liquido_nao_negativo(
+            r, "DESCONTO_AVISO_PREVIO", "NAO_DESCONTADO_AVISO_PREVIO", 3000.00
+        )
+
+    def test_aviso_nao_cumprido_limitado_ao_liquido_inicio_do_ano(self):
+        r = self._rescisao(
+            "pedido_demissao",
+            "nao_cumprido",
+            inicio=date(2020, 1, 1),
+            desligamento=date(2025, 1, 3),
+        )
+        self._assert_liquido_nao_negativo(
+            r, "DESCONTO_AVISO_PREVIO", "NAO_DESCONTADO_AVISO_PREVIO", 3000.00
+        )
+
+    def test_art_480_limitado_ao_liquido(self):
+        r = self._rescisao(
+            "antecipado_empregado",
+            inicio=date(2024, 9, 1),
+            desligamento=date(2024, 9, 10),
+            l10n_br_data_termo_contrato=date(2024, 11, 29),
+            l10n_br_prejuizo_art_480=5000.00,
+        )
+        self._assert_liquido_nao_negativo(
+            r, "DESCONTO_ART_480", "NAO_DESCONTADO_ART_480", 3000.00
+        )
+
+    def test_desconto_integral_quando_cabe_no_liquido(self):
+        r = self._rescisao("pedido_demissao", "nao_cumprido")
+        self.assertAlmostEqualMoney(self._g(r, "DESCONTO_AVISO_PREVIO"), 3000.00)
+        self.assertEqual(self._g(r, "NAO_DESCONTADO_AVISO_PREVIO"), 0)
 
     # ── aviso não cumprido (art. 487 §2º) ──────────────────────────────
 
@@ -253,11 +327,12 @@ class TestTiposRescisao(VacationCommon):
             .selection
         }
         self.assertEqual(tipos, set(esperado))
-        self.assertEqual(
-            {t: r["mtv"] for t, r in L10N_BR_REGRAS_RESCISAO.items()}, esperado
-        )
-        slip = self.env["hr.payslip"].new({"l10n_br_tipo_rescisao": "acordo"})
-        self.assertEqual(slip._l10n_br_motivo_desligamento_esocial(), "33")
+        # Um mtvDeslig por causa, sem repetir.
+        codigos = [r["mtv"] for r in L10N_BR_REGRAS_RESCISAO.values()]
+        self.assertEqual(len(codigos), len(set(codigos)))
+        for tipo, codigo in esperado.items():
+            slip = self.env["hr.payslip"].new({"l10n_br_tipo_rescisao": tipo})
+            self.assertEqual(slip._l10n_br_motivo_desligamento_esocial(), codigo)
         self.assertFalse(
             self.env["hr.payslip"].new({})._l10n_br_motivo_desligamento_esocial()
         )

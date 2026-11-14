@@ -893,17 +893,41 @@ class HrPayslip(models.Model):
         """``mtvDeslig`` (tabela 19) da causa; False se não houver tipo."""
         return self._l10n_br_regra_rescisao()["mtv"]
 
+    @staticmethod
+    def _l10n_br_dias_comerciais(inicio, fim):
+        """Dias entre duas datas no mês comercial de 30 dias (ano de 360).
+
+        O último dia de cada mês conta como dia 30: de 30/09 a 31/10 são 30 dias,
+        o mês inteiro, e não os 31 corridos.
+        """
+
+        def dia(data):
+            ultimo = data + relativedelta(day=31)
+            return 30 if data == ultimo else data.day
+
+        return (
+            (fim.year - inicio.year) * 360
+            + (fim.month - inicio.month) * 30
+            + dia(fim)
+            - dia(inicio)
+        )
+
     def _l10n_br_dias_restantes_termo(self):
-        """Dias corridos do desligamento (exclusive) até o termo do contrato."""
+        """Dias comerciais do desligamento até o termo do contrato."""
         self.ensure_one()
         if not (self.l10n_br_data_termo_contrato and self.date_to):
             return 0
-        return max((self.l10n_br_data_termo_contrato - self.date_to).days, 0)
+        return max(
+            self._l10n_br_dias_comerciais(
+                self.date_to, self.l10n_br_data_termo_contrato
+            ),
+            0,
+        )
 
     def _l10n_br_indenizacao_art_479(self, remuneracao_mensal):
         """Metade da remuneração dos dias que faltavam até o termo (CLT art. 479).
 
-        Mês comercial de 30 dias, como o aviso prévio e o saldo de salário. Sem
+        Mês comercial de 30 dias (ver ``_l10n_br_dias_comerciais``). Sem
         arredondar: a regra salarial arredonda o valor.
         """
         self.ensure_one()

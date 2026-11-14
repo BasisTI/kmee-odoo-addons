@@ -284,7 +284,7 @@ result = tools.br.round_money(payslip._l10n_br_indenizacao_art_479(remuneracao))
          (art. 477, §5º). Só reduz o líquido: não altera as bases. -->
     <record id="hr_rule_desconto_art_480" model="hr.salary.rule">
         <field name="name">Indenização ao Empregador Art. 480 CLT</field>
-        <field name="sequence" eval="125" />
+        <field name="sequence" eval="126" />
         <field name="code">DESCONTO_ART_480</field>
         <field
             name="category_id"
@@ -301,7 +301,18 @@ result = (
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
-result = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
+devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
+# Não pode deixar o líquido negativo: só o que sobra dos créditos depois dos
+# descontos obrigatórios e do aviso não cumprido. Teto de um mês de remuneração
+# para o conjunto das compensações (art. 477, §5º). O que não couber vai à
+# linha informativa NAO_DESCONTADO_ART_480.
+disponivel = (
+    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
+    + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
+    - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+)
+result = tools.br.round_money(max(min(devido, disponivel - DESCONTO_AVISO_PREVIO, remuneracao - DESCONTO_AVISO_PREVIO), 0))
         </field>
     </record>
 
@@ -311,7 +322,7 @@ result = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
          empregador). Só reduz o líquido. -->
     <record id="hr_rule_desconto_aviso_previo" model="hr.salary.rule">
         <field name="name">Desconto de Aviso Prévio Não Cumprido</field>
-        <field name="sequence" eval="126" />
+        <field name="sequence" eval="125" />
         <field name="code">DESCONTO_AVISO_PREVIO</field>
         <field
             name="category_id"
@@ -328,7 +339,68 @@ result = (
         <field name="amount_python_compute">
 # Súmula 94 TST: a base soma a média das verbas habituais.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money(contract.wage + media + tools.br.adicionais_fixos(contract))
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+devido = tools.br.round_money(remuneracao)
+# Não pode deixar o líquido negativo nem passar de um mês de remuneração (art.
+# 477, §5º): desconta só o que sobra dos créditos depois dos descontos
+# obrigatórios. O restante vai à linha informativa NAO_DESCONTADO_AVISO_PREVIO.
+disponivel = (
+    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
+    + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
+    - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+)
+result = tools.br.round_money(max(min(devido, disponivel, remuneracao), 0))
+        </field>
+    </record>
+
+    <!-- Valor do aviso não cumprido que não coube no líquido (informativo, fora
+         do NET): o empregador cobra o restante fora da rescisão. -->
+    <record id="hr_rule_nao_descontado_aviso_previo" model="hr.salary.rule">
+        <field name="name">Aviso Não Cumprido: Não Descontado (Informativo)</field>
+        <field name="sequence" eval="127" />
+        <field name="code">NAO_DESCONTADO_AVISO_PREVIO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'pedido_demissao'
+    and payslip.l10n_br_aviso_previo == 'nao_cumprido'
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+devido = tools.br.round_money(contract.wage + media + tools.br.adicionais_fixos(contract))
+result = max(devido - DESCONTO_AVISO_PREVIO, 0.0)
+        </field>
+    </record>
+
+    <!-- Indenização do art. 480 que não coube no líquido (informativo, fora do NET). -->
+    <record id="hr_rule_nao_descontado_art_480" model="hr.salary.rule">
+        <field name="name">Indenização Art. 480: Não Descontada (Informativo)</field>
+        <field name="sequence" eval="128" />
+        <field name="code">NAO_DESCONTADO_ART_480</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'antecipado_empregado'
+    and payslip.l10n_br_prejuizo_art_480 > 0
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
+result = max(devido - DESCONTO_ART_480, 0.0)
         </field>
     </record>
 

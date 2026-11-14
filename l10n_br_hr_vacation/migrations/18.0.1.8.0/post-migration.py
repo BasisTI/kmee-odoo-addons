@@ -135,6 +135,8 @@ NOVAS_NA_RESCISAO = (
     "hr_rule_indenizacao_art_479",
     "hr_rule_desconto_art_480",
     "hr_rule_desconto_aviso_previo",
+    "hr_rule_nao_descontado_aviso_previo",
+    "hr_rule_nao_descontado_art_480",
 )
 
 
@@ -157,8 +159,20 @@ def migrate(cr, version):
         if _normaliza(regra[campo]) == _normaliza(antigo):
             regra.write({campo: _valor_novo(arquivo, xmlid, campo)})
             _logger.info("TG-96: %s.%s atualizado", xmlid, campo)
+        elif _normaliza(regra[campo]) == _normaliza(_valor_novo(arquivo, xmlid, campo)):
+            _logger.info("TG-96: %s.%s já atualizado", xmlid, campo)
         else:
-            _logger.info("TG-96: %s.%s personalizado ou já atualizado", xmlid, campo)
+            _logger.warning(
+                "TG-96: a regra '%s' (%s) está personalizada e NÃO foi atualizada "
+                "(campo %s). As causas de rescisão novas dependem da fórmula e "
+                "da condição do módulo: revise a regra e compare com "
+                "l10n_br_hr_vacation/data/ (sem isso, o valor pode sair errado "
+                "em culpa recíproca, força maior, rescisão indireta e término "
+                "de contrato a prazo).",
+                regra.name,
+                xmlid,
+                campo,
+            )
     estrutura = env.ref(
         "l10n_br_hr_vacation.structure_rescisao", raise_if_not_found=False
     )
