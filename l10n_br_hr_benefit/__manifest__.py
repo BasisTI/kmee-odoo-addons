@@ -17,7 +17,6 @@
         "data/hr_contract_advantage_template_data.xml",
         "data/hr_salary_rule_benefit_data.xml",
         "data/hr_payroll_structure_data.xml",
-        "views/hr_contract_views.xml",
     ],
     "demo": [
         "demo/hr_contract_advantage_demo.xml",
