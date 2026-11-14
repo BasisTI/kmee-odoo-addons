@@ -13,11 +13,12 @@ Cobertura:
 """
 from datetime import date, datetime
 
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 
 from odoo.addons.l10n_br_hr_benefit.models.vale_transporte import (
     credito_vt,
+    dias_cobertos,
     dias_uteis_vt,
 )
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
@@ -355,14 +356,140 @@ class TestValeTransporteDiario(PayrollCommon):
         # crédito 1050; 6% só do salário-base (2000) = 120, nunca do bruto
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "DESC_VT"), 120.0)
 
+    def _holerite_corrente(self, emp, contract, struct=None):
+        hoje = date.today()
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "Holerite vigente",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": (struct or contract.struct_id).id,
+                "date_from": hoje.replace(day=1),
+                "date_to": hoje.replace(day=28),
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        return payslip
+
+    def _estrutura_sem_vt(self):
+        return self.env["hr.payroll.structure"].create(
+            {"name": "Estrutura sem VT (teste)", "code": "SEMVT"}
+        )
+
     def test_holerite_aberto_recalcula_ao_mudar_o_valor_diario(self):
         emp, contract = self._contrato(wage=5000.0, diario=10.0)
-        payslip = self._create_payslip_benefit(emp, contract)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VT_INFO"), 210.0)
+        payslip = self._holerite_corrente(emp, contract)
+        antes = self._get_line_total(payslip, "VT_INFO")
+        self.assertGreater(antes, 0)
         contract.advantages_ids.filtered(
             lambda a: a.advantage_template_code == "VT_DIARIO"
         ).amount = 12.0
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VT_INFO"), 252.0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "VT_INFO"), antes * 12 / 10
+        )
+
+    def test_rascunho_de_competencia_encerrada_nao_recalcula(self):
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        payslip = self._create_payslip_benefit(emp, contract)
+        contract.advantages_ids.amount = 12.0
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VT_INFO"), 210.0)
+
+    def test_holerite_sem_regra_de_vt_confirmado_nao_trava(self):
+        """13º e recibo de férias (estrutura sem VT) não recusam a mudança."""
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        payslip = self._holerite_corrente(emp, contract, self._estrutura_sem_vt())
+        payslip.action_payslip_done()
+        self.assertEqual(payslip.state, "done")
+        contract.advantages_ids.amount = 12.0
+
+    def test_holerite_sem_regra_de_vt_aberto_nao_recalcula(self):
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        payslip = self._holerite_corrente(emp, contract, self._estrutura_sem_vt())
+        linhas = payslip.line_ids
+        contract.advantages_ids.amount = 12.0
+        self.assertEqual(payslip.line_ids, linhas)
+
+    def test_vt_mensal_e_diario_juntos_recusa(self):
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        with self.assertRaises(ValidationError):
+            self._add_advantage(contract, self.template_vt, 200.0)
+
+    def test_escala_quinzenal_12x36_conta_so_a_semana_de_cada_dia(self):
+        calendario = self.env["resource.calendar"].create(
+            {
+                "name": "12x36 (teste VT)",
+                "tz": "UTC",
+                "two_weeks_calendar": True,
+                "attendance_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "name": f"Plantão {dia}",
+                            "dayofweek": str(dia),
+                            "hour_from": 7,
+                            "hour_to": 19,
+                            "week_type": str(semana),
+                        },
+                    )
+                    for dia, semana in (
+                        (0, 0),
+                        (2, 0),
+                        (4, 0),
+                        (6, 0),
+                        (1, 1),
+                        (3, 1),
+                        (5, 1),
+                    )
+                ],
+            }
+        )
+        emp, contract = self._contrato(wage=5000.0, diario=10.0, calendario=calendario)
+        tipo = self.env["resource.calendar.attendance"].get_week_type
+        esperado = 0
+        for n in range(1, 32):
+            dia = date(2024, 3, n)
+            plantao = {0: 0, 2: 0, 4: 0, 6: 0, 1: 1, 3: 1, 5: 1}.get(dia.weekday())
+            esperado += plantao == tipo(dia)
+        payslip = self._create_payslip_benefit(emp, contract)
+        self.assertIn(esperado, (15, 16))
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "VT_INFO"), 10.0 * esperado
+        )
+
+    def test_recesso_de_varios_dias_sai_dos_dias_uteis(self):
+        self.env["resource.calendar.leaves"].create(
+            {
+                "name": "Recesso (teste)",
+                "calendar_id": self.calendario.id,
+                "company_id": self.env.company.id,
+                "date_from": datetime(2024, 3, 14, 0, 0, 0),
+                "date_to": datetime(2024, 3, 15, 23, 59, 59),
+            }
+        )
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        payslip = self._create_payslip_benefit(emp, contract)
+        # 21 dias úteis menos quinta 14 e sexta 15
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VT_INFO"), 190.0)
+
+    def test_feriado_do_modulo_de_feriados_publicos(self):
+        if "calendar.public.holiday.line" not in self.env:
+            self.skipTest("l10n_br_hr_holidays_public não instalado")
+        ano = self.env["calendar.public.holiday"].create(
+            {"year": 2024, "country_id": self.env.ref("base.br").id}
+        )
+        self.env["calendar.public.holiday.line"].create(
+            {
+                "name": "Sexta-feira Santa (teste)",
+                "date": date(2024, 3, 29),
+                "public_holiday_id": ano.id,
+                "variable_date": False,
+            }
+        )
+        emp, contract = self._contrato(wage=5000.0, diario=10.0)
+        payslip = self._create_payslip_benefit(emp, contract)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VT_INFO"), 200.0)
 
     def test_holerite_confirmado_da_competencia_vigente_recusa_a_mudanca(self):
         emp, contract = self._contrato(wage=5000.0, diario=10.0)
@@ -433,3 +560,17 @@ class TestDiasUteisVT(TransactionCase):
 
     def test_credito_arredondado_em_centavos(self):
         self.assertEqual(credito_vt(3.333, 21), 69.99)
+
+    def test_escala_por_funcao(self):
+        quinzena = lambda dia: dia.day <= 15  # noqa: E731
+        self.assertEqual(
+            dias_uteis_vt(date(2024, 3, 1), date(2024, 3, 31), quinzena), 15
+        )
+
+    def test_recesso_cobre_so_dias_inteiros(self):
+        cobertos = dias_cobertos(
+            date(2024, 3, 1),
+            date(2024, 3, 31),
+            [(datetime(2024, 3, 14, 12), datetime(2024, 3, 16, 23, 59, 59))],
+        )
+        self.assertEqual(cobertos, {date(2024, 3, 15), date(2024, 3, 16)})

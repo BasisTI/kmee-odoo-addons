@@ -2,9 +2,11 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 
 CODIGOS_VT = ("VT", "VT_DIARIO")
+# Regras de VT: só o holerite cuja estrutura as tem depende do cadastro de VT.
+REGRAS_VT = ("DESC_VT", "VT_INFO")
 
 
 class HrContractAdvantage(models.Model):
@@ -17,10 +19,16 @@ class HrContractAdvantage(models.Model):
         ).contract_id
         if not contratos:
             return self.env["hr.payslip"]
-        return (
+        holerites = (
             self.env["hr.payslip"]
             .sudo()
             .search([("contract_id", "in", contratos.ids), ("state", "!=", "cancel")])
+        )
+        # 13º, recibo de férias e demais estruturas sem regra de VT não dependem
+        # do cadastro: não recusam nem são recalculados. As regras são as que o
+        # próprio holerite calcula (estrutura e pais).
+        return holerites.filtered(
+            lambda r: set(REGRAS_VT) & set(r._get_salary_rules().mapped("code"))
         )
 
     def _l10n_br_vt_integridade(self, holerites):
@@ -45,9 +53,31 @@ class HrContractAdvantage(models.Model):
                     fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
                 )
             )
+        # Rascunho de competência encerrada guarda o que valeu: recalculá-lo com
+        # os dados de hoje mudaria o líquido por outra causa.
         holerites.filtered(
-            lambda r: r.state in ("draft", "verify") and r.line_ids
+            lambda r: r.state in ("draft", "verify")
+            and r.line_ids
+            and r.date_to >= inicio_mes
         ).compute_sheet()
+
+    @api.constrains("amount", "advantage_template_id", "contract_id")
+    def _check_vt_mensal_ou_diario(self):
+        """VT mensal e valor diário juntos: o diário prevaleceria e o mensal
+        seria ignorado sem aviso."""
+        for contrato in self.contract_id:
+            ativos = contrato.advantages_ids.filtered(
+                lambda a: a.amount and a.advantage_template_code in CODIGOS_VT
+            )
+            if set(ativos.mapped("advantage_template_code")) == set(CODIGOS_VT):
+                raise ValidationError(
+                    _(
+                        "O contrato %(contrato)s tem vale-transporte mensal (VT) e "
+                        "por valor diário (VT_DIARIO) ao mesmo tempo. Use um só: "
+                        "zere ou remova o outro.",
+                        contrato=contrato.display_name,
+                    )
+                )
 
     @api.model_create_multi
     def create(self, vals_list):
