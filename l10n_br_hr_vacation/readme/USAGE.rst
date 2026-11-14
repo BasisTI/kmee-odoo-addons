@@ -141,3 +141,30 @@ do período aquisitivo (dobra, férias vencidas e recibo o leem).
 Depois do concessivo as férias são devidas em dobro (CLT art. 137): o módulo só
 aplica a dobra na rescisão (férias vencidas); a ausência, ou a parte dela que
 passa do concessivo, não é aceita pelo saldo vencido.
+
+**13º já pago na rescisão (TG-97)**
+
+A rescisão considera o 13º que o contrato já recebeu no ano do desligamento.
+Só contam os holerites de 13º (1ª parcela, 2ª parcela e 13º integral)
+**confirmados**, em vigor (sem estorno) e do mesmo contrato e ano:
+
+* **1ª parcela (adiantamento)**: o 13º proporcional da rescisão sai inteiro e o
+  adiantamento sai como desconto próprio, ``ADIANTAMENTO_13``, como no TRCT. É
+  a natureza 9214 da tabela 3 do eSocial, "13º salário - Desconto de
+  adiantamento" (a 9200 exclui a 1ª parcela do 13º; a rubrica padrão eSocial5040
+  usa a 9214). Vale em toda causa, inclusive na justa causa (sem 13º devido). O
+  desconto não deixa o líquido negativo; o que não couber vai à linha
+  informativa ``NAO_DESCONTADO_ADIANTAMENTO_13`` (fora do líquido).
+* **2ª parcela (ou 13º integral)**: o 13º do ano está quitado e a rescisão paga
+  só a diferença dos avos, inclusive os projetados pelo aviso indenizado (2ª
+  parcela de 2026 de 2.000,00 e dispensa em 22/12 com aviso até 24/01/2027: 13
+  avos, 2.166,67 devidos, 166,67 pagos). Se o quitado passa do devido (justa
+  causa ou culpa recíproca depois da 2ª parcela), o 13º da rescisão é zero e
+  nada é cobrado de volta.
+* **Encargos**: o INSS e o IRRF do 13º incidem sobre o total do ano (o da 2ª
+  parcela mais o da rescisão) menos o retido na 2ª parcela. O FGTS do 13º
+  recolhe só o que falta (8% do total menos o das duas parcelas) e o já
+  recolhido continua na base da multa. A 1ª parcela não retém INSS nem IRRF.
+
+Rescisão em rascunho recalcula sozinha quando a parcela é confirmada, estornada
+ou cancelada; rescisão confirmada recusa a mudança (volte-a para rascunho antes).

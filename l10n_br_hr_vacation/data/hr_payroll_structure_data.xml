@@ -100,6 +100,8 @@
                 ref('hr_rule_base_irrf_13_rescisao'),
                 ref('hr_rule_irrf_rescisao'),
                 ref('hr_rule_irrf_13_rescisao'),
+                ref('hr_rule_desconto_adiantamento_13_rescisao'),
+                ref('hr_rule_nao_descontado_adiantamento_13'),
                 ref('hr_rule_desconto_art_480'),
                 ref('hr_rule_desconto_aviso_previo'),
                 ref('hr_rule_nao_descontado_aviso_previo'),

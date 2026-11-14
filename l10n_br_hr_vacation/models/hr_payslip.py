@@ -365,6 +365,8 @@ class HrPayslip(models.Model):
         "l10n_br_abono_pecuniario",
     )
     _L10N_BR_PARTICIPACAO_NULA = (0, False, False, 0.0, None)
+    # Estruturas que pagam o 13º inteiro do ano (a 2ª parcela já abate a 1ª).
+    _L10N_BR_ESTRUTURAS_13_COMPLETO = ("13_2PARCELA", "13_SALARIO")
 
     def _l10n_br_participacao(self):
         """{id: (contrato, de, até, valor, tipo)}; valor 0 fora da integridade."""
@@ -386,11 +388,29 @@ class HrPayslip(models.Model):
                     valor = (salario, fgts) if salario or fgts else 0.0
                 elif slip.struct_id.code == "13_1PARCELA":
                     # O FGTS da 1ª parcela é abatido da rescisão do mesmo ano
-                    # e entra na base da multa (TG-93).
+                    # e entra na base da multa (TG-93); o valor da parcela é
+                    # descontado do líquido da rescisão (TG-97).
                     tipo = "decimo1"
-                    fgts = sum(ln.total for ln in slip.line_ids if ln.code == "FGTS")
-                    # Só o confirmado conta como recolhido para a rescisão.
-                    valor = fgts if fgts and slip.state == "done" else 0.0
+                    linhas = {ln.code: ln.total for ln in slip.line_ids}
+                    pago = (linhas.get("ADIANTAMENTO_13", 0.0), linhas.get("FGTS", 0.0))
+                    # Só o confirmado conta como pago para a rescisão.
+                    valor = pago if any(pago) and slip.state == "done" else 0.0
+                elif slip.struct_id.code in self._L10N_BR_ESTRUTURAS_13_COMPLETO:
+                    # 2ª parcela (ou 13º integral): quita o 13º do ano, com o
+                    # INSS, o IRRF e a pensão já retidos (TG-97).
+                    tipo = "decimo1"
+                    linhas = {ln.code: ln.total for ln in slip.line_ids}
+                    pago = tuple(
+                        linhas.get(codigo, 0.0)
+                        for codigo in (
+                            "DECIMO_TERCEIRO_BRUTO",
+                            "INSS_13",
+                            "IRRF_13",
+                            "PENSAO_ALIMENTICIA_13",
+                            "FGTS",
+                        )
+                    )
+                    valor = pago if any(pago) and slip.state == "done" else 0.0
                 elif slip.struct_id.code == "FERIAS":
                     tipo = "ferias"
                     linhas = {ln.code: ln.total for ln in slip.line_ids}
@@ -827,40 +847,90 @@ class HrPayslip(models.Model):
         )
 
     def _l10n_br_fgts_13_primeira_depositado(self, contract):
-        """FGTS já recolhido nas 1ªs parcelas do 13º do mesmo ano (TG-93).
+        """FGTS já recolhido nas parcelas do 13º do mesmo ano (TG-93, TG-97).
 
-        Soma a linha ``FGTS`` dos holerites de 1ª parcela CONFIRMADOS e em
-        vigor (sem estorno) do contrato, no ano deste holerite. A rescisão
-        abate este valor do FGTS do 13º proporcional (a 1ª parcela já
-        recolheu a parte dela) e a base da multa o soma de volta, porque o
-        depósito existe na conta vinculada. Sem 1ª parcela, devolve 0.
+        Soma a linha ``FGTS`` dos holerites de 1ª e de 2ª parcela CONFIRMADOS
+        e em vigor (sem estorno) do contrato, no ano deste holerite. A
+        rescisão abate este valor do FGTS do 13º do ano (as parcelas já
+        recolheram a parte delas) e a base da multa o soma de volta, porque o
+        depósito existe na conta vinculada. Sem parcela paga, devolve 0.
         """
         self.ensure_one()
         if not self.date_to or not contract:
             return 0.0
-        estrutura = self.env.ref(
-            "l10n_br_hr_vacation.structure_13_primeira_parcela",
-            raise_if_not_found=False,
+        pagos = self._l10n_br_holerites_13_pagos(contract)
+        return sum(
+            pagos.mapped("line_ids")
+            .filtered(lambda ln: ln.code == "FGTS")
+            .mapped("total")
         )
-        if not estrutura:
-            return 0.0
+
+    def _l10n_br_holerites_13_pagos(self, contract):
+        """Holerites de 13º (1ª, 2ª parcela e 13º integral) confirmados do ano.
+
+        Do mesmo contrato e do ano deste holerite, em vigor (sem estorno) e
+        confirmados: o rascunho e o cancelado não pagaram nada (TG-97).
+        """
+        self.ensure_one()
+        if not self.date_to or not contract:
+            return self.env["hr.payslip"]
         ano = self.date_to.year
-        primeiras = self.env["hr.payslip"].search(
+        return self.env["hr.payslip"].search(
             [
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
                 ("state", "=", "done"),
                 ("l10n_br_fora_de_vigor", "=", False),
-                ("struct_id", "=", estrutura.id),
+                (
+                    "struct_id.code",
+                    "in",
+                    ("13_1PARCELA",) + self._L10N_BR_ESTRUTURAS_13_COMPLETO,
+                ),
                 ("date_to", ">=", date(ano, 1, 1)),
                 ("date_to", "<=", date(ano, 12, 31)),
             ]
         )
-        return sum(
-            primeiras.mapped("line_ids")
-            .filtered(lambda ln: ln.code == "FGTS")
-            .mapped("total")
+
+    def _l10n_br_decimo_pago_ano(self, contract):
+        """O 13º que o contrato já recebeu no ano deste holerite (TG-97).
+
+        - ``adiantamento``: a 1ª parcela paga SEM 2ª parcela confirmada. É o
+          adiantamento do TRCT: sai como desconto próprio da rescisão, que
+          paga o 13º proporcional inteiro.
+        - ``quitado``: o bruto do 13º já fechado pela 2ª parcela (ou 13º
+          integral) confirmada, que já abate a 1ª parcela. A rescisão paga só
+          a diferença dos avos.
+        - ``inss``, ``irrf`` e ``pensao``: o retido nessas apurações, que a
+          rescisão desconta do imposto do total do ano.
+        """
+        self.ensure_one()
+        res = {
+            "adiantamento": 0.0,
+            "quitado": 0.0,
+            "inss": 0.0,
+            "irrf": 0.0,
+            "pensao": 0.0,
+        }
+        pagos = self._l10n_br_holerites_13_pagos(contract)
+        completos = pagos.filtered(
+            lambda s: s.struct_id.code in self._L10N_BR_ESTRUTURAS_13_COMPLETO
         )
+
+        def total(slips, codigo):
+            return sum(
+                slips.mapped("line_ids")
+                .filtered(lambda ln: ln.code == codigo)
+                .mapped("total")
+            )
+
+        if completos:
+            res["quitado"] = total(completos, "DECIMO_TERCEIRO_BRUTO")
+            res["inss"] = total(completos, "INSS_13")
+            res["irrf"] = total(completos, "IRRF_13")
+            res["pensao"] = total(completos, "PENSAO_ALIMENTICIA_13")
+        else:
+            res["adiantamento"] = total(pagos, "ADIANTAMENTO_13")
+        return res
 
     def _l10n_br_aviso_indenizado_devido(self):
         """Aviso prévio indenizado é devido pelo empregador (RF-06).
@@ -1068,6 +1138,7 @@ class HrPayslip(models.Model):
             "INDENIZACAO_ART_479",
             "DESCONTO_ART_480",
             "DESCONTO_AVISO_PREVIO",
+            "NAO_DESCONTADO_ADIANTAMENTO_13",
             "FGTS_AVISO",
             "FGTS",
             "FGTS_13",

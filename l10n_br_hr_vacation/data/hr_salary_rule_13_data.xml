@@ -307,7 +307,12 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('decimo')
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
+devido = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
+# TG-97: o 13º que a 2ª parcela (ou o 13º integral) confirmada já quitou no
+# ano não se paga de novo: só a diferença dos avos. A 1ª parcela (adiantamento)
+# não entra aqui: sai como desconto próprio (ADIANTAMENTO_13).
+quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
+result = max(devido - quitado, 0.0)
         </field>
     </record>
 </odoo>

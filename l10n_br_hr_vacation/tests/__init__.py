@@ -21,3 +21,4 @@ from . import test_fgts_13_primeira_parcela_rescisao
 from . import test_abono_medias
 from . import test_ferias_periodo_vencido
 from . import test_tipos_rescisao
+from . import test_decimo_pago_rescisao
