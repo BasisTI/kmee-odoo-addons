@@ -159,12 +159,38 @@ Só contam os holerites de 13º (1ª parcela, 2ª parcela e 13º integral)
   só a diferença dos avos, inclusive os projetados pelo aviso indenizado (2ª
   parcela de 2026 de 2.000,00 e dispensa em 22/12 com aviso até 24/01/2027: 13
   avos, 2.166,67 devidos, 166,67 pagos). Se o quitado passa do devido (justa
-  causa ou culpa recíproca depois da 2ª parcela), o 13º da rescisão é zero e
-  nada é cobrado de volta.
-* **Encargos**: o INSS e o IRRF do 13º incidem sobre o total do ano (o da 2ª
-  parcela mais o da rescisão) menos o retido na 2ª parcela. O FGTS do 13º
-  recolhe só o que falta (8% do total menos o das duas parcelas) e o já
-  recolhido continua na base da multa. A 1ª parcela não retém INSS nem IRRF.
+  causa ou culpa recíproca depois da 2ª parcela), o 13º da rescisão é zero e o
+  excesso é descontado (ver abaixo).
+* **Encargos**: o INSS, o IRRF e a pensão do 13º incidem sobre o 13º devido no
+  ano (``DECIMO_DEVIDO``, linha informativa) menos o retido na 2ª parcela. O
+  FGTS do 13º recolhe só o que falta (8% do devido menos o das duas parcelas) e o
+  já recolhido continua na base da multa. A 1ª parcela não retém INSS nem IRRF.
 
 Rescisão em rascunho recalcula sozinha quando a parcela é confirmada, estornada
 ou cancelada; rescisão confirmada recusa a mudança (volte-a para rascunho antes).
+
+**13º pago além do devido (TG-141)**
+
+Quando a 2ª parcela (ou o 13º integral) confirmada já pagou mais 13º do que a
+rescisão reconhece como devido (justa causa, culpa recíproca, pedido de demissão
+antes de 15/12 com a 2ª parcela pagando 12 avos), a rescisão cobra o excesso:
+
+* ``DESCONTO_13_EXCESSO``: desconto do excesso (o 13º quitado menos o devido),
+  na natureza 9214 da tabela 3 do eSocial ("13º salário - Desconto de
+  adiantamento"; rubrica padrão eSocial5041, "13º salário - Desconto do
+  pagamento"). Exemplo: salário de 3.000,00, pedido de demissão em 10/12 com a
+  2ª parcela já paga com 12 avos: devido de 11 avos, 2.750,00; excesso de
+  250,00.
+* Ordem e limites: o adiantamento do 13º, o aviso não cumprido e o art. 480
+  vêm antes; o excesso fica com o que sobrar. O conjunto dos descontos não passa
+  do líquido nem de um mês de remuneração (CLT art. 477, §5º). O que não couber
+  vai à linha informativa ``NAO_DESCONTADO_13_EXCESSO`` (fora do líquido) e
+  deve ser cobrado fora da rescisão.
+* ``DEVOLUCAO_ENCARGOS_13``: o INSS, o IRRF e a pensão do 13º retidos na 2ª
+  parcela sobre o excesso voltam ao empregado: a diferença entre o retido e o
+  imposto sobre o 13º devido. Sem incidência; entra no líquido antes do desconto.
+* O FGTS do 13º não é recolhido de novo, e o recolhido sobre o excesso continua
+  na base da multa.
+
+Mesma integridade entre holerites: a rescisão aberta recalcula quando a 2ª
+parcela muda; a confirmada recusa.

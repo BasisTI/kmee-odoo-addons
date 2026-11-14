@@ -1139,6 +1139,11 @@ class HrPayslip(models.Model):
             "DESCONTO_ART_480",
             "DESCONTO_AVISO_PREVIO",
             "NAO_DESCONTADO_ADIANTAMENTO_13",
+            # TG-141: 13º devido (base única dos encargos do 13º), devolução dos
+            # encargos retidos a mais e desconto do 13º pago além do devido.
+            "DECIMO_DEVIDO",
+            "DEVOLUCAO_ENCARGOS_13",
+            "DESCONTO_13_EXCESSO",
             "FGTS_AVISO",
             "FGTS",
             "FGTS_13",
