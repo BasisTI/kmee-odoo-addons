@@ -3,3 +3,5 @@
 
 from . import l10n_br_hr_collective_convention
 from . import l10n_br_hr_syndicate_contribution
+from . import hr_contract
+from . import hr_payslip
