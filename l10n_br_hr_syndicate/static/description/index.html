@@ -434,18 +434,18 @@ vale para todos os contratos dela. <tt class="docutils literal">tools.br.contrib
 <ul class="simple">
 <li><strong>617</strong> (<tt class="docutils literal">assistencial</tt>): o opositor paga 0,00 (a oposição prevalece sobre a marca de
 sindicalista); depois as isenções da CCT (<em>Tipos de Contratação Isentos</em> e <em>Isenta Contrato
-de Experiência</em>, em que o contrato do tipo “Prazo Determinado” não conta como experiência e
+de Experiência</em>, em que o contrato de tipo marcado como <em>Prazo Determinado</em> (campo do tipo de contratação) não conta como experiência e
 quem termina a experiência no meio do mês já deve o mês); depois o sindicalista paga
-integral, metade ou nada conforme a CCT.</li>
+integral, metade (arredondada para cima, <tt class="docutils literal">HALF_UP</tt>) ou nada conforme a CCT.</li>
 <li><strong>602</strong> (<tt class="docutils literal">sindical</tt>): o valor individual do funcionário com vigência (<em>Contribuição
-Sindical Individual</em>) prevalece sobre o da CCT e é devido mesmo sem a marca; senão só o
+Sindical Individual</em>) prevalece sobre o da CCT e é devido mesmo sem a marca; a vigência vale na competência se cobre o dia 1 dela, como no Sistema DP; senão só o
 sindicalista paga o valor cadastrado; os demais ficam em branco.</li>
 <li>Sem CCT ou sem contribuição cadastrada para a competência, a célula fica em branco:
 <tt class="docutils literal">tools.br.contribuicao_sindical_detalhe(contract, tipo)</tt> devolve <tt class="docutils literal">(None, motivo)</tt> e a
 condição da regra decide não gerar a linha (<tt class="docutils literal">contribuicao_sindical</tt> devolve 0.0). A
 lacuna de configuração nunca vira isenção.</li>
 </ul>
-<p>Mudar a marca, o valor individual, o tipo de contratação, o fim da experiência ou os tipos
+<p>Mudar a marca, o valor individual, o tipo de contratação, o fim da experiência, o <em>Prazo Determinado</em> do tipo ou os tipos
 isentos da CCT recalcula os holerites abertos da competência corrente em diante e recusa a
 mudança se houver holerite confirmado.</p>
 </div>

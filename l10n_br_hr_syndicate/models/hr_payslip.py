@@ -1,7 +1,7 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class HrPayslip(models.Model):
@@ -26,6 +26,34 @@ class HrPayslip(models.Model):
             or "contribuicao_sindical" in (r.amount_python_compute or "")
             for r in self._get_salary_rules()
         )
+
+    def _l10n_br_contribuicao_snapshot(self):
+        """O que 617 e 602 dão a cada holerite: só a diferença tem efeito."""
+        return {
+            s.id: tuple(
+                s.contract_id._l10n_br_contribuicao_resolver(s._get_competencia(), t)
+                for t in ("assistencial", "sindical")
+            )
+            for s in self
+        }
+
+    @api.model
+    def _l10n_br_contribuicao_guardar(self, holerites, operacao):
+        """Executa ``operacao()``; só os holerites cuja 617/602 mudou são aplicados.
+
+        Mudança sem efeito (valor individual de vigência que não cobre a
+        competência, fim de experiência anterior a ela) não recalcula nem recusa.
+        """
+        holerites = holerites.sudo().filtered(
+            lambda s: s.date_to and s.contract_id and s._l10n_br_le_cct()
+        )
+        antes = holerites._l10n_br_contribuicao_snapshot()
+        res = operacao()
+        holerites = holerites.exists()
+        depois = holerites._l10n_br_contribuicao_snapshot()
+        mudaram = holerites.filtered(lambda s: antes[s.id] != depois[s.id])
+        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(mudaram)
+        return res
 
     def _l10n_br_cct_aviso_texto(self, cct, motivo):
         dados = {

@@ -34,7 +34,9 @@ class TestContribuicaoIndividual(PayrollCommon):
         Tipo = cls.env["hr.contract.type"]
         cls.tipo_clt = Tipo.create({"name": "CLT Teste"})
         cls.tipo_aprendiz = Tipo.create({"name": "Aprendiz Teste"})
-        cls.tipo_prazo = Tipo.create({"name": "Prazo Determinado"})
+        cls.tipo_prazo = Tipo.create(
+            {"name": "Contrato a Termo", "l10n_br_prazo_determinado": True}
+        )
         cls.cct.assistencial_exempt_contract_type_ids = cls.tipo_aprendiz
         Contrib = cls.env["l10n.br.hr.syndicate.contribution"]
         for ano, mes in ((2026, "3"), (cls.hoje.year, str(cls.hoje.month))):
@@ -150,6 +152,13 @@ class TestContribuicaoIndividual(PayrollCommon):
         self.contrato.trial_date_end = date(2026, 3, 31)
         self.assertEqual(self._r("assistencial"), (40.0, False))
 
+    def test_617_metade_arredonda_para_cima_como_o_java(self):
+        self.env["l10n.br.hr.syndicate.contribution"].search(
+            [("month", "=", "3"), ("contribution_type", "=", "assistencial")]
+        ).fixed_amount = 35.05
+        self.empregado.l10n_br_sindicalista = True
+        self.assertEqual(self._r("assistencial"), (17.53, "sindicalizado_metade"))
+
     def test_617_prazo_determinado_nao_e_experiencia(self):
         self.contrato.write(
             {"contract_type_id": self.tipo_prazo.id, "trial_date_end": self.mar}
@@ -196,6 +205,40 @@ class TestContribuicaoIndividual(PayrollCommon):
         self.assertEqual(self._r("sindical"), (55.0, "valor_individual"))
         self.empregado.l10n_br_sindicalista = True
         self.assertEqual(self._r("sindical"), (55.0, "valor_individual"))
+
+    def test_602_vigencia_vale_se_cobre_o_dia_1_da_competencia(self):
+        Individual = self.env["l10n.br.hr.syndicate.individual.value"]
+        Individual.create(
+            {
+                "employee_id": self.empregado.id,
+                "date_start": date(2026, 3, 15),
+                "amount": 22.0,
+            }
+        )
+        # Começa no dia 15: não cobre o dia 1 de março (como o Sistema DP).
+        self.assertEqual(self._r("sindical"), (None, False))
+        self.assertEqual(
+            self._r("sindical", date(2026, 4, 30)), (22.0, "valor_individual")
+        )
+
+    def test_602_duas_vigencias_no_mes_vale_a_que_cobre_o_dia_1(self):
+        Individual = self.env["l10n.br.hr.syndicate.individual.value"]
+        Individual.create(
+            [
+                {
+                    "employee_id": self.empregado.id,
+                    "date_start": date(2026, 1, 1),
+                    "date_end": date(2026, 3, 15),
+                    "amount": 10.0,
+                },
+                {
+                    "employee_id": self.empregado.id,
+                    "date_start": date(2026, 3, 16),
+                    "amount": 22.0,
+                },
+            ]
+        )
+        self.assertEqual(self._r("sindical"), (10.0, "valor_individual"))
 
     def test_602_valor_individual_fora_da_vigencia_volta_a_regra_da_cct(self):
         self.env["l10n.br.hr.syndicate.individual.value"].create(
@@ -296,6 +339,43 @@ class TestContribuicaoIndividual(PayrollCommon):
             months=1, days=-1
         )
         self.assertAlmostEqualMoney(self._get_line_total(aberto, "TESTE_617"), 0.0)
+
+    def test_prazo_determinado_e_booleano_e_renomear_nao_muda_nada(self):
+        self.tipo_prazo.name = "Prazo Determinado"
+        self.tipo_clt.name = "Contrato por Prazo Determinado"
+        self.contrato.write({"trial_date_end": self.mar})
+        self.assertEqual(self._r("assistencial"), (0.0, "experiencia"))
+        self.contrato.contract_type_id = self.tipo_prazo
+        self.assertEqual(self._r("assistencial"), (40.0, False))
+
+    def test_marcar_prazo_determinado_recalcula_aberto_e_recusa_confirmado(self):
+        self.contrato.trial_date_end = self.hoje.replace(day=1) + relativedelta(
+            months=1, days=-1
+        )
+        aberto = self._mes(self.contrato)
+        self.assertAlmostEqualMoney(self._get_line_total(aberto, "TESTE_617"), 0.0)
+        self.tipo_clt.l10n_br_prazo_determinado = True
+        self.assertAlmostEqualMoney(self._get_line_total(aberto, "TESTE_617"), 40.0)
+        aberto.action_payslip_done()
+        with self.assertRaises(UserError):
+            self.tipo_clt.l10n_br_prazo_determinado = False
+
+    def test_mudanca_sem_efeito_nao_recusa_confirmado(self):
+        slip = self._mes(self.contrato)
+        slip.action_payslip_done()
+        # Vigência antiga que não cobre a competência corrente.
+        self.env["l10n.br.hr.syndicate.individual.value"].create(
+            {
+                "employee_id": self.empregado.id,
+                "date_start": date(2026, 1, 1),
+                "date_end": date(2026, 3, 31),
+                "amount": 22.0,
+            }
+        )
+        # Fim da experiência anterior à competência.
+        self.contrato.trial_date_end = date(2025, 1, 31)
+        self.assertEqual(slip.state, "done")
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_617"), 40.0)
 
     def test_tipos_isentos_da_cct_mudam_o_calculo_do_aberto(self):
         aberto = self._mes(self.contrato)

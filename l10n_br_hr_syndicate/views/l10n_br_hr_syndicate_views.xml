@@ -132,6 +132,17 @@
         </field>
     </record>
 
+    <record id="view_contract_type_tree_syndicate" model="ir.ui.view">
+        <field name="name">hr.contract.type.list.syndicate</field>
+        <field name="model">hr.contract.type</field>
+        <field name="inherit_id" ref="hr.hr_contract_type_view_tree" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="l10n_br_prazo_determinado" />
+            </xpath>
+        </field>
+    </record>
+
     <menuitem
         id="menu_syndicate_root"
         name="Sindicato"

@@ -1,6 +1,8 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
+from decimal import ROUND_HALF_UP, Decimal
+
 from dateutil.relativedelta import relativedelta
 
 from odoo import _, api, fields, models
@@ -22,8 +24,6 @@ class HrContract(models.Model):
         "antes: as regras usam os parâmetros que tiverem.",
     )
 
-    # Tipo de contratação que não conta como período de experiência (regra do DP).
-    _L10N_BR_PRAZO_DETERMINADO = "prazo determinado"
     _L10N_BR_CAMPOS_CONTRIBUICAO = ("contract_type_id", "trial_date_end")
 
     @api.constrains("l10n_br_cct_id", "partner_union")
@@ -90,8 +90,7 @@ class HrContract(models.Model):
 
     def _l10n_br_prazo_determinado(self):
         self.ensure_one()
-        nome = (self.contract_type_id.name or "").strip().casefold()
-        return nome == self._L10N_BR_PRAZO_DETERMINADO
+        return self.contract_type_id.l10n_br_prazo_determinado
 
     def _l10n_br_em_experiencia(self, competencia):
         """Em experiência no último dia da competência.
@@ -162,7 +161,8 @@ class HrContract(models.Model):
             if fator == 1.0:
                 return base, False
             motivo = "sindicalizado_metade" if fator else "sindicalizado_isento"
-            return round(base * fator, 2), motivo
+            metade = Decimal(str(base)) * Decimal(str(fator))
+            return float(metade.quantize(Decimal("0.01"), ROUND_HALF_UP)), motivo
         return base, False
 
     def _l10n_br_holerites_cct(self):
@@ -195,15 +195,10 @@ class HrContract(models.Model):
 
     def _l10n_br_write_contribuicao(self, vals):
         """Tipo de contratação e experiência mudam a 617: recalcula o aberto."""
-        antes = {c.id: (c.contract_type_id, c.trial_date_end) for c in self.sudo()}
-        res = self.with_context(l10n_br_contribuicao_guardando=True).write(vals)
-        mudaram = self.sudo().filtered(
-            lambda c: (c.contract_type_id, c.trial_date_end) != antes[c.id]
+        return self.env["hr.payslip"]._l10n_br_contribuicao_guardar(
+            self._l10n_br_holerites_cct(),
+            lambda: self.with_context(l10n_br_contribuicao_guardando=True).write(vals),
         )
-        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(
-            mudaram._l10n_br_holerites_cct()
-        )
-        return res
 
     def write(self, vals):
         if set(vals) & set(self._L10N_BR_CAMPOS_CONTRIBUICAO) and not (

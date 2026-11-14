@@ -1,8 +1,6 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from dateutil.relativedelta import relativedelta
-
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
@@ -51,18 +49,12 @@ class HrEmployee(models.Model):
         )
 
     def write(self, vals):
-        campos = set(self._L10N_BR_CAMPOS_CONTRIBUICAO)
-        if not campos & set(vals):
+        if not set(self._L10N_BR_CAMPOS_CONTRIBUICAO) & set(vals):
             return super().write(vals)
-        antes = {rec.id: {c: rec.sudo()[c] for c in campos} for rec in self}
-        res = super().write(vals)
-        mudaram = self.filtered(
-            lambda r: any(r.sudo()[c] != antes[r.id][c] for c in campos)
+        return self.env["hr.payslip"]._l10n_br_contribuicao_guardar(
+            self._l10n_br_holerites_contribuicao(),
+            lambda: super(HrEmployee, self).write(vals),
         )
-        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(
-            mudaram._l10n_br_holerites_contribuicao()
-        )
-        return res
 
 
 class L10nBrHrSyndicateIndividualValue(models.Model):
@@ -119,50 +111,46 @@ class L10nBrHrSyndicateIndividualValue(models.Model):
                 )
 
     def valor_do_mes(self, competencia):
-        """Valor vigente em algum dia do mês de ``competencia``, ou ``None``.
+        """Valor vigente no dia 1 do mês de ``competencia``, ou ``None``.
 
-        Público para as regras salariais, que não alcançam nomes com ``_``.
+        Como a ``Validity`` do Sistema DP: a vigência vale na competência se
+        cobre o primeiro dia dela. Público para as regras salariais, que não
+        alcançam nomes com ``_``.
         """
         inicio = competencia.replace(day=1)
-        fim = inicio + relativedelta(months=1)
         for rec in self.sorted("date_start", reverse=True):
-            if rec.date_start < fim and (not rec.date_end or rec.date_end >= inicio):
+            if rec.date_start <= inicio and (
+                not rec.date_end or rec.date_end >= inicio
+            ):
                 return rec.amount
         return None
 
     def _holerites(self):
         return self.mapped("employee_id")._l10n_br_holerites_contribuicao()
 
-    def _guardar(self, operacao):
-        slips = self._holerites()
-        antes = {r.id: tuple(str(r[c]) for c in self._CAMPOS) for r in self}
-        res = operacao(self)
-        existentes = self.exists()
-        mudou = len(existentes) != len(antes) or any(
-            antes[r.id] != tuple(str(r[c]) for c in self._CAMPOS) for r in existentes
-        )
-        if mudou:
-            self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(
-                slips | existentes._holerites()
-            )
-        return res
-
     @api.model_create_multi
     def create(self, vals_list):
-        recs = super().create(vals_list)
-        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(
-            recs._holerites()
+        empregados = self.env["hr.employee"].browse(
+            [v["employee_id"] for v in vals_list if v.get("employee_id")]
         )
-        return recs
+        return self.env["hr.payslip"]._l10n_br_contribuicao_guardar(
+            empregados._l10n_br_holerites_contribuicao(),
+            lambda: super(L10nBrHrSyndicateIndividualValue, self).create(vals_list),
+        )
 
     def write(self, vals):
         if not set(vals) & set(self._CAMPOS):
             return super().write(vals)
-        return self._guardar(
-            lambda recs: super(L10nBrHrSyndicateIndividualValue, recs).write(vals)
+        empregados = self.employee_id
+        if vals.get("employee_id"):
+            empregados |= self.env["hr.employee"].browse(vals["employee_id"])
+        return self.env["hr.payslip"]._l10n_br_contribuicao_guardar(
+            empregados._l10n_br_holerites_contribuicao(),
+            lambda: super(L10nBrHrSyndicateIndividualValue, self).write(vals),
         )
 
     def unlink(self):
-        return self._guardar(
-            lambda recs: super(L10nBrHrSyndicateIndividualValue, recs).unlink()
+        return self.env["hr.payslip"]._l10n_br_contribuicao_guardar(
+            self._holerites(),
+            lambda: super(L10nBrHrSyndicateIndividualValue, self).unlink(),
         )
