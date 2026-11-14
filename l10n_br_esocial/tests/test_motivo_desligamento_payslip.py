@@ -7,6 +7,8 @@ from odoo.tools import mute_logger
 
 from .common import HAS_ESOCIALLIB, ESocialCicloCommon
 
+LOGGER_S2299 = "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
+
 
 @tagged("post_install", "-at_install")
 class TestMotivoDesligamentoPayslip(ESocialCicloCommon):
@@ -20,9 +22,7 @@ class TestMotivoDesligamentoPayslip(ESocialCicloCommon):
         return payslip
 
     def _gerar(self, payslip):
-        with mute_logger(
-            "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
-        ):
+        with mute_logger(LOGGER_S2299):
             payslip.action_esocial_gerar_s2299()
         return payslip.l10n_br_esocial_s2299_ids
 
@@ -45,7 +45,9 @@ class TestMotivoDesligamentoPayslip(ESocialCicloCommon):
         s2299 = self._gerar(payslip)
         self.assertTrue(s2299)
         self.assertEqual(s2299.motivo_desligamento_id.codigo, "05")
-        self.assertEqual(s2299._to_esociallib_dict()["mtv_deslig"], "05")
+        with mute_logger(LOGGER_S2299):
+            dados = s2299._to_esociallib_dict()
+        self.assertEqual(dados["mtv_deslig"], "05")
 
     def test_s2299_gerado_de_cada_causa_nova(self):
         if "l10n_br_tipo_rescisao" not in self.env["hr.payslip"]._fields:
