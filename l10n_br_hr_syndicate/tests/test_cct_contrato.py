@@ -4,6 +4,7 @@
 from datetime import date
 
 from dateutil.relativedelta import relativedelta
+from freezegun import freeze_time
 
 from odoo import fields
 from odoo.exceptions import UserError, ValidationError
@@ -384,21 +385,36 @@ class TestCctContrato(PayrollCommon):
         self.assertFalse(normal.l10n_br_cct_aviso)
 
     def test_cct_nova_na_lacuna_recalcula_o_aberto_e_limpa_o_aviso(self):
-        self.contrato.l10n_br_cct_id = self.cct1
-        slip = self._holerite(self.contrato, 1, ano=2027)
-        self.env["l10n.br.hr.collective.convention"].create(
+        """A lacuna é relativa a hoje: a CCT termina no mês anterior ao corrente."""
+        inicio_mes = self.hoje.replace(day=1)
+        Cct = self.env["l10n.br.hr.collective.convention"]
+        # Sem as CCT de 2026 do setUpClass no caminho do mesmo sindicato.
+        (self.cct1 | self.cct2).write({"active": False})
+        velha = Cct.create(
             {
-                "name": "CCT 2027",
+                "name": "CCT Lacuna Velha",
                 "partner_union_id": self.sindicato.id,
-                "date_start": date(2027, 1, 1),
-                "date_end": date(2027, 12, 31),
+                "date_start": date(self.hoje.year - 3, 1, 1),
+                "date_end": inicio_mes - relativedelta(days=1),
+                "assistencial_amount": 45.0,
+            }
+        )
+        self.contrato.l10n_br_cct_id = velha
+        slip = self._holerite_hoje(self.contrato)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 45.0)
+        self.assertIn("CCT Lacuna Velha", slip.l10n_br_cct_aviso)
+        Cct.create(
+            {
+                "name": "CCT Lacuna Nova",
+                "partner_union_id": self.sindicato.id,
+                "date_start": inicio_mes,
+                "date_end": inicio_mes + relativedelta(years=1, days=-1),
                 "assistencial_amount": 60.0,
             }
         )
         self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 60.0)
         self.assertFalse(slip.l10n_br_cct_aviso)
 
-    # --- faixas de VA/VR ---------------------------------------------------
     def _faixa(self, cct, teto, taxa):
         return self.env["l10n.br.hr.convention.vavr.range"].create(
             {"convention_id": cct.id, "wage_ceiling": teto, "rate_pct": taxa}
@@ -448,3 +464,49 @@ class TestCctContrato(PayrollCommon):
         slip = self._holerite(self.contrato, 12, ano=2025)
         self.assertAlmostEqualMoney(self._get_line_total(slip, "TESTE_CCT"), 35.0)
         self.assertIn("anterior à primeira", slip.l10n_br_cct_aviso)
+
+
+# A integridade e o recálculo dependem de "hoje": a mesma classe roda congelada
+# em datas de virada (mês, ano, ano bissexto), para nenhum caso envelhecer.
+DATAS_CONGELADAS = (
+    "2026-11-01",
+    "2026-12-31",
+    "2027-02-01",
+    "2028-02-29",
+    "2029-01-01",
+)
+
+
+def _variante_congelada(data):
+    class _Congelada(TestCctContrato):
+        _data_congelada = data
+        # O carregador do Odoo só roda métodos de teste do próprio ``__dict__``.
+        allow_inherited_tests_method = True
+
+        @classmethod
+        def setUpClass(cls):
+            cls._congelador = freeze_time(cls._data_congelada)
+            cls._congelador.start()
+            try:
+                super().setUpClass()
+            except BaseException:
+                cls._congelador.stop()
+                raise
+
+        @classmethod
+        def tearDownClass(cls):
+            try:
+                super().tearDownClass()
+            finally:
+                cls._congelador.stop()
+
+    _Congelada.__name__ = _Congelada.__qualname__ = "TestCctContrato" + data.replace(
+        "-", ""
+    )
+    return _Congelada
+
+
+for _data in DATAS_CONGELADAS:
+    _classe = _variante_congelada(_data)
+    globals()[_classe.__name__] = _classe
+del _data, _classe
