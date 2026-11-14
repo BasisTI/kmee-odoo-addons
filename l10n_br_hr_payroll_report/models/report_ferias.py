@@ -13,7 +13,7 @@ from datetime import timedelta
 import pytz
 
 from odoo import _, api, fields, models
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 
 from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
 
@@ -21,6 +21,11 @@ from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
 DIAS_ANTECEDENCIA_AVISO = 30
 # CLT art. 145: o pagamento é feito até 2 dias antes do início do período.
 DIAS_ANTECEDENCIA_PAGAMENTO = 2
+# Quem emite o aviso (ato do empregador): gestão de ausências ou folha.
+GRUPOS_EMISSAO_AVISO = (
+    "hr_holidays.group_hr_holidays_user",
+    "payroll.group_payroll_user",
+)
 # Sem calendário no contrato, segunda a sexta.
 SEMANA_UTIL_PADRAO = {0, 1, 2, 3, 4}
 
@@ -236,6 +241,21 @@ class ReportAvisoFerias(models.AbstractModel):
 
     @api.model
     def _verificar_ausencia(self, leave):
+        """Só gestão de ausências ou da folha emite o aviso.
+
+        Emitir grava a data de comunicação e lê holerites e contrato com
+        ``sudo``: o empregado, que não tem esses acessos, não pode imprimir o
+        aviso da própria ausência. Chamada de sistema (``sudo``) passa.
+        """
+        if not self.env.su and not any(
+            self.env.user.has_group(grupo) for grupo in GRUPOS_EMISSAO_AVISO
+        ):
+            raise AccessError(
+                _(
+                    "O aviso de férias é emitido pelo empregador: é preciso ser "
+                    "gestor de ausências ou da folha."
+                )
+            )
         tipo = self.env.ref("l10n_br_hr_vacation.leave_type_ferias")
         if leave.holiday_status_id != tipo:
             raise UserError(
@@ -288,9 +308,12 @@ class ReportAvisoFerias(models.AbstractModel):
         fracao, fracoes = modelo_recibo._fracao(recibo) if recibo else (0, 0)
         # A data gravada vale para o período avisado: remarcada a ausência, o
         # aviso é outro e a comunicação, de hoje.
-        mesmo_periodo = (
-            leave.l10n_br_aviso_ferias_inicio == inicio
-            and leave.l10n_br_aviso_ferias_fim == fim
+        # Vale enquanto o período está dentro do avisado: a peça de uma ausência
+        # dividida, ou o fim encurtado, já foi comunicada.
+        mesmo_periodo = bool(
+            leave.l10n_br_aviso_ferias_inicio
+            and leave.l10n_br_aviso_ferias_inicio <= inicio
+            and fim <= leave.l10n_br_aviso_ferias_fim
         )
         emissao = leave.l10n_br_aviso_ferias_data if mesmo_periodo else False
         if not emissao:

@@ -10,7 +10,7 @@ Cobertura:
 """
 from datetime import date, datetime
 
-from odoo.exceptions import UserError
+from odoo.exceptions import AccessError, UserError
 from odoo.tests import tagged
 
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
@@ -441,6 +441,72 @@ class TestReciboAvisoFerias(PayrollCommon):
             .decode("utf-8")
         )
         self.assertIn("AVISO DE FÉRIAS", html)
+
+    def _usuario(self, login, grupos):
+        return self.env["res.users"].create(
+            {
+                "name": login,
+                "login": login,
+                "groups_id": [(6, 0, [self.env.ref(g).id for g in grupos])],
+            }
+        )
+
+    def test_empregado_nao_emite_o_aviso_da_propria_ausencia(self):
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
+        empregado = self._usuario("empregado_tg99", ["base.group_user"])
+        emp.user_id = empregado
+        with self.assertRaises(AccessError):
+            self.modelo_aviso.with_user(empregado).dados_aviso(
+                leave.with_user(empregado), data_emissao=date(2025, 2, 1)
+            )
+        self.assertFalse(leave.l10n_br_aviso_ferias_data)
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_aviso_ferias")
+        with self.assertRaises(AccessError):
+            self.env["ir.actions.report"].with_user(empregado)._render_qweb_html(
+                report.id, leave.ids
+            )
+        self.assertFalse(leave.l10n_br_aviso_ferias_data)
+
+    def test_gestor_da_folha_emite_o_aviso(self):
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
+        folha = self._usuario("folha_tg99", ["payroll.group_payroll_user"])
+        dados = self.modelo_aviso.with_user(folha).dados_aviso(
+            leave, data_emissao=date(2025, 2, 1)
+        )
+        self.assertEqual(dados["dias"], 20)
+
+    def test_ausencia_dividida_herda_a_comunicacao(self):
+        """As peças nascem com a data e o período avisados: sem alerta à toa."""
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 21))
+        self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 2, 1))
+        leave._split_leaves(date(2025, 3, 10), date(2025, 3, 10))
+        pecas = self.env["hr.leave"].search(
+            [
+                ("employee_id", "=", emp.id),
+                ("state", "=", "validate"),
+                ("holiday_status_id", "=", self.leave_type_ferias.id),
+            ]
+        )
+        self.assertEqual(len(pecas), 2)
+        for peca in pecas:
+            self.assertEqual(peca.l10n_br_aviso_ferias_data, date(2025, 2, 1))
+            dados = self.modelo_aviso.dados_aviso(peca, data_emissao=date(2025, 3, 1))
+            self.assertEqual(dados["emissao"], date(2025, 2, 1))
+            self.assertFalse(dados["fora_do_prazo"])
+
+    def test_encurtar_o_fim_mantem_a_comunicacao(self):
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
+        self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 2, 1))
+        leave.action_refuse()
+        leave.action_reset_confirm()
+        leave.write({"request_date_to": date(2025, 3, 15)})
+        leave.action_validate()
+        dados = self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 3, 1))
+        self.assertEqual(dados["emissao"], date(2025, 2, 1))
 
     def test_aviso_fora_do_prazo_alerta_e_nao_bloqueia(self):
         emp, _contract, _alloc = self._contrato()
