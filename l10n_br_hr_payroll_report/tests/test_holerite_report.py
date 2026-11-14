@@ -85,3 +85,145 @@ class TestHoleriteReport(PayrollCommon):
         # Verifica que o líquido aparece no HTML (formatado)
         self.assertTrue(net > 0)
         self.assertIn("LÍQUIDO A RECEBER", html_content)
+
+    # ── TG-98: colunas, bases e menu do contracheque ──────────────────────
+
+    def _contracheque(self, payslip):
+        return self.env[
+            "report.l10n_br_hr_payroll_report.report_holerite"
+        ].contracheque(payslip)
+
+    def _payslip_estrutura(self, xmlid, date_from, date_to):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=5000.00)
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": f"Holerite - {emp.name}",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.env.ref(xmlid).id,
+                "date_from": date_from,
+                "date_to": date_to,
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        return payslip
+
+    def test_proventos_sem_subtotal_nem_provisao(self):
+        """GROSS (subtotal) e provisões não entram nos proventos: o total bate com o NET."""
+        payslip = self._create_computed_payslip()
+        dados = self._contracheque(payslip)
+        codigos = dados["proventos"].mapped("code")
+        self.assertNotIn("GROSS", codigos)
+        self.assertFalse([c for c in codigos if c.startswith("PROV_")])
+        self.assertAlmostEqualMoney(
+            dados["total_proventos"], self._get_line_total(payslip, "GROSS")
+        )
+        self.assertAlmostEqualMoney(
+            dados["total_proventos"] - dados["total_descontos"], dados["liquido"]
+        )
+        self.assertAlmostEqualMoney(
+            dados["liquido"], self._get_line_total(payslip, "NET")
+        )
+
+    def test_descontos_so_categoria_desconto(self):
+        """Só descontos na coluna da direita; bases e encargos ficam fora."""
+        payslip = self._create_computed_payslip()
+        dados = self._contracheque(payslip)
+        self.assertIn("INSS", dados["descontos"].mapped("code"))
+        self.assertEqual(set(dados["descontos"].mapped("category_id.code")), {"DED"})
+        fora = set(dados["proventos"].mapped("code")) | set(
+            dados["descontos"].mapped("code")
+        )
+        self.assertFalse(fora & {"FGTS", "CPP", "RAT", "TERCEIROS", "BASE_IRRF"})
+
+    def test_bases_do_mensal(self):
+        """Salário de contribuição INSS, base IRRF, base FGTS e FGTS do mês."""
+        payslip = self._create_computed_payslip()
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertAlmostEqualMoney(bases["Sal. contribuição INSS"], 5000.0)
+        self.assertAlmostEqualMoney(
+            bases["Base IRRF"], self._get_line_total(payslip, "BASE_IRRF")
+        )
+        self.assertAlmostEqualMoney(bases["Base FGTS"], 5000.0)
+        self.assertAlmostEqualMoney(bases["FGTS do mês"], 400.0)
+        self.assertAlmostEqualMoney(
+            bases["FGTS do mês"], self._get_line_total(payslip, "FGTS")
+        )
+
+    def test_bases_no_html(self):
+        """As bases aparecem no PDF com os valores calculados, não zeradas."""
+        payslip = self._create_computed_payslip()
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_holerite")
+        html = (
+            self.env["ir.actions.report"]
+            ._render_qweb_html(report.id, payslip.ids)[0]
+            .decode("utf-8")
+        )
+        for rotulo in (
+            "Sal. contribuição INSS",
+            "Base IRRF",
+            "Base FGTS",
+            "FGTS do mês",
+        ):
+            self.assertIn(rotulo, html)
+        self.assertNotIn("BASE_IRRF", html)
+
+    def test_ferias_totais_batem_com_o_liquido(self):
+        payslip = self._payslip_estrutura(
+            "l10n_br_hr_vacation.structure_ferias", date(2024, 3, 1), date(2024, 3, 31)
+        )
+        dados = self._contracheque(payslip)
+        self.assertNotIn("GROSS", dados["proventos"].mapped("code"))
+        self.assertAlmostEqualMoney(
+            dados["total_proventos"] - dados["total_descontos"],
+            self._get_line_total(payslip, "NET"),
+        )
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertAlmostEqualMoney(
+            bases["Base FGTS"], self._get_line_total(payslip, "GROSS")
+        )
+
+    def test_13_segunda_parcela_base_fgts_so_da_diferenca(self):
+        """FGTS da 2ª parcela incide só sobre a diferença; a base mostra isso."""
+        payslip = self._payslip_estrutura(
+            "l10n_br_hr_vacation.structure_13_segunda_parcela",
+            date(2024, 12, 1),
+            date(2024, 12, 31),
+        )
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertAlmostEqualMoney(
+            bases["Base INSS 13º"], self._get_line_total(payslip, "GROSS")
+        )
+        self.assertAlmostEqualMoney(
+            bases["FGTS do mês"] / 0.08,
+            bases["Base FGTS"],
+            places=0,
+        )
+        self.assertIn("Base IRRF 13º", bases)
+
+    def test_rescisao_multa_do_fgts_nao_e_provento(self):
+        """A multa do FGTS vai à conta vinculada: informativa, fora do total."""
+        payslip = self._payslip_estrutura(
+            "l10n_br_hr_vacation.structure_rescisao",
+            date(2024, 3, 1),
+            date(2024, 3, 31),
+        )
+        dados = self._contracheque(payslip)
+        self.assertNotIn("MULTA_FGTS", dados["proventos"].mapped("code"))
+        self.assertAlmostEqualMoney(
+            dados["total_proventos"] - dados["total_descontos"],
+            self._get_line_total(payslip, "NET"),
+        )
+
+    def test_so_um_holerite_no_menu_imprimir(self):
+        """O relatório da OCA sai do menu Imprimir; o da KMEE é o único Holerite."""
+        oca = self.env.ref("payroll.action_report_payslip")
+        self.assertFalse(oca.binding_model_id)
+        kmee = self.env.ref("l10n_br_hr_payroll_report.action_report_holerite")
+        self.assertTrue(kmee.binding_model_id)
+        no_menu = self.env["ir.actions.report"].search(
+            [("binding_model_id.model", "=", "hr.payslip"), ("name", "=", "Holerite")]
+        )
+        self.assertEqual(no_menu, kmee)
