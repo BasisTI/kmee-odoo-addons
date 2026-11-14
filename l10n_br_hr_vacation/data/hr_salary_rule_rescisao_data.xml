@@ -311,8 +311,66 @@ disponivel = (
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+    - ADIANTAMENTO_13
 )
 result = tools.br.round_money(max(min(devido, disponivel - DESCONTO_AVISO_PREVIO, remuneracao - DESCONTO_AVISO_PREVIO), 0))
+        </field>
+    </record>
+
+    <!-- Adiantamento do 13º (1ª parcela) já pago no ano (TG-97): desconto
+         PRÓPRIO do TRCT, não redução do 13º. Fonte: a Tabela 3 do eSocial
+         tem a natureza 9214 "13º salário - Desconto de adiantamento" e a
+         9200 (desconto de adiantamentos em geral) exclui expressamente a 1ª
+         parcela do 13º; a rubrica padrão eSocial5040 "13º salário - Desconto
+         do adiantamento" usa a 9214. O 13º proporcional (DECIMO_RESCISAO)
+         continua inteiro, como no TRCT. Vale em toda causa, inclusive na
+         justa causa (sem 13º devido): o adiantamento é compensado nas verbas
+         (Lei 4.749/65, art. 2º). Não deixa o líquido negativo: o que não
+         couber vai à linha informativa NAO_DESCONTADO_ADIANTAMENTO_13. Só
+         conta a 1ª parcela confirmada e sem 2ª parcela confirmada no ano
+         (a 2ª parcela já abate a 1ª e quita o 13º: DECIMO_RESCISAO só paga
+         a diferença). Vem antes do aviso e do art. 480 (sequência 124). -->
+    <record id="hr_rule_desconto_adiantamento_13_rescisao" model="hr.salary.rule">
+        <field name="name">Desconto de Adiantamento do 13º (1ª parcela)</field>
+        <field name="sequence" eval="124" />
+        <field name="code">ADIANTAMENTO_13</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'] &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+adiantamento = tools.br.round_money(payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'])
+disponivel = (
+    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
+    + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
+    - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+)
+result = tools.br.round_money(max(min(adiantamento, disponivel), 0))
+        </field>
+    </record>
+
+    <!-- Adiantamento do 13º que não coube no líquido (informativo, fora do NET). -->
+    <record id="hr_rule_nao_descontado_adiantamento_13" model="hr.salary.rule">
+        <field name="name">Adiantamento 13º: Não Descontado (Informativo)</field>
+        <field name="sequence" eval="129" />
+        <field name="code">NAO_DESCONTADO_ADIANTAMENTO_13</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'] &gt; ADIANTAMENTO_13
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.round_money(payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'] - ADIANTAMENTO_13)
         </field>
     </record>
 
@@ -349,6 +407,7 @@ disponivel = (
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+    - ADIANTAMENTO_13
 )
 result = tools.br.round_money(max(min(devido, disponivel, remuneracao), 0))
         </field>
@@ -461,7 +520,10 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.calc_inss(max(DECIMO_RESCISAO, 0))
+# TG-97: INSS sobre o 13º total do ano (o desta rescisão mais o que a 2ª
+# parcela já quitou), menos o já retido nela.
+pago = payslip._l10n_br_decimo_pago_ano(contract)
+result = max(tools.br.calc_inss(max(DECIMO_RESCISAO, 0) + pago['quitado']) - pago['inss'], 0.0)
         </field>
     </record>
 
@@ -511,10 +573,15 @@ result = employee.l10n_br_pensao_percentual &gt; 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.calc_pensao_alimenticia(
-    max(DECIMO_RESCISAO, 0),
+# TG-97: percentual sobre o 13º total do ano, menos o já retido na 2ª parcela.
+pago = payslip._l10n_br_decimo_pago_ano(contract)
+result = max(
+    tools.br.calc_pensao_alimenticia(
+        max(DECIMO_RESCISAO, 0) + pago['quitado'],
+        0.0,
+        employee.l10n_br_pensao_percentual,
+    ) - pago['pensao'],
     0.0,
-    employee.l10n_br_pensao_percentual,
 )
         </field>
     </record>
@@ -553,7 +620,14 @@ result = SALDO_SALARIO - INSS - dependentes - pensao
 dependentes = employee.l10n_br_irrf_dependentes * tools.br.irrf_deducao_dependente()
 # Pensão retida sobre o próprio 13º (percentual) - dedutível também na
 # apuração exclusiva de fonte da gratificação natalina.
-result = DECIMO_RESCISAO - INSS_13 - dependentes - PENSAO_ALIMENTICIA_13
+# TG-97: base anual do 13º, com o INSS e a pensão já retidos na 2ª parcela.
+pago = payslip._l10n_br_decimo_pago_ano(contract)
+result = (
+    DECIMO_RESCISAO + pago['quitado']
+    - INSS_13 - pago['inss']
+    - dependentes
+    - PENSAO_ALIMENTICIA_13 - pago['pensao']
+)
         </field>
     </record>
 
@@ -600,7 +674,10 @@ result = not employee.l10n_br_molestia_grave
 # seguida do redutor do IRPF sobre o 13º bruto (Lei 9.250/95, art. 3º-A, § 3º,
 # dispositivo expresso para a gratificação natalina). Simplificado do 13º:
 # IN RFB 1.500/2014, art. 13, § 8º.
-result = tools.br.irrf_mais_favoravel(max(DECIMO_RESCISAO, 0), BASE_IRRF_13)
+# TG-97: imposto exclusivo do 13º total do ano, menos o retido na 2ª parcela.
+pago = payslip._l10n_br_decimo_pago_ano(contract)
+total = max(DECIMO_RESCISAO, 0) + pago['quitado']
+result = max(tools.br.irrf_mais_favoravel(total, BASE_IRRF_13) - pago['irrf'], 0.0)
         </field>
     </record>
 
@@ -640,9 +717,12 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
         <field name="amount_python_compute">
 # O FGTS das 1ªs parcelas do 13º do ano já foi recolhido na competência delas
 # (TG-93): a rescisão recolhe só o que falta, sem valor negativo.
+# Com a 2ª parcela já paga (TG-97), a base é o 13º total do ano e o recolhido
+# soma as duas parcelas.
 ja_recolhido = payslip._l10n_br_fgts_13_primeira_depositado(contract)
+quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
 result = max(
-    tools.br.round_money(max(DECIMO_RESCISAO, 0) * 0.08) - ja_recolhido, 0.0
+    tools.br.round_money((max(DECIMO_RESCISAO, 0) + quitado) * 0.08) - ja_recolhido, 0.0
 )
         </field>
     </record>
@@ -715,6 +795,7 @@ result = (
     + INDENIZACAO_ART_479
     - DESCONTO_ART_480
     - DESCONTO_AVISO_PREVIO
+    - ADIANTAMENTO_13
     - INSS
     - INSS_13
     - IRRF
