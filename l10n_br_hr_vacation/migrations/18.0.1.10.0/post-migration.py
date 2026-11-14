@@ -4,8 +4,8 @@
 """TG-141: a rescisão desconta o 13º pago além do devido.
 
 Regras e estruturas são ``noupdate="1"``: o ``-u`` cria as regras novas
-(``DECIMO_DEVIDO``, ``DEVOLUCAO_ENCARGOS_13``, ``DESCONTO_13_EXCESSO`` e a linha
-informativa), mas não as liga à estrutura da rescisão nem troca as fórmulas em
+(``DECIMO_DEVIDO``, ``DESCONTO_13_EXCESSO``, a linha informativa e as devoluções
+de INSS e de IRRF do 13º), mas não as liga à estrutura da rescisão nem troca as fórmulas em
 bancos instalados. Aqui as regras novas entram na estrutura e as fórmulas passam
 a usar o 13º devido SOMENTE se a gravada ainda for exatamente a da 1.9.0; regra
 personalizada fica como está, com aviso no log. Idempotente.
@@ -131,9 +131,10 @@ result = (
 
 NOVAS_NA_RESCISAO = (
     "hr_rule_decimo_devido",
-    "hr_rule_devolucao_encargos_13",
     "hr_rule_desconto_13_excesso",
     "hr_rule_nao_descontado_13_excesso",
+    "hr_rule_devolucao_inss_13",
+    "hr_rule_devolucao_irrf_13",
 )
 
 
@@ -149,6 +150,22 @@ def _normaliza(texto):
 
 def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
+    # As fórmulas novas leem o 13º devido e o NET novo soma a devolução e subtrai
+    # o desconto: com o NET personalizado, trocar só as outras (ou ligar as regras
+    # novas) deixaria o líquido diferente da soma das linhas. Nada é alterado.
+    net = env.ref("l10n_br_hr_vacation.hr_rule_net_rescisao", raise_if_not_found=False)
+    chave = ("hr_rule_net_rescisao", "amount_python_compute")
+    if net and _normaliza(net[chave[1]]) not in (
+        _normaliza(CAMPOS[chave][1]),
+        _normaliza(_valor_novo(CAMPOS[chave][0], *chave)),
+    ):
+        _logger.warning(
+            "TG-141: o NET da rescisão está personalizado: NENHUMA regra foi "
+            "atualizada nem ligada à estrutura, para o líquido não divergir das "
+            "linhas. Compare com l10n_br_hr_vacation/data/ (13º devido, desconto "
+            "do excesso e devoluções de INSS e IRRF do 13º) e ajuste."
+        )
+        return
     for (xmlid, campo), (arquivo, antigo) in CAMPOS.items():
         regra = env.ref(f"l10n_br_hr_vacation.{xmlid}", raise_if_not_found=False)
         if not regra:
