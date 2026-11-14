@@ -5,3 +5,5 @@ access_convention_wage_floor_user,l10n.br.hr.convention.wage.floor.user,model_l1
 access_convention_wage_floor_manager,l10n.br.hr.convention.wage.floor.manager,model_l10n_br_hr_convention_wage_floor,hr.group_hr_manager,1,1,1,1
 access_syndicate_contribution_user,l10n.br.hr.syndicate.contribution.user,model_l10n_br_hr_syndicate_contribution,hr.group_hr_user,1,0,0,0
 access_syndicate_contribution_manager,l10n.br.hr.syndicate.contribution.manager,model_l10n_br_hr_syndicate_contribution,hr.group_hr_manager,1,1,1,1
+access_convention_vavr_range_user,l10n.br.hr.convention.vavr.range.user,model_l10n_br_hr_convention_vavr_range,hr.group_hr_user,1,0,0,0
+access_convention_vavr_range_manager,l10n.br.hr.convention.vavr.range.manager,model_l10n_br_hr_convention_vavr_range,hr.group_hr_manager,1,1,1,1
