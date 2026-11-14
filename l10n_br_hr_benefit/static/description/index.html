@@ -374,13 +374,23 @@ ul.auto-toc {
 <p>Integra o módulo OCA <tt class="docutils literal">payroll_contract_advantages</tt> com as regras
 salariais brasileiras, adicionando templates de benefícios comuns:</p>
 <ul class="simple">
-<li><strong>Vale-Transporte (VT)</strong>: desconto limitado a 6% do salário</li>
+<li><strong>Vale-Transporte (VT)</strong>: crédito pelo valor diário da tarifa
+(<tt class="docutils literal">VT_DIARIO</tt>) x dias úteis do mês, e desconto do empregado limitado a 6%
+do salário-base e ao custo do VT (Lei 7.418/85, art. 4º; Decreto 10.854/21,
+art. 110)</li>
 <li><strong>Vale-Refeição (VR)</strong>: não tributável (INSS/IRRF)</li>
 <li><strong>Vale-Alimentação (VA)</strong>: não tributável</li>
 <li><strong>Plano de Saúde</strong>: desconto dedutível do IRRF</li>
 </ul>
 <p>Os benefícios são configurados por contrato via advantage templates
 e calculados automaticamente na folha de pagamento.</p>
+<p><strong>Dias úteis do VT.</strong> Escala do calendário do contrato (inclusive o quinzenal,
+como a 12x36), menos os feriados (ausência global de dia inteiro, como no DSR, e
+o <tt class="docutils literal">l10n_br_hr_holidays_public</tt> quando instalado), o recesso global de vários
+dias, e os afastamentos, licenças e férias aprovados de dia inteiro. Limites:
+ausência por horas e falta lançada no holerite não tiram o dia, e mudar
+feriado ou afastamento não recalcula holerite já calculado. O contrato usa
+<tt class="docutils literal">VT</tt> (mensal) ou <tt class="docutils literal">VT_DIARIO</tt>, nunca os dois.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
