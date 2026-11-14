@@ -2,3 +2,5 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from . import report_holerite
+from . import report_ferias
+from . import hr_leave
