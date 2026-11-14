@@ -10,6 +10,14 @@
         <field name="upper_bound">99999</field>
     </record>
 
+    <record id="advantage_template_vt_diario" model="hr.contract.advantage.template">
+        <field name="name">Vale-Transporte (valor diário)</field>
+        <field name="code">VT_DIARIO</field>
+        <field name="default_value">0</field>
+        <field name="lower_bound">0</field>
+        <field name="upper_bound">99999</field>
+    </record>
+
     <record id="advantage_template_vr" model="hr.contract.advantage.template">
         <field name="name">Vale-Refeição</field>
         <field name="code">VR</field>

@@ -374,7 +374,10 @@ ul.auto-toc {
 <p>Integra o módulo OCA <tt class="docutils literal">payroll_contract_advantages</tt> com as regras
 salariais brasileiras, adicionando templates de benefícios comuns:</p>
 <ul class="simple">
-<li><strong>Vale-Transporte (VT)</strong>: desconto limitado a 6% do salário</li>
+<li><strong>Vale-Transporte (VT)</strong>: crédito pelo valor diário da tarifa
+(<tt class="docutils literal">VT_DIARIO</tt>) x dias úteis do mês, e desconto do empregado limitado a 6%
+do salário-base e ao custo do VT (Lei 7.418/85, art. 4º; Decreto 10.854/21,
+art. 110)</li>
 <li><strong>Vale-Refeição (VR)</strong>: não tributável (INSS/IRRF)</li>
 <li><strong>Vale-Alimentação (VA)</strong>: não tributável</li>
 <li><strong>Plano de Saúde</strong>: desconto dedutível do IRRF</li>

@@ -14,7 +14,7 @@
 
     <!-- ══════════════════════════════════════════════════════════════
          DESCONTO VALE-TRANSPORTE (DED)
-         6% do salário, limitado ao valor do VT
+         6% do salário-base, limitado ao crédito do VT (valor diário x dias úteis)
          ══════════════════════════════════════════════════════════════ -->
     <record id="hr_rule_desc_vt" model="hr.salary.rule">
         <field name="name">Desconto Vale-Transporte</field>
@@ -26,13 +26,38 @@
         />
         <field name="condition_select">python</field>
         <field name="condition_python">
-vt = current_contract.advantages.VT
-result = vt and vt > 0
+result = tools.br.credito_vt(contract) > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-vt = current_contract.advantages.VT
-result = tools.br.calc_vt(contract.wage, vt)
+# 6% só do salário-base do mês (sem variáveis), limitado ao custo do VT.
+salario_base = tools.br.round_money(
+    contract.wage * tools.br.dias_salario(contract) / 30
+)
+result = tools.br.calc_vt(salario_base, tools.br.credito_vt(contract))
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         VALE-TRANSPORTE (INFO)
+         Crédito do mês: valor diário da tarifa x dias úteis da escala,
+         sem feriados, afastamentos e férias
+         ══════════════════════════════════════════════════════════════ -->
+    <record id="hr_rule_vt_info" model="hr.salary.rule">
+        <field name="name">Vale-Transporte</field>
+        <field name="sequence" eval="24" />
+        <field name="code">VT_INFO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = tools.br.credito_vt(contract) > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.credito_vt(contract)
         </field>
     </record>
 
