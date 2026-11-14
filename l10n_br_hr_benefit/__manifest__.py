@@ -3,7 +3,7 @@
 {
     "name": "Benefícios da Folha de Pagamento Brasileira",
     "summary": "VT, VR, VA, Plano de Saúde na folha de pagamento BR",
-    "version": "18.0.1.1.0",
+    "version": "18.0.1.2.0",
     "license": "AGPL-3",
     "author": "KMEE, Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
@@ -11,6 +11,7 @@
     "depends": [
         "payroll_contract_advantages",
         "l10n_br_hr_payroll",
+        "l10n_br_hr_syndicate",
     ],
     "data": [
         "data/hr_contract_advantage_template_data.xml",

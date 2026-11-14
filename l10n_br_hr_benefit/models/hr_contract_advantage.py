@@ -7,6 +7,9 @@ from odoo.exceptions import UserError, ValidationError
 CODIGOS_VT = ("VT", "VT_DIARIO")
 # Regras de VT: só o holerite cuja estrutura as tem depende do cadastro de VT.
 REGRAS_VT = ("DESC_VT", "VT_INFO")
+# VR e VA são a base do desconto de VA/VR (rubrica 071).
+CODIGOS_VAVR = ("VR", "VA")
+REGRAS_VAVR = ("DESC_VAVR",)
 
 
 class HrContractAdvantage(models.Model):
@@ -15,7 +18,7 @@ class HrContractAdvantage(models.Model):
     def _l10n_br_vt_holerites(self):
         """Holerites vivos dos contratos cujo VT este registro altera."""
         contratos = self.filtered(
-            lambda a: a.advantage_template_code in CODIGOS_VT
+            lambda a: a.advantage_template_code in CODIGOS_VT + CODIGOS_VAVR
         ).contract_id
         if not contratos:
             return self.env["hr.payslip"]
@@ -24,20 +27,21 @@ class HrContractAdvantage(models.Model):
             .sudo()
             .search([("contract_id", "in", contratos.ids), ("state", "!=", "cancel")])
         )
-        # 13º, recibo de férias e demais estruturas sem regra de VT não dependem
-        # do cadastro: não recusam nem são recalculados. As regras são as que o
-        # próprio holerite calcula (estrutura e pais).
+        # 13º, recibo de férias e demais estruturas sem regra de VT ou de VA/VR
+        # não dependem do cadastro: não recusam nem são recalculados. As regras
+        # são as que o próprio holerite calcula (estrutura e pais).
         return holerites.filtered(
-            lambda r: set(REGRAS_VT) & set(r._get_salary_rules().mapped("code"))
+            lambda r: set(REGRAS_VT + REGRAS_VAVR)
+            & set(r._get_salary_rules().mapped("code"))
         )
 
     def _l10n_br_vt_integridade(self, holerites):
         """Recalcula o holerite aberto e recusa o confirmado da competência vigente.
 
-        O valor do VT muda o crédito e o desconto do mês. Holerite de
-        competência já encerrada guarda o que valeu na época; o da competência
-        corrente ou futura, confirmado, ficaria com um VT que o cadastro já não
-        sustenta.
+        O valor do VT (ou do VR/VA, base do desconto 071) muda o crédito e o
+        desconto do mês. Holerite de competência já encerrada guarda o que
+        valeu na época; o da competência corrente ou futura, confirmado, ficaria
+        com um valor que o cadastro já não sustenta.
         """
         inicio_mes = fields.Date.context_today(self).replace(day=1)
         fechados = holerites.filtered(

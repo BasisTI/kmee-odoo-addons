@@ -14,7 +14,8 @@
 
     <!-- ══════════════════════════════════════════════════════════════
          DESCONTO VALE-TRANSPORTE (DED)
-         6% do salário-base, limitado ao crédito do VT (valor diário x dias úteis)
+         Até 6% do salário-base (percentual da CCT, se houver), limitado ao
+         crédito do VT (valor diário x dias úteis)
          ══════════════════════════════════════════════════════════════ -->
     <record id="hr_rule_desc_vt" model="hr.salary.rule">
         <field name="name">Desconto Vale-Transporte</field>
@@ -30,11 +31,43 @@ result = tools.br.credito_vt(contract) > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-# 6% só do salário-base do mês (sem variáveis), limitado ao custo do VT.
+# Percentual do salário-base do mês (sem variáveis): o da CCT vigente na
+# competência, no máximo 6% (Lei 7.418/85, art. 4º); 6% sem CCT. Limitado ao
+# custo do VT.
 salario_base = tools.br.round_money(
     contract.wage * tools.br.dias_salario(contract) / 30
 )
-result = tools.br.calc_vt(salario_base, tools.br.credito_vt(contract))
+cct = tools.br.cct(contract)
+pct_cct = cct.vt_employee_pct if cct else 0.0
+result = tools.br.desconto_vt(salario_base, tools.br.credito_vt(contract), pct_cct)
+        </field>
+    </record>
+
+    <!-- ══════════════════════════════════════════════════════════════
+         DESCONTO VA/VR (DED) — rubrica 071
+         (VR + VA do contrato) x taxa da faixa do salário na CCT vigente
+         ══════════════════════════════════════════════════════════════ -->
+    <record id="hr_rule_desc_vavr" model="hr.salary.rule">
+        <field name="name">Desconto VA/VR (071)</field>
+        <field name="sequence" eval="54" />
+        <field name="code">DESC_VAVR</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+# Só com CCT que defina faixas de VA/VR; sem CCT ou sem faixa, não há desconto.
+cct = tools.br.cct(contract)
+base = (current_contract.advantages.VR or 0) + (current_contract.advantages.VA or 0)
+result = bool(cct) and base > 0 and cct.vavr_rate(contract.wage) is not None
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+# Taxa da faixa do salário-base vigente (a faixa "acima de" cobre o resto).
+cct = tools.br.cct(contract)
+base = (current_contract.advantages.VR or 0) + (current_contract.advantages.VA or 0)
+result = tools.br.round_money(base * cct.vavr_rate(contract.wage))
         </field>
     </record>
 

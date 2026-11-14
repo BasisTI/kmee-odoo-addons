@@ -74,3 +74,16 @@ def dias_uteis_vt(inicio, fim, dias_semana, feriados=(), ausencias=()):
 def credito_vt(valor_diario, dias_uteis):
     """Crédito do VT do mês: valor diário da tarifa x dias úteis."""
     return round_money(valor_diario * dias_uteis)
+
+
+TETO_VT_PCT = 6.0
+
+
+def desconto_vt(salario, credito, pct_cct=0.0):
+    """Desconto do VT do empregado: percentual do salário, limitado ao crédito.
+
+    O percentual é o da CCT (``pct_cct``, em %, 6 = 6%) quando ela define um,
+    nunca acima de 6% (Lei 7.418/85, art. 4º); sem CCT (0), 6%.
+    """
+    pct = min(pct_cct, TETO_VT_PCT) if pct_cct and pct_cct > 0 else TETO_VT_PCT
+    return round_money(min(salario * pct / 100.0, credito))
