@@ -1,7 +1,7 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import _, fields, models
+from odoo import fields, models
 
 
 class HrPayslip(models.Model):
@@ -27,26 +27,25 @@ class HrPayslip(models.Model):
             for r in self._get_salary_rules()
         )
 
-    @staticmethod
-    def _l10n_br_cct_aviso_texto(cct, motivo):
+    def _l10n_br_cct_aviso_texto(self, cct, motivo):
         dados = {
             "cct": cct.name,
             "ini": fields.Date.to_string(cct.date_start),
             "fim": fields.Date.to_string(cct.date_end),
         }
         if motivo == "vencida":
-            return _(
+            return self.env._(
                 "Nenhuma CCT cobre a competência: usada a última vencida, "
                 "%(cct)s (vigência até %(fim)s).",
                 **dados,
             )
         if motivo == "futura":
-            return _(
+            return self.env._(
                 "Nenhuma CCT cobre a competência (anterior à primeira): usada a "
                 "primeira, %(cct)s (vigência de %(ini)s).",
                 **dados,
             )
-        return _(
+        return self.env._(
             "O sindicato não tem CCT ativa: usada a CCT arquivada %(cct)s "
             "(vigência de %(ini)s a %(fim)s).",
             **dados,
