@@ -38,7 +38,27 @@
                             <field name="contribution_employer_pct" />
                         </group>
                     </group>
+                    <group string="Contribui&#231;&#245;es e Percentuais da CCT">
+                        <group>
+                            <field name="assistencial_amount" />
+                            <field name="assistencial_sindicalizado" />
+                            <field name="assistencial_exempt_trial" />
+                            <field name="monthly_fee_amount" />
+                        </group>
+                        <group>
+                            <field name="vt_employee_pct" />
+                            <field name="dsr_days_per_week" />
+                        </group>
+                    </group>
                     <notebook>
+                        <page string="Desconto de VA/VR" name="vavr_ranges">
+                            <field name="vavr_range_ids">
+                                <list editable="bottom">
+                                    <field name="wage_ceiling" />
+                                    <field name="rate_pct" />
+                                </list>
+                            </field>
+                        </page>
                         <page string="Pisos por Cargo" name="wage_floors">
                             <field name="wage_floor_job_ids">
                                 <list editable="bottom">
@@ -162,4 +182,32 @@
         action="action_syndicate_contribution"
         sequence="20"
     />
+
+    <record id="hr_contract_view_form_cct" model="ir.ui.view">
+        <field name="name">hr.contract.form.cct</field>
+        <field name="model">hr.contract</field>
+        <field
+            name="inherit_id"
+            ref="l10n_br_hr_contract.l10n_br_hr_contract_view_form"
+        />
+        <field name="arch" type="xml">
+            <field name="partner_union" position="after">
+                <field name="l10n_br_cct_id" />
+            </field>
+        </field>
+    </record>
+
+    <record id="hr_payslip_view_form_cct" model="ir.ui.view">
+        <field name="name">hr.payslip.form.cct</field>
+        <field name="model">hr.payslip</field>
+        <field name="inherit_id" ref="l10n_br_hr_payroll.view_payslip_form_br" />
+        <field name="arch" type="xml">
+            <xpath
+                expr="//field[@name='l10n_br_faltas_injustificadas']"
+                position="after"
+            >
+                <field name="l10n_br_cct_aviso" invisible="not l10n_br_cct_aviso" />
+            </xpath>
+        </field>
+    </record>
 </odoo>
