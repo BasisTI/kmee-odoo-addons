@@ -3,3 +3,4 @@
 
 from . import report_holerite
 from . import report_ferias
+from . import hr_leave

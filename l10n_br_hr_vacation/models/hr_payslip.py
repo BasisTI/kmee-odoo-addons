@@ -148,6 +148,26 @@ class HrPayslip(models.Model):
         "UMA das frações. Só tem efeito com l10n_br_ferias_allocation_id "
         "definido; sem alocação, usa-se l10n_br_abono_pecuniario (legado).",
     )
+    l10n_br_ferias_salario = fields.Float(
+        string="Salário na Remuneração das Férias",
+        copy=False,
+        readonly=True,
+        help="Salário contratual que entrou na remuneração das férias, "
+        "gravado no cálculo (TG-99): o recibo mostra o que foi pago, não o "
+        "que o contrato diz hoje. Zero em holerite calculado antes deste campo.",
+    )
+    l10n_br_ferias_media = fields.Float(
+        string="Média das Variáveis na Remuneração das Férias",
+        copy=False,
+        readonly=True,
+        help="Média das verbas variáveis habituais (RF-18) gravada no cálculo.",
+    )
+    l10n_br_ferias_adicionais = fields.Float(
+        string="Adicionais Fixos na Remuneração das Férias",
+        copy=False,
+        readonly=True,
+        help="Periculosidade e insalubridade (TG-88/TG-130) gravadas no cálculo.",
+    )
     l10n_br_dias_ferias_gozadas = fields.Integer(
         string="Dias de Férias Gozadas",
         compute="_compute_dias_ferias_gozadas",
@@ -523,8 +543,31 @@ class HrPayslip(models.Model):
         res = super(
             HrPayslip, self.with_context(l10n_br_em_compute=True)
         ).compute_sheet()
+        self._l10n_br_gravar_remuneracao_ferias()
         self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
         return res
+
+    def _l10n_br_gravar_remuneracao_ferias(self):
+        """Grava os componentes da remuneração das férias usados no cálculo.
+
+        São os mesmos termos da regra ``FERIAS`` (salário, média e adicionais
+        fixos). O recibo os lê daqui: recalculá-los na impressão muda o quadro
+        quando o mensal é confirmado depois, o contrato é reajustado ou ganha
+        periculosidade, e as linhas pagas não mudam.
+        """
+        for slip in self.filtered(lambda s: s.struct_id.code == "FERIAS"):
+            contrato = slip.contract_id
+            slip.with_context(l10n_br_em_compute=True).write(
+                {
+                    "l10n_br_ferias_salario": contrato.wage,
+                    "l10n_br_ferias_media": slip._l10n_br_media_habitual(
+                        slip._l10n_br_codes_media_habitual()
+                    ),
+                    "l10n_br_ferias_adicionais": slip._l10n_br_adicionais_fixos(
+                        contrato
+                    ),
+                }
+            )
 
     def _l10n_br_ferias_gozadas(self, contract):
         """Períodos de gozo dos recibos de férias que se sobrepõem a este holerite.

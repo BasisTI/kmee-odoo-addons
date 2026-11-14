@@ -84,23 +84,27 @@
                             <tr class="ferias-header">
                                 <td colspan="4">PERÍODOS</td>
                             </tr>
+                            <tr t-if="f['cancelado']">
+                                <td colspan="4" class="text-center">
+                                    <strong>HOLERITE CANCELADO</strong>
+                                </td>
+                            </tr>
                             <tr>
                                 <td colspan="2">
                                     <strong>Período aquisitivo:</strong>
-                                    <t t-if="f['aquisitivo_inicio']">
-                                        <span
+                                    &#160;
+                                    <t t-if="f['aquisitivo_inicio']"><span
                                         t-esc="f['aquisitivo_inicio']"
                                         t-options='{"widget": "date"}'
-                                    /> a
-                                        <span
+                                    /> a <span
                                         t-esc="f['aquisitivo_fim']"
                                         t-options='{"widget": "date"}'
-                                    />
-                                    </t>
+                                    /></t>
                                     <t t-else="">não informado</t>
                                 </td>
                                 <td colspan="2">
                                     <strong>Dias de direito:</strong>
+                                    &#160;
                                     <t t-if="f['dias_direito']">
                                         <t t-esc="int(f['dias_direito'])" />
                                     </t>
@@ -110,46 +114,56 @@
                             <tr>
                                 <td colspan="2">
                                     <strong>Período de gozo:</strong>
-                                    <span
-                                    t-esc="f['gozo_inicio']"
-                                    t-options='{"widget": "date"}'
-                                /> a
-                                    <span
-                                    t-esc="f['gozo_fim']"
-                                    t-options='{"widget": "date"}'
-                                />
-                                    (<t t-esc="f['dias_gozados']" /> dias<t
-                                    t-if="f['fracoes'] &gt; 1"
-                                >, período <t t-esc="f['fracao']" /> de <t
-                                    t-esc="f['fracoes']"
-                                /></t>)
+                                    &#160;
+                                    <t t-if="f['gozo_inicio']"><span
+                                        t-esc="f['gozo_inicio']"
+                                        t-options='{"widget": "date"}'
+                                    /> a <span
+                                        t-esc="f['gozo_fim']"
+                                        t-options='{"widget": "date"}'
+                                    /> (<t t-esc="f['dias_gozados']" /> dias)</t>
+                                    <t t-else="">sem dias de gozo (somente abono)</t>
+                                    <t t-if="f['fracao']">
+                                        <br /><strong>Fração:</strong>&#160;<t
+                                        t-esc="f['fracao']"
+                                    /> de <t t-esc="f['fracoes']" />
+                                    </t>
                                 </td>
                                 <td>
                                     <strong>Retorno ao trabalho:</strong>
-                                    <span
-                                        t-esc="f['retorno']"
-                                        t-options='{"widget": "date"}'
-                                    />
+                                    &#160;
+                                    <t t-if="f['retorno']">
+                                        <span
+                                            t-esc="f['retorno']"
+                                            t-options='{"widget": "date"}'
+                                        />
+                                    </t>
+                                    <t t-else="">—</t>
                                 </td>
                                 <td>
                                     <strong>Pagar até:</strong>
-                                    <span
-                                        t-esc="f['pagar_ate']"
-                                        t-options='{"widget": "date"}'
-                                    />
+                                    &#160;
+                                    <t t-if="f['pagar_ate']">
+                                        <span
+                                            t-esc="f['pagar_ate']"
+                                            t-options='{"widget": "date"}'
+                                        />
+                                    </t>
+                                    <t t-else="">—</t>
                                 </td>
                             </tr>
                             <tr>
                                 <td colspan="2">
                                     <strong>Abono pecuniário:</strong>
-                                    <t t-if="f['dias_abono']">
-                                        <t t-esc="f['dias_abono']" /> dias vendidos
-                                    </t>
+                                    &#160;
+                                    <t t-if="f['dias_abono']"><t
+                                        t-esc="f['dias_abono']"
+                                    /> dias vendidos</t>
                                     <t t-else="">não há venda de dias</t>
                                 </td>
                                 <td colspan="2">
-                                    <strong>Salário base:</strong>
-                                    <span t-esc="f['salario']" t-options="moeda" />
+                                    <strong>Admissão:</strong>
+                                    <span t-field="o.contract_id.date_start" />
                                 </td>
                             </tr>
                         </table>
@@ -162,20 +176,32 @@
                                 <td colspan="4">REMUNERAÇÃO DE REFERÊNCIA (30 DIAS)</td>
                             </tr>
                             <tr>
-                                <td>
-                                    <strong>Salário:</strong>
-                                    <span t-esc="f['salario']" t-options="moeda" />
-                                </td>
-                                <td>
-                                    <strong>Média das variáveis:</strong>
-                                    <span t-esc="f['media']" t-options="moeda" />
-                                </td>
-                                <td>
-                                    <strong>Adicionais fixos:</strong>
-                                    <span t-esc="f['adicionais']" t-options="moeda" />
+                                <t t-if="f['salario'] is not None">
+                                    <td>
+                                        <strong>Salário:</strong>
+                                        &#160;
+                                        <span t-esc="f['salario']" t-options="moeda" />
+                                    </td>
+                                    <td>
+                                        <strong>Média das variáveis:</strong>
+                                        &#160;
+                                        <span t-esc="f['media']" t-options="moeda" />
+                                    </td>
+                                    <td>
+                                        <strong>Adicionais fixos:</strong>
+                                        &#160;
+                                        <span
+                                            t-esc="f['adicionais']"
+                                            t-options="moeda"
+                                        />
+                                    </td>
+                                </t>
+                                <td t-else="" colspan="3">
+                                    Composição não gravada neste holerite
                                 </td>
                                 <td>
                                     <strong>Total:</strong>
+                                    &#160;
                                     <span t-esc="f['remuneracao']" t-options="moeda" />
                                 </td>
                             </tr>
@@ -299,75 +325,77 @@
         </t>
     </template>
 
-    <!-- Aviso de férias (CLT art. 135) -->
+    <!-- Aviso de férias (CLT art. 135), a partir da ausência de férias aprovada -->
     <template id="report_aviso_ferias">
         <t t-call="web.html_container">
             <t t-foreach="docs" t-as="o">
                 <t t-call="web.external_layout">
                     <t t-set="a" t-value="aviso[o.id]" />
-                    <t t-set="f" t-value="a['ferias']" />
                     <div class="page">
                         <h3 class="text-center">AVISO DE FÉRIAS</h3>
                         <br />
                         <p>
-                            <strong>Empresa:</strong>
-                            <span t-field="o.company_id.name" /> —
-                            <strong>CNPJ:</strong>
-                            <span t-field="o.company_id.vat" />
+                            <strong>Empresa:</strong>&#160;<span
+                            t-field="o.employee_id.company_id.name"
+                        /> —
+                            <strong>CNPJ:</strong>&#160;<span
+                            t-field="o.employee_id.company_id.vat"
+                        />
                         </p>
                         <p>
-                            <strong>Empregado:</strong>
-                            <span t-field="o.employee_id.name" /> —
-                            <strong>CPF:</strong>
-                            <span t-field="o.employee_id.cnpj_cpf" />
+                            <strong>Empregado:</strong>&#160;<span
+                            t-field="o.employee_id.name"
+                        /> —
+                            <strong>CPF:</strong>&#160;<span
+                            t-field="o.employee_id.cnpj_cpf"
+                        />
                         </p>
                         <p>
                             <strong>Cargo:</strong>
+                            &#160;
                             <span t-field="o.employee_id.job_id" />
                         </p>
                         <br />
                         <p>
                             Comunicamos que suas férias serão concedidas no período de
                             <strong
-                            t-esc="f['gozo_inicio']"
+                            t-esc="a['inicio']"
                             t-options='{"widget": "date"}'
                         />
                             a
-                            <strong
-                            t-esc="f['gozo_fim']"
-                            t-options='{"widget": "date"}'
-                        />
-                            (<t t-esc="f['dias_gozados']" /> dias corridos), devendo
+                            <strong t-esc="a['fim']" t-options='{"widget": "date"}' />
+                            (<t t-esc="a['dias']" /> dias corridos), devendo
                             retornar ao trabalho em
                             <strong
-                            t-esc="f['retorno']"
+                            t-esc="a['retorno']"
                             t-options='{"widget": "date"}'
                         />.
                         </p>
-                        <p t-if="f['aquisitivo_inicio']">
+                        <p t-if="a['aquisitivo_inicio']">
                             Período aquisitivo:
                             <span
-                            t-esc="f['aquisitivo_inicio']"
+                            t-esc="a['aquisitivo_inicio']"
                             t-options='{"widget": "date"}'
                         />
                             a
                             <span
-                            t-esc="f['aquisitivo_fim']"
+                            t-esc="a['aquisitivo_fim']"
                             t-options='{"widget": "date"}'
                         />.
                         </p>
-                        <p t-if="f['fracoes'] &gt; 1">
-                            Período <t t-esc="f['fracao']" /> de
-                            <t t-esc="f['fracoes']" /> do fracionamento das férias.
+                        <p t-if="a['fracao']">
+                            Fração <t t-esc="a['fracao']" /> de
+                            <t t-esc="a['fracoes']" /> das férias deste período
+                            aquisitivo.
                         </p>
-                        <p t-if="f['dias_abono']">
+                        <p t-if="a['dias_abono']">
                             Foi solicitada a conversão de
-                            <t t-esc="f['dias_abono']" /> dias em abono pecuniário.
+                            <t t-esc="a['dias_abono']" /> dias em abono pecuniário.
                         </p>
                         <p>
                             O pagamento será feito até
                             <strong
-                            t-esc="f['pagar_ate']"
+                            t-esc="a['pagar_ate']"
                             t-options='{"widget": "date"}'
                         />
                             (CLT, art. 145).
@@ -388,7 +416,7 @@
                             class="aviso-fora-do-prazo"
                             style="border: 2px solid #a00; padding: 4px; color: #a00;"
                         >
-                            <strong>ATENÇÃO:</strong> emitido em
+                            <strong>ATENÇÃO:</strong> comunicado em
                             <span
                             t-esc="a['emissao']"
                             t-options='{"widget": "date"}'
@@ -401,7 +429,7 @@
                         </p>
                         <br />
                         <p>
-                            Data:
+                            Data da comunicação:
                             <span t-esc="a['emissao']" t-options='{"widget": "date"}' />
                         </p>
                         <br />

@@ -40,14 +40,14 @@
     <!-- Aviso de Férias (CLT art. 135) -->
     <record id="action_report_aviso_ferias" model="ir.actions.report">
         <field name="name">Aviso de Férias</field>
-        <field name="model">hr.payslip</field>
+        <field name="model">hr.leave</field>
         <field name="report_type">qweb-pdf</field>
         <field name="report_name">l10n_br_hr_payroll_report.report_aviso_ferias</field>
         <field name="report_file">l10n_br_hr_payroll_report.report_aviso_ferias</field>
         <field name="print_report_name">
-            'Aviso Ferias - %s - %s' % (object.employee_id.name, object.date_from)
+            'Aviso Ferias - %s - %s' % (object.employee_id.name, object.request_date_from)
         </field>
-        <field name="binding_model_id" ref="payroll.model_hr_payslip" />
+        <field name="binding_model_id" ref="hr_holidays.model_hr_leave" />
         <field name="binding_type">report</field>
     </record>
 
