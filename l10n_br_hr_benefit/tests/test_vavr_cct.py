@@ -176,3 +176,66 @@ class TestDescontoVaVrCct(PayrollCommon):
         payslip.action_payslip_done()
         with self.assertRaises(UserError):
             vr.amount = 900.0
+
+    def test_contrato_dispensado_nao_desconta_nem_cai_para_a_cct(self):
+        emp, contract = self._contrato(2000, cct=self.cct1)
+        contract.l10n_br_vavr_dispensado = True
+        payslip = self._create_payslip(emp, contract)
+        self.assertEqual(self._get_line_total(payslip, "DESC_VAVR"), 0.0)
+        # O VA/VR segue informado: só o desconto é dispensado.
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "VR_INFO"), 800.0)
+        contract.l10n_br_vavr_dispensado = False
+        payslip = self._create_payslip(
+            emp, contract, date_from=date(2024, 4, 1), date_to=date(2024, 4, 30)
+        )
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "DESC_VAVR"), 12.0)
+
+    def _holerite_corrente_com_cct(self):
+        hoje = date.today()
+        cct = self.env["l10n.br.hr.collective.convention"].create(
+            {
+                "name": "CCT dispensa",
+                "partner_union_id": self.env["res.partner"]
+                .create({"name": "Sind. disp.", "union_entity_code": "SDP"})
+                .id,
+                "date_start": date(hoje.year, 1, 1),
+                "date_end": date(hoje.year, 12, 31),
+            }
+        )
+        self.env["l10n.br.hr.convention.vavr.range"].create(
+            {"convention_id": cct.id, "wage_ceiling": 0, "rate_pct": 10}
+        )
+        emp, contract = self._contrato(2000, cct=cct)
+        contract.date_start = date(hoje.year - 1, 1, 1)
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "Holerite vigente",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": contract.struct_id.id,
+                "date_from": hoje.replace(day=1),
+                "date_to": hoje.replace(day=28),
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        return contract, payslip
+
+    def test_dispensar_recalcula_rascunho_vigente(self):
+        contract, payslip = self._holerite_corrente_com_cct()
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "DESC_VAVR"), 120.0)
+        contract.l10n_br_vavr_dispensado = True
+        self.assertEqual(self._get_line_total(payslip, "DESC_VAVR"), 0.0)
+
+    def test_confirmado_vigente_recusa_dispensar(self):
+        contract, payslip = self._holerite_corrente_com_cct()
+        payslip.action_payslip_done()
+        with self.assertRaises(UserError):
+            contract.l10n_br_vavr_dispensado = True
+
+    def test_dispensa_com_holerite_encerrado_nao_muda_o_que_valeu(self):
+        emp, contract = self._contrato(2000, cct=self.cct1)
+        payslip = self._create_payslip(emp, contract)
+        payslip.action_payslip_done()
+        contract.l10n_br_vavr_dispensado = True
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "DESC_VAVR"), 12.0)

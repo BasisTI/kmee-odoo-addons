@@ -50,10 +50,10 @@ class HrContractAdvantage(models.Model):
         if fechados:
             raise UserError(
                 _(
-                    "Não é possível alterar o vale-transporte do contrato: o "
-                    "holerite %(fechados)s já está confirmado e o crédito e o "
-                    "desconto de VT dependem dele. Volte o confirmado para "
-                    "rascunho primeiro.",
+                    "Não é possível alterar o vale-transporte ou o VA/VR do "
+                    "contrato: o holerite %(fechados)s já está confirmado e o "
+                    "crédito e o desconto dependem dele. Volte o confirmado "
+                    "para rascunho primeiro.",
                     fechados=", ".join(fechados.mapped(lambda r: r.number or r.name)),
                 )
             )

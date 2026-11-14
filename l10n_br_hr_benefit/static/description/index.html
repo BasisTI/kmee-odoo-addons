@@ -384,7 +384,9 @@ art. 110). O percentual é o da CCT vigente na competência
 <li><strong>Desconto de VA/VR (rubrica 071, ``DESC_VAVR``)</strong>: (VR + VA do contrato) x
 taxa da faixa do salário-base na CCT vigente na competência
 (<tt class="docutils literal">l10n_br_hr_syndicate</tt>, faixas com vigência pela CCT; a faixa sem teto
-vale “acima de”). Sem CCT, sem faixas ou sem VR/VA, não há desconto</li>
+vale “acima de”). Sem CCT, sem faixas ou sem VR/VA, não há desconto. O
+contrato com <strong>VA/VR dispensado de desconto</strong> (<tt class="docutils literal">l10n_br_vavr_dispensado</tt>)
+não sofre o desconto e não cai para a CCT</li>
 <li><strong>Plano de Saúde</strong>: desconto dedutível do IRRF</li>
 </ul>
 <p>Os benefícios são configurados por contrato via advantage templates

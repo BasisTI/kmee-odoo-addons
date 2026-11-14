@@ -57,10 +57,16 @@ result = tools.br.desconto_vt(salario_base, tools.br.credito_vt(contract), pct_c
         />
         <field name="condition_select">python</field>
         <field name="condition_python">
-# Só com CCT que defina faixas de VA/VR; sem CCT ou sem faixa, não há desconto.
+# Contrato dispensado: sem desconto (0,00), sem cair para a CCT. Senão, só com
+# CCT que defina faixas de VA/VR; sem CCT ou sem faixa, não há desconto.
 cct = tools.br.cct(contract)
 base = (current_contract.advantages.VR or 0) + (current_contract.advantages.VA or 0)
-result = bool(cct) and base > 0 and cct.vavr_rate(contract.wage) is not None
+result = (
+    not contract.l10n_br_vavr_dispensado
+    and bool(cct)
+    and base > 0
+    and cct.vavr_rate(contract.wage) is not None
+)
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">

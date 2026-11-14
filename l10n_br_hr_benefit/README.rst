@@ -37,7 +37,9 @@ salariais brasileiras, adicionando templates de benefícios comuns:
 - **Desconto de VA/VR (rubrica 071, ``DESC_VAVR``)**: (VR + VA do contrato) x
   taxa da faixa do salário-base na CCT vigente na competência
   (``l10n_br_hr_syndicate``, faixas com vigência pela CCT; a faixa sem teto
-  vale "acima de"). Sem CCT, sem faixas ou sem VR/VA, não há desconto
+  vale "acima de"). Sem CCT, sem faixas ou sem VR/VA, não há desconto. O
+  contrato com **VA/VR dispensado de desconto** (``l10n_br_vavr_dispensado``)
+  não sofre o desconto e não cai para a CCT
 - **Plano de Saúde**: desconto dedutível do IRRF
 
 Os benefícios são configurados por contrato via advantage templates
