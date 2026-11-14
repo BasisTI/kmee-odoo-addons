@@ -308,31 +308,46 @@ class TestReciboAvisoFerias(PayrollCommon):
         self.assertNotIn("(0 dias)", html)
         self.assertEqual(dados["remuneracao"], 3000.00)
 
-    def test_sem_alocacao_mostra_os_dias_reais(self):
+    def test_sem_alocacao_periodo_coerente_com_os_dias_pagos(self):
+        """Sem alocação a regra paga 30 dias; o período mostra os mesmos 30."""
         emp, contract, _alloc = self._contrato()
         slip = self._slip(emp, contract, False, date(2025, 3, 3), date(2025, 3, 17), 0)
         dados = self.modelo.dados_ferias(slip)
-        self.assertEqual(dados["dias_gozados"], 15)
-        self.assertEqual(dados["gozo_fim"], date(2025, 3, 17))
+        self.assertEqual(dados["dias_gozados"], 30)
+        self.assertEqual(dados["gozo_fim"], date(2025, 4, 1))
+        self.assertEqual(dados["valor_ferias"], 3000.00)
         html = self._html("l10n_br_hr_payroll_report.action_report_recibo_ferias", slip)
-        self.assertIn("(15 dias)", html)
+        self.assertIn("(30 dias)", html)
         self.assertIn("não informado", html)
 
-    def test_fracao_identificada_desde_a_primeira_e_estavel(self):
+    def test_fracao_identificada_desde_a_primeira(self):
         emp, contract, alloc = self._contrato()
         f1 = self._slip(emp, contract, alloc, date(2025, 3, 3), date(2025, 3, 16), 14)
         self.assertEqual(self.modelo._fracao(f1), (1, 1))
         f2 = self._slip(emp, contract, alloc, date(2025, 6, 2), date(2025, 6, 9), 8)
         f3 = self._slip(emp, contract, alloc, date(2025, 9, 1), date(2025, 9, 8), 8)
         self.assertEqual(self.modelo._fracao(f1), (1, 3))
+        self.assertEqual(self.modelo._fracao(f2), (2, 3))
         self.assertEqual(self.modelo._fracao(f3), (3, 3))
+
+    def test_cancelar_e_refazer_a_segunda_nao_cria_quarta_fracao(self):
+        emp, contract, alloc = self._contrato()
+        f1 = self._slip(emp, contract, alloc, date(2025, 3, 3), date(2025, 3, 16), 14)
+        f2 = self._slip(emp, contract, alloc, date(2025, 6, 2), date(2025, 6, 9), 8)
+        f3 = self._slip(emp, contract, alloc, date(2025, 9, 1), date(2025, 9, 8), 8)
         f2.action_payslip_cancel()
-        self.assertEqual(self.modelo._fracao(f3), (3, 3))
-        self.assertEqual(self.modelo._fracao(f1), (1, 3))
+        # Cancelada a do meio, as outras duas são "1 de 2" e "2 de 2".
+        self.assertEqual(self.modelo._fracao(f1), (1, 2))
+        self.assertEqual(self.modelo._fracao(f3), (2, 2))
         # Cancelado não é fração de ninguém.
         self.assertEqual(self.modelo._fracao(f2), (0, 0))
         html = self._html("l10n_br_hr_payroll_report.action_report_recibo_ferias", f2)
         self.assertIn("HOLERITE CANCELADO", html)
+        # Refeita a 2ª: volta a ser "1 de 3", "2 de 3", "3 de 3".
+        f2b = self._slip(emp, contract, alloc, date(2025, 6, 2), date(2025, 6, 9), 8)
+        self.assertEqual(self.modelo._fracao(f1), (1, 3))
+        self.assertEqual(self.modelo._fracao(f2b), (2, 3))
+        self.assertEqual(self.modelo._fracao(f3), (3, 3))
 
     # -- aviso a partir da ausência ----------------------------------------
 
@@ -374,6 +389,58 @@ class TestReciboAvisoFerias(PayrollCommon):
         self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 1, 20))
         reimpresso = self.modelo_aviso.dados_aviso(leave)  # hoje, bem depois
         self.assertFalse(reimpresso["fora_do_prazo"])
+
+    def test_remarcar_a_ausencia_grava_nova_data_de_comunicacao(self):
+        """Aviso de 25/10 para 29/11; remarcada para 04/12, a comunicação é de hoje."""
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 11, 29), date(2025, 12, 3))
+        primeiro = self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 10, 25))
+        self.assertEqual(primeiro["antecedencia"], 35)
+        self.assertFalse(primeiro["fora_do_prazo"])
+        # Remarca: recusa, volta para a aprovar, muda as datas, aprova.
+        leave.action_refuse()
+        leave.action_reset_confirm()
+        leave.write(
+            {
+                "request_date_from": date(2025, 12, 4),
+                "request_date_to": date(2025, 12, 8),
+            }
+        )
+        leave.action_validate()
+        novo = self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 11, 14))
+        self.assertEqual(novo["emissao"], date(2025, 11, 14))
+        self.assertEqual(novo["antecedencia"], 20)
+        self.assertTrue(novo["fora_do_prazo"])
+        self.assertEqual(leave.l10n_br_aviso_ferias_data, date(2025, 11, 14))
+        # E a reimpressão do período novo repete a nova data.
+        again = self.modelo_aviso.dados_aviso(leave, data_emissao=date(2025, 11, 20))
+        self.assertEqual(again["emissao"], date(2025, 11, 14))
+
+    def test_gerente_de_ausencias_sem_grupo_da_folha_imprime_o_aviso(self):
+        emp, contract, alloc = self._contrato()
+        self._slip(emp, contract, alloc, date(2025, 3, 3), date(2025, 3, 22), 20, 10)
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
+        gerente = self.env["res.users"].create(
+            {
+                "name": "Gerente de ausências",
+                "login": "gerente_ausencias_tg99",
+                "groups_id": [
+                    (6, 0, [self.env.ref("hr_holidays.group_hr_holidays_manager").id])
+                ],
+            }
+        )
+        dados = self.modelo_aviso.with_user(gerente).dados_aviso(
+            leave.with_user(gerente), data_emissao=date(2025, 2, 1)
+        )
+        self.assertEqual(dados["dias_abono"], 10)
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_aviso_ferias")
+        html = (
+            self.env["ir.actions.report"]
+            .with_user(gerente)
+            ._render_qweb_html(report.id, leave.ids)[0]
+            .decode("utf-8")
+        )
+        self.assertIn("AVISO DE FÉRIAS", html)
 
     def test_aviso_fora_do_prazo_alerta_e_nao_bloqueia(self):
         emp, _contract, _alloc = self._contrato()

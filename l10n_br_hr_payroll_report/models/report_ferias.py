@@ -45,16 +45,17 @@ class ReportReciboFerias(models.AbstractModel):
     def periodo_gozo(self, slip):
         """``(início, fim)`` do gozo do recibo, ou ``(False, False)`` sem gozo.
 
-        Mesma regra da folha mensal (``_l10n_br_ferias_gozadas``): o gozo começa
-        em ``date_from`` e dura os dias gozados, sem passar de ``date_to``.
-        Os dias de abono não são gozados e não entram. Holerite só de abono
-        (0 dias gozados) não tem período de gozo.
+        O gozo começa em ``date_from`` e dura os dias gozados que a regra
+        pagou, e é isso que o recibo mostra: período e rubrica andam juntos,
+        mesmo quando o ``date_to`` do holerite é mais curto (sem alocação, por
+        exemplo, a regra paga 30 dias). Os dias de abono não são gozados e
+        não entram. Holerite só de abono (0 dias gozados) não tem gozo.
         """
         dias = slip.l10n_br_dias_ferias_gozadas
         if dias <= 0:
             return False, False
         inicio = slip.date_from
-        return inicio, min(slip.date_to, inicio + timedelta(days=dias - 1))
+        return inicio, inicio + timedelta(days=dias - 1)
 
     @api.model
     def _feriados(self, calendario, empresa, inicio, fim):
@@ -192,31 +193,31 @@ class ReportReciboFerias(models.AbstractModel):
     def _fracao(self, slip):
         """``(número, total)`` da fração, ou ``(0, 0)`` sem alocação ou cancelada.
 
-        A posição conta todos os holerites da alocação, inclusive os cancelados:
-        cancelar o do meio não renumera os outros. O total é a maior posição de
-        um holerite válido. Cancelado não é fração de ninguém.
+        Só contam os holerites não cancelados da alocação, em ordem de data:
+        cancelar e refazer a 2ª dá "1 de 3", "2 de 3", "3 de 3", nunca uma
+        quarta fração (CLT art. 134 §1º permite três). Cancelado não é fração
+        de ninguém. Busca com ``sudo``: o aviso é impresso por quem cuida de
+        ausências, sem o grupo da folha.
         """
         alocacao = slip.l10n_br_ferias_allocation_id
         if not alocacao or slip.state == "cancel" or slip.l10n_br_fora_de_vigor:
             return 0, 0
-        todos = (
+        validos = (
             self.env["hr.payslip"]
+            .sudo()
             .search(
                 [
                     ("l10n_br_ferias_allocation_id", "=", alocacao.id),
                     ("l10n_br_dias_periodo_gozado", ">", 0),
+                    ("state", "!=", "cancel"),
+                    ("l10n_br_fora_de_vigor", "=", False),
                 ]
             )
             .sorted(lambda p: (p.date_from, p.id))
         )
-        validos = [
-            i + 1
-            for i, p in enumerate(todos)
-            if p.state != "cancel" and not p.l10n_br_fora_de_vigor
-        ]
-        if slip.id not in todos.ids:
-            return 1, 1
-        return todos.ids.index(slip.id) + 1, max(validos)
+        if slip.id not in validos.ids:
+            return 1, max(len(validos), 1)
+        return validos.ids.index(slip.id) + 1, len(validos)
 
 
 class ReportAvisoFerias(models.AbstractModel):
@@ -248,16 +249,20 @@ class ReportAvisoFerias(models.AbstractModel):
     @api.model
     def _recibos_da_ausencia(self, leave):
         """Holerites de férias (não cancelados) que cobrem o período da ausência."""
-        return self.env["hr.payslip"].search(
-            [
-                ("employee_id", "=", leave.employee_id.id),
-                ("struct_id.code", "=", "FERIAS"),
-                ("state", "!=", "cancel"),
-                ("l10n_br_fora_de_vigor", "=", False),
-                ("date_from", "<=", leave.request_date_to),
-                ("date_to", ">=", leave.request_date_from),
-            ],
-            order="date_from, id",
+        return (
+            self.env["hr.payslip"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", leave.employee_id.id),
+                    ("struct_id.code", "=", "FERIAS"),
+                    ("state", "!=", "cancel"),
+                    ("l10n_br_fora_de_vigor", "=", False),
+                    ("date_from", "<=", leave.request_date_to),
+                    ("date_to", ">=", leave.request_date_from),
+                ],
+                order="date_from, id",
+            )
         )
 
     @api.model
@@ -273,7 +278,7 @@ class ReportAvisoFerias(models.AbstractModel):
         self._verificar_ausencia(leave)
         inicio, fim = leave.request_date_from, leave.request_date_to
         empregado = leave.employee_id
-        contrato = empregado.contract_id
+        contrato = empregado.sudo().contract_id
         recibos = self._recibos_da_ausencia(leave)
         recibo = recibos[:1]
         alocacao = recibo.l10n_br_ferias_allocation_id
@@ -281,11 +286,21 @@ class ReportAvisoFerias(models.AbstractModel):
             "report.l10n_br_hr_payroll_report.report_recibo_ferias"
         ]
         fracao, fracoes = modelo_recibo._fracao(recibo) if recibo else (0, 0)
-        emissao = leave.l10n_br_aviso_ferias_data
+        # A data gravada vale para o período avisado: remarcada a ausência, o
+        # aviso é outro e a comunicação, de hoje.
+        mesmo_periodo = (
+            leave.l10n_br_aviso_ferias_inicio == inicio
+            and leave.l10n_br_aviso_ferias_fim == fim
+        )
+        emissao = leave.l10n_br_aviso_ferias_data if mesmo_periodo else False
         if not emissao:
             emissao = data_emissao or fields.Date.context_today(leave)
             leave.sudo().with_context(tracking_disable=True).write(
-                {"l10n_br_aviso_ferias_data": emissao}
+                {
+                    "l10n_br_aviso_ferias_data": emissao,
+                    "l10n_br_aviso_ferias_inicio": inicio,
+                    "l10n_br_aviso_ferias_fim": fim,
+                }
             )
         antecedencia = (inicio - emissao).days
         return {
