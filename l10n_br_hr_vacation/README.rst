@@ -224,8 +224,9 @@ antes de 15/12 com a 2ª parcela pagando 12 avos), a rescisão cobra o excesso:
   retidos na 2ª parcela acima do imposto sobre o 13º devido voltam ao empregado,
   cada um em rubrica própria (tpRubr 1, com a natureza e a incidência do
   desconto que devolvem, MOS S-1.3 item 15.1: INSS 9201, CP 32 e IRRF 42; IRRF
-  9203 e IRRF 32). Voltam na proporção do excesso descontado: se o desconto
-  ficou limitado, a devolução também.
+  9203 e IRRF 32). A devolução é exata: o retido menos o imposto sobre o 13º
+  que o empregado mantém (o quitado menos o desconto). Se o desconto ficou
+  limitado, só volta o imposto da parte descontada; sem desconto, nada volta.
 * A pensão retida sobre o excesso **não** volta: foi repassada ao beneficiário
   (TG-141#P1). A base do IRRF do 13º deduz a pensão efetivamente paga no ano e
   nunca fica negativa. Para mudar a regra, ver ``_l10n_br_pensao_13_devolvida``.

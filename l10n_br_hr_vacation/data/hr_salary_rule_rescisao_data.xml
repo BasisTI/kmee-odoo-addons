@@ -476,8 +476,10 @@ result = max(devido - DESCONTO_ART_480, 0.0)
          Limites: o teto de um mês de remuneração para o CONJUNTO das
          compensações (CLT art. 477, §5º) e o líquido, contado com a devolução
          do INSS e do IRRF que acompanha o desconto (DEVOLUCAO_INSS_13 e
-         DEVOLUCAO_IRRF_13, proporcionais ao que foi descontado: com o desconto
-         d do excesso E e o crédito pleno R, o líquido admite d - R x d/E).
+         DEVOLUCAO_IRRF_13, exatas: o retido menos o imposto sobre o 13º que o
+         empregado mantém, quitado - desconto). O desconto e a devolução se
+         resolvem juntos (_l10n_br_desconto_excesso_13), em centavos, sem que o
+         líquido fique negativo.
          A pensão retida sobre o excesso NÃO volta (TG-141#P1): ver
          _l10n_br_pensao_13_devolvida. O que não couber vai à linha informativa
          NAO_DESCONTADO_13_EXCESSO. -->
@@ -497,14 +499,6 @@ result = payslip._l10n_br_decimo_pago_ano(contract)['quitado'] &gt; DECIMO_DEVID
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
-pago = payslip._l10n_br_decimo_pago_ano(contract)
-excesso = tools.br.round_money(pago['quitado'] - DECIMO_DEVIDO)
-# Crédito pleno de INSS e IRRF do 13º (o retido na 2ª parcela acima do imposto
-# sobre o devido): volta na proporção do que for descontado.
-credito = (
-    max(pago['inss'] - tools.br.calc_inss(DECIMO_DEVIDO), 0.0)
-    + max(pago['irrf'] - tools.br.irrf_mais_favoravel(DECIMO_DEVIDO, BASE_IRRF_13), 0.0)
-)
 compensado = ADIANTAMENTO_13 + DESCONTO_AVISO_PREVIO + DESCONTO_ART_480
 disponivel = (
     SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
@@ -513,10 +507,12 @@ disponivel = (
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
     - compensado
 )
-# d x (1 - credito / excesso) cabe no disponível; sem líquido a respeitar quando
-# o crédito cobre o excesso inteiro.
-limite_liquido = disponivel * excesso / (excesso - credito) if excesso > credito else excesso
-result = tools.br.round_money(max(min(excesso, limite_liquido, remuneracao - compensado), 0))
+# Maior desconto que cabe no teto do art. 477 §5º e no líquido, já contada a
+# devolução exata do INSS e do IRRF (ver _l10n_br_desconto_excesso_13).
+result = payslip._l10n_br_desconto_excesso_13(
+    tools.br, contract, employee, DECIMO_DEVIDO, disponivel,
+    remuneracao - compensado, PENSAO_ALIMENTICIA_13,
+)
         </field>
     </record>
 
@@ -546,8 +542,9 @@ result = tools.br.round_money(
     </record>
 
     <!-- TG-141: INSS do 13º que a 2ª parcela reteve sobre o excesso volta ao
-         empregado: o retido menos o INSS sobre o 13º devido, na proporção do
-         excesso descontado (DESCONTO_13_EXCESSO / excesso). Rubrica própria,
+         empregado: o retido menos o INSS sobre o 13º que ele mantém (quitado menos
+         o DESCONTO_13_EXCESSO; o devido, se o excesso saiu inteiro), exato
+         (_l10n_br_creditos_13). Rubrica própria,
          tpRubr 1, com a natureza e a incidência do desconto que devolve (MOS
          S-1.3, item 15.1): 9201, CP 32 e IRRF 42. -->
     <record id="hr_rule_devolucao_inss_13" model="hr.salary.rule">
@@ -557,21 +554,21 @@ result = tools.br.round_money(
         <field name="category_id" ref="hr_salary_rule_category_prov_indeniz" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = DESCONTO_13_EXCESSO &gt; 0 and (
-    payslip._l10n_br_decimo_pago_ano(contract)['inss'] &gt; tools.br.calc_inss(DECIMO_DEVIDO)
-)
+result = DESCONTO_13_EXCESSO &gt; 0 and payslip._l10n_br_creditos_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, PENSAO_ALIMENTICIA_13
+)[0] &gt; 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-pago = payslip._l10n_br_decimo_pago_ano(contract)
-excesso = pago['quitado'] - DECIMO_DEVIDO
-credito = max(pago['inss'] - tools.br.calc_inss(DECIMO_DEVIDO), 0.0)
-result = tools.br.round_money(credito * min(DESCONTO_13_EXCESSO / excesso, 1.0))
+result = payslip._l10n_br_creditos_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, PENSAO_ALIMENTICIA_13
+)[0]
         </field>
     </record>
 
     <!-- TG-141: IRRF do 13º retido a maior na 2ª parcela volta ao empregado,
-         na mesma proporção. tpRubr 1, natureza 9203, IRRF 32 (item 15.1). -->
+         pela mesma regra (a base inclui dependentes e a pensão paga). tpRubr 1,
+         natureza 9203, IRRF 32 (item 15.1). -->
     <record id="hr_rule_devolucao_irrf_13" model="hr.salary.rule">
         <field name="name">Devolução de IRRF do 13º Retido a Mais</field>
         <field name="sequence" eval="133" />
@@ -579,17 +576,15 @@ result = tools.br.round_money(credito * min(DESCONTO_13_EXCESSO / excesso, 1.0))
         <field name="category_id" ref="hr_salary_rule_category_prov_indeniz" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = DESCONTO_13_EXCESSO &gt; 0 and (
-    payslip._l10n_br_decimo_pago_ano(contract)['irrf']
-    &gt; tools.br.irrf_mais_favoravel(DECIMO_DEVIDO, BASE_IRRF_13)
-)
+result = DESCONTO_13_EXCESSO &gt; 0 and payslip._l10n_br_creditos_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, PENSAO_ALIMENTICIA_13
+)[1] &gt; 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-pago = payslip._l10n_br_decimo_pago_ano(contract)
-excesso = pago['quitado'] - DECIMO_DEVIDO
-credito = max(pago['irrf'] - tools.br.irrf_mais_favoravel(DECIMO_DEVIDO, BASE_IRRF_13), 0.0)
-result = tools.br.round_money(credito * min(DESCONTO_13_EXCESSO / excesso, 1.0))
+result = payslip._l10n_br_creditos_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, PENSAO_ALIMENTICIA_13
+)[1]
         </field>
     </record>
 

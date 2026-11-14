@@ -945,6 +945,87 @@ class HrPayslip(models.Model):
         """
         return 0.0
 
+    def _l10n_br_creditos_13(self, br, contract, employee, desconto, pensao_rescisao):
+        """INSS e IRRF do 13º a devolver quando a rescisão desconta ``desconto``.
+
+        O imposto acompanha o 13º que o empregado mantém: o quitado menos o
+        desconto (``T = quitado - desconto``; o devido, quando o desconto é o
+        excesso inteiro). A devolução de cada imposto é o retido nas parcelas
+        menos o imposto sobre ``T``, calculado como a regra da rescisão
+        (``dependentes`` e a pensão efetivamente paga na base do IRRF; nunca
+        negativa). Exata, não proporcional: desconto zero devolve zero.
+
+        ``br`` é o ``tools.br`` da regra. Devolve ``(inss, irrf)`` arredondados.
+        """
+        self.ensure_one()
+        pago = self._l10n_br_decimo_pago_ano(contract)
+        base_t = max(pago["quitado"] - desconto, 0.0)
+        inss_t = br.calc_inss(base_t)
+        credito_inss = max(pago["inss"] - inss_t, 0.0)
+        credito_irrf = 0.0
+        if not employee.l10n_br_molestia_grave:
+            pensao_devida = br.calc_pensao_alimenticia(
+                base_t, 0.0, employee.l10n_br_pensao_percentual
+            )
+            pensao_ano = (
+                pago["pensao"]
+                + pensao_rescisao
+                - self._l10n_br_pensao_13_devolvida(pago["pensao"], pensao_devida)
+            )
+            dependentes = (
+                employee.l10n_br_irrf_dependentes * br.irrf_deducao_dependente()
+            )
+            base_irrf = max(base_t - inss_t - dependentes - pensao_ano, 0.0)
+            credito_irrf = max(
+                pago["irrf"] - br.irrf_mais_favoravel(base_t, base_irrf), 0.0
+            )
+        return br.round_money(credito_inss), br.round_money(credito_irrf)
+
+    def _l10n_br_desconto_excesso_13(
+        self, br, contract, employee, devido, disponivel, teto, pensao_rescisao
+    ):
+        """Maior desconto do 13º pago a mais que o líquido e o teto comportam.
+
+        O desconto ``d`` limita-se ao excesso (quitado - devido), ao teto de um
+        mês de remuneração menos as outras compensações (``teto``, CLT art.
+        477, §5º) e ao líquido: ``d - devolução(d) <= disponivel``, onde a
+        devolução (``_l10n_br_creditos_13``) cresce com ``d``. A circularidade
+        (o líquido conta a devolução, que depende de ``d``) se resolve sem
+        laço infinito: a diferença ``d - devolução(d)`` é crescente em ``d``
+        (a alíquota marginal dos dois impostos somados é menor que 1), então
+        uma busca binária sobre centavos inteiros acha o maior ``d`` que cabe;
+        um passo final confere o arredondamento das devoluções, de modo que o
+        líquido nunca fica negativo (nem em -0,01).
+        """
+        self.ensure_one()
+        pago = self._l10n_br_decimo_pago_ano(contract)
+        excesso = br.round_money(pago["quitado"] - devido)
+        maximo = int(round(max(min(excesso, teto), 0.0) * 100))
+        livre = int(round(max(disponivel, 0.0) * 100)) if disponivel > 0 else -1
+
+        def cabe(centavos):
+            inss, irrf = self._l10n_br_creditos_13(
+                br, contract, employee, centavos / 100.0, pensao_rescisao
+            )
+            custo = centavos - int(round(inss * 100)) - int(round(irrf * 100))
+            return custo <= livre
+
+        if maximo <= 0 or livre < 0:
+            return 0.0
+        if cabe(maximo):
+            return maximo / 100.0
+        baixo, alto = 0, maximo  # cabe(baixo); não cabe(alto)
+        while alto - baixo > 1:
+            meio = (baixo + alto) // 2
+            if cabe(meio):
+                baixo = meio
+            else:
+                alto = meio
+        # O arredondamento das devoluções pode quebrar a monotonia por 1 centavo.
+        while baixo > 0 and not cabe(baixo):
+            baixo -= 1
+        return baixo / 100.0
+
     def _l10n_br_aviso_indenizado_devido(self):
         """Aviso prévio indenizado é devido pelo empregador (RF-06).
 
