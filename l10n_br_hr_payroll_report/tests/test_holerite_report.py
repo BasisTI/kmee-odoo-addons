@@ -10,6 +10,7 @@ Cobertura:
 """
 from datetime import date
 
+from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
 
 
@@ -143,9 +144,9 @@ class TestHoleriteReport(PayrollCommon):
         payslip = self._create_computed_payslip()
         bases = dict(self._contracheque(payslip)["bases"])
         self.assertAlmostEqualMoney(bases["Sal. contribuição INSS"], 5000.0)
-        self.assertAlmostEqualMoney(
-            bases["Base IRRF"], self._get_line_total(payslip, "BASE_IRRF")
-        )
+        # A base do IRRF é a efetivamente usada (aqui, a do simplificado): ver
+        # test_base_irrf_e_a_do_simplificado_quando_ele_vence.
+        self.assertIn("Base IRRF (simplificado)", bases)
         self.assertAlmostEqualMoney(bases["Base FGTS"], 5000.0)
         self.assertAlmostEqualMoney(bases["FGTS do mês"], 400.0)
         self.assertAlmostEqualMoney(
@@ -201,7 +202,7 @@ class TestHoleriteReport(PayrollCommon):
             bases["Base FGTS"],
             places=0,
         )
-        self.assertIn("Base IRRF 13º", bases)
+        self.assertTrue([k for k in bases if k.startswith("Base IRRF 13º")])
 
     def test_rescisao_multa_do_fgts_nao_e_provento(self):
         """A multa do FGTS vai à conta vinculada: informativa, fora do total."""
@@ -227,3 +228,102 @@ class TestHoleriteReport(PayrollCommon):
             [("binding_model_id.model", "=", "hr.payslip"), ("name", "=", "Holerite")]
         )
         self.assertEqual(no_menu, kmee)
+
+    # ── TG-98 r2: base do IRRF efetiva, FGTS da rescisão e colunas zeradas ──
+
+    def _irrf_reproduzido(self, payslip, base, codigo_irrf="IRRF"):
+        """IRRF que a base mostrada gera, com as tabelas da competência do holerite."""
+        competencia = payslip._get_competencia()
+        faixas = self.env["l10n_br.hr.payroll.irrf.faixa"]._tabela(competencia)
+        redutor = self.env["l10n_br.hr.payroll.irrf.redutor"]._tabela(competencia)
+        imposto = salary_rules_br.calc_irrf(base, faixas)
+        rendimento = self._get_line_total(payslip, "GROSS")
+        return salary_rules_br.calc_irrf_apos_redutor(rendimento, imposto, redutor)
+
+    def test_base_irrf_e_a_do_simplificado_quando_ele_vence(self):
+        """Salário de 5.000: o simplificado gera menos imposto e a base mostrada é a dele."""
+        payslip = self._create_computed_payslip()
+        bases = dict(self._contracheque(payslip)["bases"])
+        base = bases["Base IRRF (simplificado)"]
+        legal = self._get_line_total(payslip, "BASE_IRRF")
+        self.assertLess(base, legal)
+        irrf = self._get_line_total(payslip, "IRRF")
+        self.assertGreater(irrf, 0)
+        self.assertAlmostEqualMoney(self._irrf_reproduzido(payslip, base), irrf)
+
+    def test_base_irrf_legal_quando_a_deducao_vence(self):
+        """Com dependentes a dedução legal vence: mostra a rubrica, sem a marca."""
+        payslip = self._create_computed_payslip()
+        payslip.employee_id.l10n_br_irrf_dependentes = 4
+        payslip.compute_sheet()
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertNotIn("Base IRRF (simplificado)", bases)
+        self.assertAlmostEqualMoney(
+            bases["Base IRRF"], self._get_line_total(payslip, "BASE_IRRF")
+        )
+
+    def _rescisao_com_primeira_parcela(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=5000.00)
+        vals = {
+            "employee_id": emp.id,
+            "contract_id": contract.id,
+            "company_id": self.env.company.id,
+        }
+        primeira = self.env["hr.payslip"].create(
+            dict(
+                vals,
+                name="13º 1ª parcela",
+                struct_id=self.env.ref(
+                    "l10n_br_hr_vacation.structure_13_primeira_parcela"
+                ).id,
+                date_from=date(2024, 11, 1),
+                date_to=date(2024, 11, 30),
+            )
+        )
+        primeira.compute_sheet()
+        primeira.action_payslip_done()
+        resc = self.env["hr.payslip"].create(
+            dict(
+                vals,
+                name="Rescisão",
+                struct_id=self.env.ref("l10n_br_hr_vacation.structure_rescisao").id,
+                date_from=date(2024, 12, 1),
+                date_to=date(2024, 12, 10),
+                l10n_br_tipo_rescisao="pedido_demissao",
+                l10n_br_aviso_previo="nao_aplicavel",
+            )
+        )
+        resc.compute_sheet()
+        return resc
+
+    def test_rescisao_base_fgts_abate_a_primeira_parcela_do_13(self):
+        """Base FGTS × 8% fecha com o FGTS do mês, como na 2ª parcela."""
+        resc = self._rescisao_com_primeira_parcela()
+        self.assertGreater(self._get_line_total(resc, "FGTS_13"), 0)
+        bases = dict(self._contracheque(resc)["bases"])
+        fgts = bases["FGTS do mês"]
+        self.assertAlmostEqualMoney(
+            fgts,
+            self._get_line_total(resc, "FGTS") + self._get_line_total(resc, "FGTS_13"),
+        )
+        self.assertAlmostEqual(bases["Base FGTS"] * 0.08, fgts, delta=0.02)
+
+    def test_base_zerada_nao_vira_coluna(self):
+        """Nenhum quadro de bases traz coluna com R$ 0,00."""
+        for payslip in (
+            self._create_computed_payslip(),
+            self._rescisao_com_primeira_parcela(),
+        ):
+            for rotulo, valor in self._contracheque(payslip)["bases"]:
+                self.assertTrue(valor, f"{rotulo} zerada")
+
+    def test_aprendiz_base_fgts_indica_a_aliquota(self):
+        """Aprendiz recolhe 2%: o rótulo diz e base × 2% fecha com o FGTS."""
+        emp = self._create_employee(tipo_contrato="aprendiz")
+        contract = self._create_contract(emp, wage=2000.00)
+        payslip = self._create_payslip(emp, contract)
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertAlmostEqualMoney(
+            bases["Base FGTS (2%)"] * 0.02, bases["FGTS do mês"]
+        )
