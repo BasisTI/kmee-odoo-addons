@@ -1,6 +1,15 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
-    <!-- Holerite BR: substitui o relatório genérico da OCA -->
+    <!--
+        Holerite BR: substitui o relatório genérico da OCA. O da OCA
+        (payroll.action_report_payslip, também chamado "Holerite") segue
+        instalado, porque o módulo payroll o usa no envio por e-mail, mas sai
+        do menu Imprimir: o usuário via dois "Holerite" lado a lado.
+    -->
+    <record id="payroll.action_report_payslip" model="ir.actions.report">
+        <field name="binding_model_id" eval="False" />
+    </record>
+
     <record id="action_report_holerite" model="ir.actions.report">
         <field name="name">Holerite</field>
         <field name="model">hr.payslip</field>

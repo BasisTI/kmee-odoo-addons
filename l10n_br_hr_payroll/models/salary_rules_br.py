@@ -198,11 +198,31 @@ def calc_irrf_mais_favoravel(
         Imposto a reter em R$ (>= 0).
     """
     rendimento = max(rendimento_tributavel or 0.0, 0.0)
-    imposto = calc_irrf(max(base_legal or 0.0, 0.0), faixas_irrf)
+    base, _simplificado = base_irrf_mais_favoravel(
+        rendimento, base_legal, faixas_irrf, desconto_simplificado
+    )
+    imposto = calc_irrf(base, faixas_irrf)
+    return calc_irrf_apos_redutor(rendimento, imposto, faixas_redutor)
+
+
+def base_irrf_mais_favoravel(
+    rendimento_tributavel, base_legal, faixas_irrf, desconto_simplificado=0.0
+):
+    """Base de cálculo do IRRF da forma mais favorável (a que gera o menor imposto).
+
+    É a escolha de ``calc_irrf_mais_favoravel``, separada para que o contracheque
+    mostre a base efetivamente usada na retenção. Em empate fica a dedução legal.
+
+    Returns:
+        ``(base, simplificado)``: a base e se ela é a do desconto simplificado.
+    """
+    rendimento = max(rendimento_tributavel or 0.0, 0.0)
+    base = max(base_legal or 0.0, 0.0)
     if desconto_simplificado:
         base_simplificada = max(rendimento - desconto_simplificado, 0.0)
-        imposto = min(imposto, calc_irrf(base_simplificada, faixas_irrf))
-    return calc_irrf_apos_redutor(rendimento, imposto, faixas_redutor)
+        if calc_irrf(base_simplificada, faixas_irrf) < calc_irrf(base, faixas_irrf):
+            return base_simplificada, True
+    return base, False
 
 
 def calc_pensao_alimenticia(remuneracao, valor_fixo=0.0, percentual=0.0):
