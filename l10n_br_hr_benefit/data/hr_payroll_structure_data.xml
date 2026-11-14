@@ -10,6 +10,7 @@
             name="rule_ids"
             eval="[
             (4, ref('hr_rule_desc_vt')),
+            (4, ref('hr_rule_vt_info')),
             (4, ref('hr_rule_desc_plano_saude')),
             (4, ref('hr_rule_vr_info')),
             (4, ref('hr_rule_va_info')),
@@ -23,6 +24,7 @@
             name="rule_ids"
             eval="[
             (4, ref('hr_rule_desc_vt')),
+            (4, ref('hr_rule_vt_info')),
             (4, ref('hr_rule_desc_plano_saude')),
             (4, ref('hr_rule_vr_info')),
             (4, ref('hr_rule_va_info')),
