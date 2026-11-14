@@ -80,6 +80,45 @@ class TestDecimoExcessoRescisao(VacationCommon):
         retido = self._g(segunda, "INSS_13")
         return max(retido - self._br(resc).calc_inss(base), 0.0)
 
+    def _confere_restante(self, resc, parcela, quitado):
+        """TG-141#P2: imposto ainda retido sobre a parte não descontada.
+
+        ``imposto(quitado - d) - imposto(quitado - excesso)``, calculado aqui
+        de forma independente (INSS pela tabela da competência); o valor a
+        cobrar fora é o bruto não descontado menos esse crédito.
+        """
+        br = self._br(resc)
+        desconto = self._g(resc, "DESCONTO_13_EXCESSO")
+        nao = self._g(resc, "NAO_DESCONTADO_13_EXCESSO")
+        self.assertGreater(nao, 0.0)
+        self.assertAlmostEqualMoney(
+            desconto + nao, quitado - self._g(resc, "DECIMO_DEVIDO")
+        )
+        inss = br.round_money(
+            br.calc_inss(quitado - desconto)
+            - br.calc_inss(self._g(resc, "DECIMO_DEVIDO"))
+        )
+        self.assertAlmostEqualMoney(self._g(resc, "CREDITO_INSS_13_RESTANTE"), inss)
+        irrf = self._g(resc, "CREDITO_IRRF_13_RESTANTE")
+        self.assertGreaterEqual(irrf, 0.0)
+        # O retido ainda em jogo (restante + devolvido) é o retido na parcela.
+        self.assertAlmostEqualMoney(
+            self._g(resc, "DEVOLUCAO_INSS_13")
+            + self._g(resc, "CREDITO_INSS_13_RESTANTE"),
+            self._g(parcela, "INSS_13") - br.calc_inss(self._g(resc, "DECIMO_DEVIDO")),
+        )
+        self.assertAlmostEqualMoney(
+            self._g(resc, "A_COBRAR_13_EXCESSO"), nao - inss - irrf
+        )
+        # Informativas: fora do líquido.
+        for codigo in (
+            "NAO_DESCONTADO_13_EXCESSO",
+            "CREDITO_INSS_13_RESTANTE",
+            "A_COBRAR_13_EXCESSO",
+        ):
+            linha = resc.line_ids.filtered(lambda ln: ln.code == codigo)
+            self.assertEqual(linha.category_id.code, "INFO", codigo)
+
     def _devolucao(self, slip):
         return self._g(slip, "DEVOLUCAO_INSS_13") + self._g(slip, "DEVOLUCAO_IRRF_13")
 
@@ -409,6 +448,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
         # A pensão não volta: o líquido da rescisão fecha em zero ou centavos.
         self.assertGreaterEqual(self._g(resc, "NET"), 0.0)
         self.assertLessEqual(self._g(resc, "NET"), 0.02)
+        self._confere_restante(resc, segunda, 8000.00)
 
     def test_devolucao_exata_no_caso_f_13_integral_em_justa_causa(self):
         """Caso F da revisão: 13º integral, justa causa em 22/12."""
@@ -436,6 +476,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
         )
         self.assertGreaterEqual(self._g(resc, "NET"), 0.0)
         self.assertLessEqual(self._g(resc, "NET"), 0.02)
+        self._confere_restante(resc, integral, 5000.00)
 
     def test_liquido_nunca_fica_negativo_em_centavos(self):
         """O limite e as devoluções arredondam juntos: NET nunca é -0,01."""
@@ -542,3 +583,31 @@ class TestDecimoExcessoRescisao(VacationCommon):
         self.assertAlmostEqualMoney(
             excesso + self._g(resc, "NAO_DESCONTADO_13_EXCESSO"), 250.00
         )
+
+    def test_sem_parte_nao_descontada_nao_ha_linhas_de_restante(self):
+        emp, contract = self._contrato("excesso sem restante", 3000.00)
+        self._segunda_parcela(emp, contract)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10), "pedido_demissao")
+        self.assertAlmostEqualMoney(self._g(resc, "DESCONTO_13_EXCESSO"), 250.00)
+        for codigo in (
+            "NAO_DESCONTADO_13_EXCESSO",
+            "CREDITO_INSS_13_RESTANTE",
+            "CREDITO_IRRF_13_RESTANTE",
+            "A_COBRAR_13_EXCESSO",
+        ):
+            self.assertFalse(
+                resc.line_ids.filtered(lambda ln: ln.code == codigo), codigo
+            )
+
+    def test_restante_nao_entra_no_liquido(self):
+        """As linhas do restante são informativas: fora do líquido."""
+        emp, contract = self._contrato("excesso restante liquido", 8000.00)
+        self._segunda_parcela(emp, contract)
+        resc = self._rescisao(emp, contract, date(2026, 12, 22), "justa_causa")
+        self.assertGreater(self._g(resc, "A_COBRAR_13_EXCESSO"), 0.0)
+        esperado = (
+            self._liquido_disponivel(resc)
+            - self._g(resc, "DESCONTO_13_EXCESSO")
+            + self._devolucao(resc)
+        )
+        self.assertAlmostEqualMoney(self._g(resc, "NET"), esperado)

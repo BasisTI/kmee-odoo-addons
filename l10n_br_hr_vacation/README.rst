@@ -218,8 +218,14 @@ antes de 15/12 com a 2ª parcela pagando 12 avos), a rescisão cobra o excesso:
 * Ordem e limites: o adiantamento do 13º, o aviso não cumprido e o art. 480
   vêm antes; o excesso fica com o que sobrar. O conjunto dos descontos não passa
   de um mês de remuneração (CLT art. 477, §5º) e o líquido não fica negativo. O
-  que não couber vai à linha informativa ``NAO_DESCONTADO_13_EXCESSO`` (fora do
-  líquido) e deve ser cobrado fora da rescisão.
+  que não couber vai à linha informativa ``NAO_DESCONTADO_13_EXCESSO`` (bruto,
+  fora do líquido e do S-2299), acompanhada de ``CREDITO_INSS_13_RESTANTE`` e
+  ``CREDITO_IRRF_13_RESTANTE`` (o INSS e o IRRF ainda retidos sobre a parte não
+  descontada: imposto sobre o quitado menos o desconto, menos o imposto sobre
+  o devido) e de ``A_COBRAR_13_EXCESSO``: o bruto não descontado menos esse
+  crédito, que é o valor a cobrar fora da rescisão. Se o empregado pagar, o DP
+  retifica o S-2299 incluindo o desconto e as devoluções do restante (MOS
+  S-1.3, item 15.2).
 * ``DEVOLUCAO_INSS_13`` e ``DEVOLUCAO_IRRF_13``: o INSS e o IRRF do 13º
   retidos na 2ª parcela acima do imposto sobre o 13º devido voltam ao empregado,
   cada um em rubrica própria (tpRubr 1, com a natureza e a incidência do

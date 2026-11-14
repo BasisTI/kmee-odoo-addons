@@ -482,7 +482,8 @@ result = max(devido - DESCONTO_ART_480, 0.0)
          líquido fique negativo.
          A pensão retida sobre o excesso NÃO volta (TG-141#P1): ver
          _l10n_br_pensao_13_devolvida. O que não couber vai à linha informativa
-         NAO_DESCONTADO_13_EXCESSO. -->
+         NAO_DESCONTADO_13_EXCESSO (bruto), com o crédito de INSS e IRRF ainda
+         retido sobre ele e o valor a cobrar fora (TG-141#P2). -->
     <record id="hr_rule_desconto_13_excesso" model="hr.salary.rule">
         <field name="name">Desconto do 13º Pago a Mais</field>
         <field name="sequence" eval="130" />
@@ -585,6 +586,83 @@ result = DESCONTO_13_EXCESSO &gt; 0 and payslip._l10n_br_creditos_13(
 result = payslip._l10n_br_creditos_13(
     tools.br, contract, employee, DESCONTO_13_EXCESSO, PENSAO_ALIMENTICIA_13
 )[1]
+        </field>
+    </record>
+
+    <!-- TG-141#P2: INSS e IRRF do 13º que continuam retidos sobre a parte do
+         excesso que o desconto não cobriu: imposto(quitado - desconto) -
+         imposto(quitado - excesso), pela mesma função exata da devolução.
+         Informativo (fora do NET e do S-2299): o DP cobra fora o bruto menos
+         este crédito (A_COBRAR_13_EXCESSO). Se o empregado pagar, o DP retifica
+         o S-2299 com o desconto e as devoluções do restante (MOS S-1.3, item
+         15.2). -->
+    <record id="hr_rule_credito_inss_13_restante" model="hr.salary.rule">
+        <field
+            name="name"
+        >INSS do 13º Retido sobre o Não Descontado (Informativo)</field>
+        <field name="sequence" eval="134" />
+        <field name="code">CREDITO_INSS_13_RESTANTE</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = NAO_DESCONTADO_13_EXCESSO &gt; 0 and payslip._l10n_br_creditos_restantes_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, DECIMO_DEVIDO, PENSAO_ALIMENTICIA_13
+)[0] &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = payslip._l10n_br_creditos_restantes_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, DECIMO_DEVIDO, PENSAO_ALIMENTICIA_13
+)[0]
+        </field>
+    </record>
+
+    <record id="hr_rule_credito_irrf_13_restante" model="hr.salary.rule">
+        <field
+            name="name"
+        >IRRF do 13º Retido sobre o Não Descontado (Informativo)</field>
+        <field name="sequence" eval="135" />
+        <field name="code">CREDITO_IRRF_13_RESTANTE</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = NAO_DESCONTADO_13_EXCESSO &gt; 0 and payslip._l10n_br_creditos_restantes_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, DECIMO_DEVIDO, PENSAO_ALIMENTICIA_13
+)[1] &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = payslip._l10n_br_creditos_restantes_13(
+    tools.br, contract, employee, DESCONTO_13_EXCESSO, DECIMO_DEVIDO, PENSAO_ALIMENTICIA_13
+)[1]
+        </field>
+    </record>
+
+    <!-- TG-141#P2: o que o DP cobra fora da rescisão: o bruto não descontado
+         menos o INSS e o IRRF ainda retidos sobre ele (informativo). -->
+    <record id="hr_rule_a_cobrar_13_excesso" model="hr.salary.rule">
+        <field name="name">13º Pago a Mais: A Cobrar Fora, Líquido (Informativo)</field>
+        <field name="sequence" eval="136" />
+        <field name="code">A_COBRAR_13_EXCESSO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = NAO_DESCONTADO_13_EXCESSO &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.round_money(
+    max(NAO_DESCONTADO_13_EXCESSO - CREDITO_INSS_13_RESTANTE - CREDITO_IRRF_13_RESTANTE, 0.0)
+)
         </field>
     </record>
 

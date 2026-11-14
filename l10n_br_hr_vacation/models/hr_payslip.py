@@ -945,27 +945,24 @@ class HrPayslip(models.Model):
         """
         return 0.0
 
-    def _l10n_br_creditos_13(self, br, contract, employee, desconto, pensao_rescisao):
-        """INSS e IRRF do 13º a devolver quando a rescisão desconta ``desconto``.
+    def _l10n_br_impostos_13_mantido(
+        self, br, employee, pago, desconto, pensao_rescisao
+    ):
+        """INSS e IRRF devidos sobre o 13º que o empregado mantém (TG-141).
 
-        O imposto acompanha o 13º que o empregado mantém: o quitado menos o
-        desconto (``T = quitado - desconto``; o devido, quando o desconto é o
-        excesso inteiro). A devolução de cada imposto é o retido nas parcelas
-        menos o imposto sobre ``T``, calculado como a regra da rescisão
-        (``dependentes`` e a pensão efetivamente paga na base do IRRF; nunca
-        negativa). Exata, não proporcional: desconto zero devolve zero.
-
-        ``br`` é o ``tools.br`` da regra. Devolve ``(inss, irrf)`` arredondados.
+        O 13º mantido é o quitado menos o ``desconto`` do excesso. O INSS é o
+        da tabela sobre ele; o IRRF usa a base ``mantido - INSS - dependentes
+        - pensão paga`` (nunca negativa, a pensão é a efetivamente paga, ver
+        ``_l10n_br_pensao_13_devolvida``) e a forma mais favorável da regra.
+        ``pago`` é ``_l10n_br_decimo_pago_ano``. Devolve ``(inss, irrf)`` sem
+        arredondar.
         """
-        self.ensure_one()
-        pago = self._l10n_br_decimo_pago_ano(contract)
-        base_t = max(pago["quitado"] - desconto, 0.0)
-        inss_t = br.calc_inss(base_t)
-        credito_inss = max(pago["inss"] - inss_t, 0.0)
-        credito_irrf = 0.0
+        mantido = max(pago["quitado"] - desconto, 0.0)
+        inss = br.calc_inss(mantido)
+        irrf = 0.0
         if not employee.l10n_br_molestia_grave:
             pensao_devida = br.calc_pensao_alimenticia(
-                base_t, 0.0, employee.l10n_br_pensao_percentual
+                mantido, 0.0, employee.l10n_br_pensao_percentual
             )
             pensao_ano = (
                 pago["pensao"]
@@ -975,11 +972,56 @@ class HrPayslip(models.Model):
             dependentes = (
                 employee.l10n_br_irrf_dependentes * br.irrf_deducao_dependente()
             )
-            base_irrf = max(base_t - inss_t - dependentes - pensao_ano, 0.0)
-            credito_irrf = max(
-                pago["irrf"] - br.irrf_mais_favoravel(base_t, base_irrf), 0.0
-            )
-        return br.round_money(credito_inss), br.round_money(credito_irrf)
+            base_irrf = max(mantido - inss - dependentes - pensao_ano, 0.0)
+            irrf = br.irrf_mais_favoravel(mantido, base_irrf)
+        return inss, irrf
+
+    def _l10n_br_creditos_13(
+        self, br, contract, employee, desconto, pensao_rescisao, pago=None
+    ):
+        """INSS e IRRF do 13º a devolver quando a rescisão desconta ``desconto``.
+
+        A devolução de cada imposto é o retido nas parcelas menos o imposto
+        sobre o 13º que o empregado mantém (``_l10n_br_impostos_13_mantido``).
+        Exata, não proporcional: desconto zero devolve zero e o excesso inteiro
+        devolve tudo o que passa do imposto sobre o devido.
+
+        ``br`` é o ``tools.br`` da regra. Devolve ``(inss, irrf)`` arredondados.
+        """
+        self.ensure_one()
+        pago = pago or self._l10n_br_decimo_pago_ano(contract)
+        inss, irrf = self._l10n_br_impostos_13_mantido(
+            br, employee, pago, desconto, pensao_rescisao
+        )
+        return (
+            br.round_money(max(pago["inss"] - inss, 0.0)),
+            br.round_money(max(pago["irrf"] - irrf, 0.0)),
+        )
+
+    def _l10n_br_creditos_restantes_13(
+        self, br, contract, employee, desconto, devido, pensao_rescisao
+    ):
+        """INSS e IRRF ainda retidos sobre a parte do excesso NÃO descontada.
+
+        ``imposto(quitado - desconto) - imposto(quitado - excesso)``, pela
+        mesma função exata da devolução (``quitado - excesso`` é o devido).
+        Informativo: se o empregado pagar a parte não descontada, o DP retifica
+        o S-2299 com o desconto e as devoluções do restante (MOS S-1.3, item
+        15.2). Devolve ``(inss, irrf)`` arredondados, nunca negativos.
+        """
+        self.ensure_one()
+        pago = self._l10n_br_decimo_pago_ano(contract)
+        excesso = max(pago["quitado"] - devido, 0.0)
+        inss_d, irrf_d = self._l10n_br_impostos_13_mantido(
+            br, employee, pago, desconto, pensao_rescisao
+        )
+        inss_e, irrf_e = self._l10n_br_impostos_13_mantido(
+            br, employee, pago, excesso, pensao_rescisao
+        )
+        return (
+            br.round_money(max(inss_d - inss_e, 0.0)),
+            br.round_money(max(irrf_d - irrf_e, 0.0)),
+        )
 
     def _l10n_br_desconto_excesso_13(
         self, br, contract, employee, devido, disponivel, teto, pensao_rescisao
@@ -993,25 +1035,28 @@ class HrPayslip(models.Model):
         (o líquido conta a devolução, que depende de ``d``) se resolve sem
         laço infinito: a diferença ``d - devolução(d)`` é crescente em ``d``
         (a alíquota marginal dos dois impostos somados é menor que 1), então
-        uma busca binária sobre centavos inteiros acha o maior ``d`` que cabe;
-        um passo final confere o arredondamento das devoluções, de modo que o
-        líquido nunca fica negativo (nem em -0,01).
+        uma busca binária sobre centavos inteiros acha o maior ``d`` que cabe.
+        Como cada devolução é arredondada, a diferença pode descer 1 ou 2
+        centavos em alguns pontos: o resultado pode ficar até cerca de 3
+        centavos abaixo do máximo teórico, mas NUNCA acima do que cabe: só se
+        aceita um valor que ``cabe`` (o líquido nunca fica negativo, nem em
+        -0,01).
         """
         self.ensure_one()
         pago = self._l10n_br_decimo_pago_ano(contract)
         excesso = br.round_money(pago["quitado"] - devido)
         maximo = int(round(max(min(excesso, teto), 0.0) * 100))
-        livre = int(round(max(disponivel, 0.0) * 100)) if disponivel > 0 else -1
+        if maximo <= 0 or disponivel <= 0:
+            return 0.0
+        livre = int(round(disponivel * 100))
 
         def cabe(centavos):
             inss, irrf = self._l10n_br_creditos_13(
-                br, contract, employee, centavos / 100.0, pensao_rescisao
+                br, contract, employee, centavos / 100.0, pensao_rescisao, pago
             )
             custo = centavos - int(round(inss * 100)) - int(round(irrf * 100))
             return custo <= livre
 
-        if maximo <= 0 or livre < 0:
-            return 0.0
         if cabe(maximo):
             return maximo / 100.0
         baixo, alto = 0, maximo  # cabe(baixo); não cabe(alto)
@@ -1021,9 +1066,6 @@ class HrPayslip(models.Model):
                 baixo = meio
             else:
                 alto = meio
-        # O arredondamento das devoluções pode quebrar a monotonia por 1 centavo.
-        while baixo > 0 and not cabe(baixo):
-            baixo -= 1
         return baixo / 100.0
 
     def _l10n_br_aviso_indenizado_devido(self):
@@ -1239,6 +1281,10 @@ class HrPayslip(models.Model):
             "DEVOLUCAO_INSS_13",
             "DEVOLUCAO_IRRF_13",
             "DESCONTO_13_EXCESSO",
+            # TG-141#P2: linhas informativas do que ficou sem descontar.
+            "NAO_DESCONTADO_13_EXCESSO",
+            "CREDITO_INSS_13_RESTANTE",
+            "CREDITO_IRRF_13_RESTANTE",
             "FGTS_AVISO",
             "FGTS",
             "FGTS_13",

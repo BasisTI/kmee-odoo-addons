@@ -5,7 +5,7 @@
 
 Regras e estruturas são ``noupdate="1"``: o ``-u`` cria as regras novas
 (``DECIMO_DEVIDO``, ``DESCONTO_13_EXCESSO``, a linha informativa e as devoluções
-de INSS e de IRRF do 13º), mas não as liga à estrutura da rescisão nem troca as fórmulas em
+de INSS e de IRRF do 13º e as linhas informativas do que ficou sem descontar), mas não as liga à estrutura da rescisão nem troca as fórmulas em
 bancos instalados. Aqui as regras novas entram na estrutura e as fórmulas passam
 a usar o 13º devido SOMENTE se a gravada ainda for exatamente a da 1.9.0; regra
 personalizada fica como está, com aviso no log. Idempotente.
@@ -135,6 +135,9 @@ NOVAS_NA_RESCISAO = (
     "hr_rule_nao_descontado_13_excesso",
     "hr_rule_devolucao_inss_13",
     "hr_rule_devolucao_irrf_13",
+    "hr_rule_credito_inss_13_restante",
+    "hr_rule_credito_irrf_13_restante",
+    "hr_rule_a_cobrar_13_excesso",
 )
 
 
