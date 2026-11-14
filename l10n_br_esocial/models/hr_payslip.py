@@ -524,6 +524,24 @@ class HrPayslip(models.Model):
 
     # ── S-2299 — desligamento a partir da rescisão ─────────────────────────
 
+    def _esocial_motivo_desligamento(self):
+        """Motivo (tabela 19) do S-2299: o da causa da rescisão, senão o do contrato.
+
+        Com o módulo de rescisão instalado, o tipo de rescisão do holerite
+        define o ``mtvDeslig`` (ex.: sem justa causa 02, acordo 33); sem tipo, ou
+        sem o módulo, vale o motivo gravado no contrato.
+        """
+        self.ensure_one()
+        if hasattr(self, "_l10n_br_motivo_desligamento_esocial"):
+            codigo = self._l10n_br_motivo_desligamento_esocial()
+            if codigo:
+                motivo = self.env["l10n_br.esocial.motivo.desligamento"].search(
+                    [("codigo", "=", codigo)], limit=1
+                )
+                if motivo:
+                    return motivo
+        return self.contract_id.l10n_br_esocial_motivo_deslig_id
+
     def action_esocial_gerar_s2299(self):
         """Gera o S-2299 dos holerites de rescisão, ligado a cada holerite.
 
@@ -565,7 +583,7 @@ class HrPayslip(models.Model):
                         "evento": anterior.evento_id.name,
                     }
                 )
-            motivo = slip.contract_id.l10n_br_esocial_motivo_deslig_id
+            motivo = slip._esocial_motivo_desligamento()
             if not motivo:
                 raise UserError(
                     _(

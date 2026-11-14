@@ -81,9 +81,14 @@
         (Súmula 94 TST). O saldo de salário NÃO soma a média: é pago pelos
         dias realmente trabalhados no mês, não por proporção/projeção.
 
-        LACUNA REMANESCENTE (fora desta onda, documentada no relatório):
-        desconto do aviso prévio não cumprido pelo empregado em pedido de
-        demissão (CLT art. 487 §2º) - este módulo não gera esse desconto.
+        CAUSAS DE RESCISÃO (TG-96): a tabela com a fração do aviso, do 13º e
+        das férias proporcionais, o percentual da multa e o mtvDeslig de cada
+        causa está em L10N_BR_REGRAS_RESCISAO (models/hr_payslip.py). Aviso
+        não cumprido no pedido de demissão (CLT art. 487 §2º): desconto de 30
+        dias de salário. Término antecipado de contrato a prazo: indenização do
+        empregador (art. 479, metade da remuneração até o termo) e do
+        empregado (art. 480, o prejuízo informado, limitado ao art. 479 e a um
+        mês de remuneração).
 
         Convenção de sinais: proventos positivos; DED positivo subtraído;
         NET = proventos - descontos. FGTS é COMP (não afeta o NET); a multa do
@@ -151,7 +156,7 @@ result = tools.br.round_money(max(saldo, 0))
         <field name="condition_python">
 result = (
     payslip.l10n_br_avos_ferias > 0
-    and payslip.l10n_br_tipo_rescisao != 'justa_causa'
+    and payslip._l10n_br_fator_rescisao('ferias') > 0
 )
         </field>
         <field name="amount_select">code</field>
@@ -159,7 +164,8 @@ result = (
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_ferias
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
+fator = payslip._l10n_br_fator_rescisao('ferias')
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
         </field>
     </record>
 
@@ -173,7 +179,7 @@ result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos
         <field name="condition_python">
 result = (
     payslip.l10n_br_avos_ferias > 0
-    and payslip.l10n_br_tipo_rescisao != 'justa_causa'
+    and payslip._l10n_br_fator_rescisao('ferias') > 0
 )
         </field>
         <field name="amount_select">code</field>
@@ -240,12 +246,161 @@ result = payslip._l10n_br_aviso_indenizado_devido()
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-# Acordo (CLT art. 484-A, I, "a"): aviso pago pela METADE. Sem justa causa:
-# integral. Súmula 94 TST: a base soma a média das verbas habituais.
+# Fração da causa: acordo (CLT art. 484-A, I, "a") e culpa recíproca (Súmula
+# 14 TST) pagam a METADE; sem justa causa e rescisão indireta, integral.
+# Súmula 94 TST: a base soma a média das verbas habituais.
 dias = payslip._l10n_br_dias_aviso_previo()
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-fator = 0.5 if payslip.l10n_br_tipo_rescisao == 'acordo' else 1.0
+fator = payslip._l10n_br_fator_rescisao('aviso')
 result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) / 30 * dias * fator)
+        </field>
+    </record>
+
+    <!-- Indenização do término antecipado do contrato a prazo pelo
+         EMPREGADOR (CLT art. 479): metade da remuneração dos dias que faltavam
+         até o termo. INDENIZATÓRIA: sem INSS, IRRF nem FGTS. -->
+    <record id="hr_rule_indenizacao_art_479" model="hr.salary.rule">
+        <field name="name">Indenização Art. 479 CLT (Término Antecipado)</field>
+        <field name="sequence" eval="12" />
+        <field name="code">INDENIZACAO_ART_479</field>
+        <field name="category_id" ref="hr_salary_rule_category_prov_indeniz" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'antecipado_empregador'
+    and payslip._l10n_br_dias_restantes_termo() > 0
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+result = tools.br.round_money(payslip._l10n_br_indenizacao_art_479(remuneracao))
+        </field>
+    </record>
+
+    <!-- Desconto do término antecipado pelo EMPREGADO (CLT art. 480): o
+         prejuízo informado, limitado ao do art. 479 e a um mês de remuneração
+         (art. 477, §5º). Só reduz o líquido: não altera as bases. -->
+    <record id="hr_rule_desconto_art_480" model="hr.salary.rule">
+        <field name="name">Indenização ao Empregador Art. 480 CLT</field>
+        <field name="sequence" eval="126" />
+        <field name="code">DESCONTO_ART_480</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'antecipado_empregado'
+    and payslip.l10n_br_prejuizo_art_480 > 0
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
+# Não pode deixar o líquido negativo: só o que sobra dos créditos depois dos
+# descontos obrigatórios e do aviso não cumprido. Teto de um mês de remuneração
+# para o conjunto das compensações (art. 477, §5º). O que não couber vai à
+# linha informativa NAO_DESCONTADO_ART_480.
+disponivel = (
+    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
+    + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
+    - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+)
+result = tools.br.round_money(max(min(devido, disponivel - DESCONTO_AVISO_PREVIO, remuneracao - DESCONTO_AVISO_PREVIO), 0))
+        </field>
+    </record>
+
+    <!-- Aviso prévio NÃO CUMPRIDO no pedido de demissão (CLT art. 487, §2º):
+         o empregador desconta 30 dias de salário (o aviso do empregado é de
+         30 dias; a proporcionalidade da Lei 12.506/2011 só vale para o
+         empregador). Só reduz o líquido. -->
+    <record id="hr_rule_desconto_aviso_previo" model="hr.salary.rule">
+        <field name="name">Desconto de Aviso Prévio Não Cumprido</field>
+        <field name="sequence" eval="125" />
+        <field name="code">DESCONTO_AVISO_PREVIO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'pedido_demissao'
+    and payslip.l10n_br_aviso_previo == 'nao_cumprido'
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+# Súmula 94 TST: a base soma a média das verbas habituais.
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+devido = tools.br.round_money(remuneracao)
+# Não pode deixar o líquido negativo nem passar de um mês de remuneração (art.
+# 477, §5º): desconta só o que sobra dos créditos depois dos descontos
+# obrigatórios. O restante vai à linha informativa NAO_DESCONTADO_AVISO_PREVIO.
+disponivel = (
+    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
+    + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
+    - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
+)
+result = tools.br.round_money(max(min(devido, disponivel, remuneracao), 0))
+        </field>
+    </record>
+
+    <!-- Valor do aviso não cumprido que não coube no líquido (informativo, fora
+         do NET): o empregador cobra o restante fora da rescisão. -->
+    <record id="hr_rule_nao_descontado_aviso_previo" model="hr.salary.rule">
+        <field name="name">Aviso Não Cumprido: Não Descontado (Informativo)</field>
+        <field name="sequence" eval="127" />
+        <field name="code">NAO_DESCONTADO_AVISO_PREVIO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'pedido_demissao'
+    and payslip.l10n_br_aviso_previo == 'nao_cumprido'
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+devido = tools.br.round_money(contract.wage + media + tools.br.adicionais_fixos(contract))
+result = max(devido - DESCONTO_AVISO_PREVIO, 0.0)
+        </field>
+    </record>
+
+    <!-- Indenização do art. 480 que não coube no líquido (informativo, fora do NET). -->
+    <record id="hr_rule_nao_descontado_art_480" model="hr.salary.rule">
+        <field name="name">Indenização Art. 480: Não Descontada (Informativo)</field>
+        <field name="sequence" eval="128" />
+        <field name="code">NAO_DESCONTADO_ART_480</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_info"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip.l10n_br_tipo_rescisao == 'antecipado_empregado'
+    and payslip.l10n_br_prejuizo_art_480 > 0
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
+devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
+result = max(devido - DESCONTO_ART_480, 0.0)
         </field>
     </record>
 
@@ -511,7 +666,7 @@ result = max(
         <field name="category_id" ref="hr_salary_rule_category_prov_indeniz" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = payslip.l10n_br_tipo_rescisao in ('sem_justa_causa', 'acordo')
+result = payslip._l10n_br_percentual_multa_fgts() > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
@@ -532,7 +687,7 @@ depositos = (
     + payslip._l10n_br_fgts_13_primeira_depositado(contract)
     + FGTS_AVISO
 )
-percentual = 0.20 if payslip.l10n_br_tipo_rescisao == 'acordo' else 0.40
+percentual = payslip._l10n_br_percentual_multa_fgts()
 result = tools.br.round_money((saldo + depositos) * percentual)
         </field>
     </record>
@@ -557,6 +712,9 @@ result = (
     + FERIAS_VENCIDAS
     + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO
+    + INDENIZACAO_ART_479
+    - DESCONTO_ART_480
+    - DESCONTO_AVISO_PREVIO
     - INSS
     - INSS_13
     - IRRF

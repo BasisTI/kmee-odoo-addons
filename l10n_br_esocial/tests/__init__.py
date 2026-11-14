@@ -24,3 +24,4 @@ from . import test_s2200_cadastro
 from . import test_tsve
 from . import test_s1010_irrf_sem_incidencia
 from . import test_estorno
+from . import test_motivo_desligamento_payslip

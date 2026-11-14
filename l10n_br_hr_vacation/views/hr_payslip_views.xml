@@ -20,6 +20,8 @@
                 <field name="l10n_br_liquido_13" />
                 <field name="l10n_br_tipo_rescisao" />
                 <field name="l10n_br_aviso_previo" />
+                <field name="l10n_br_data_termo_contrato" />
+                <field name="l10n_br_prejuizo_art_480" />
                 <field name="l10n_br_fgts_saldo_conta" />
             </xpath>
         </field>
