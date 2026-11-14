@@ -118,8 +118,11 @@ class L10nBrHrSyndicateIndividualValue(models.Model):
                     )
                 )
 
-    def _valor_do_mes(self, competencia):
-        """Valor vigente em algum dia do mês de ``competencia``, ou ``None``."""
+    def valor_do_mes(self, competencia):
+        """Valor vigente em algum dia do mês de ``competencia``, ou ``None``.
+
+        Público para as regras salariais, que não alcançam nomes com ``_``.
+        """
         inicio = competencia.replace(day=1)
         fim = inicio + relativedelta(months=1)
         for rec in self.sorted("date_start", reverse=True):

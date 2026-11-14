@@ -139,7 +139,7 @@ class HrContract(models.Model):
                 base = sum(c.amount_for(self.wage) for c in contribuicoes)
         empregado = self.employee_id.sudo()
         if tipo == "sindical" and competencia:
-            individual = empregado.l10n_br_contribuicao_individual_ids._valor_do_mes(
+            individual = empregado.l10n_br_contribuicao_individual_ids.valor_do_mes(
                 competencia
             )
             if individual is not None:
