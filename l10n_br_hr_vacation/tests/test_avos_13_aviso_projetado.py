@@ -107,10 +107,10 @@ class TestAvos13AvisoProjetado(VacationCommon):
         self.assertEqual(payslip.l10n_br_avos_13_proporcional, 11)
         self.assertEqual(payslip.l10n_br_avos_13_aviso, 2)
         self.assertAlmostEqualMoney(
-            self._get_line_total(payslip, "DECIMO_RESCISAO"), 1833.33
+            self._get_line_total(payslip, "DECIMO_RESCISAO"), 1833.34
         )
         self.assertAlmostEqualMoney(
-            self._get_line_total(payslip, "DECIMO_AVISO_INDENIZADO"), 333.34
+            self._get_line_total(payslip, "DECIMO_AVISO_INDENIZADO"), 333.33
         )
         self.assertAlmostEqualMoney(self._total_13(payslip), 2166.67)
         # Os encargos do 13º recaem sobre o total das duas rubricas.
@@ -169,3 +169,21 @@ class TestAvos13AvisoProjetado(VacationCommon):
             - self._get_line_total(payslip, "IRRF_13")
         )
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "NET"), esperado)
+
+    def test_centavo_de_arredondamento_fica_no_proporcional(self):
+        """Cada rubrica pelos próprios avos; o centavo sobra no proporcional.
+
+        Salário 5.000,00, desligamento em 31/10 com 33 dias de aviso (03/12):
+        10 avos de proporcional + 1 do aviso. O aviso é 5.000,00 / 12 = 416,67
+        e o proporcional é o total (4.583,33) menos isso: 4.166,66.
+        """
+        payslip = self._rescisao(date(2025, 7, 1), date(2026, 10, 31), wage=5000.00)
+        self.assertEqual(payslip.l10n_br_avos_13_proporcional, 10)
+        self.assertEqual(payslip.l10n_br_avos_13_aviso, 1)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "DECIMO_AVISO_INDENIZADO"), 416.67
+        )
+        self.assertAlmostEqualMoney(
+            self._get_line_total(payslip, "DECIMO_RESCISAO"), 4166.66
+        )
+        self.assertAlmostEqualMoney(self._total_13(payslip), 4583.33)

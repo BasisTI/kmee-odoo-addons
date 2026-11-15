@@ -321,9 +321,13 @@ class ReportTermoRescisao(models.AbstractModel):
             CAMPO_OUTROS_DESCONTOS,
         )
         detalhes = {
-            "63": f"{slip.l10n_br_avos_13}/12 avos",
+            # TG-136: o 63 mostra só os avos do 13º proporcional; os que o
+            # aviso indenizado projeta aparecem no 70.
+            "63": f"{slip.l10n_br_avos_13_proporcional}/12 avos",
             "65": f"{slip.l10n_br_avos_ferias}/12 avos",
         }
+        if verbas.get("70"):
+            detalhes["70"] = f"{slip.l10n_br_avos_13_aviso}/12 avos"
         periodos = [
             f"{d['inicio']:%d/%m/%Y} a {d['fim']:%d/%m/%Y}"
             for d in slip._l10n_br_ferias_vencidas_dados()

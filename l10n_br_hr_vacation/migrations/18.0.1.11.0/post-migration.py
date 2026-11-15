@@ -55,9 +55,22 @@ result = (
 )
 """
 
+# Regras de desconto cujo "disponível" ganhou a rubrica nova: o texto da 1.10.0
+# é o atual sem ela.
+DESCONTOS_DISPONIVEL = (
+    "hr_rule_desconto_art_480",
+    "hr_rule_desconto_adiantamento_13_rescisao",
+    "hr_rule_desconto_aviso_previo",
+    "hr_rule_desconto_13_excesso",
+)
+RUBRICA_NOVA = "DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + "
+RUBRICA_ANTIGA = "DECIMO_RESCISAO + "
+
 CAMPOS = (
     ("hr_rule_decimo_rescisao", "hr_salary_rule_13_data.xml", ANTIGO_DECIMO),
     ("hr_rule_net_rescisao", "hr_salary_rule_rescisao_data.xml", ANTIGO_NET),
+) + tuple(
+    (xmlid, "hr_salary_rule_rescisao_data.xml", None) for xmlid in DESCONTOS_DISPONIVEL
 )
 
 
@@ -81,6 +94,8 @@ def migrate(cr, version):
         if not regra:
             continue
         novo = _valor_novo(arquivo, xmlid)
+        if antigo is None:
+            antigo = novo.replace(RUBRICA_NOVA, RUBRICA_ANTIGA)
         atual = _normaliza(regra.amount_python_compute)
         if atual == _normaliza(novo):
             _logger.info("TG-136: %s já atualizada", xmlid)

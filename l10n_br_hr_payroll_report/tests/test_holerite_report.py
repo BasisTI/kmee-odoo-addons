@@ -327,3 +327,29 @@ class TestHoleriteReport(PayrollCommon):
         self.assertAlmostEqualMoney(
             bases["Base FGTS (2%)"] * 0.02, bases["FGTS do mês"]
         )
+
+    def test_rescisao_base_inss_13_soma_as_duas_rubricas(self):
+        """TG-136: a "Base INSS 13º" da rescisão soma o 13º proporcional e o
+        13º do aviso indenizado."""
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=2000.00, date_start=date(2006, 1, 1))
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": f"Rescisão - {emp.name}",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.env.ref("l10n_br_hr_vacation.structure_rescisao").id,
+                "date_from": date(2026, 12, 1),
+                "date_to": date(2026, 12, 31),
+                "l10n_br_tipo_rescisao": "sem_justa_causa",
+                "l10n_br_aviso_previo": "indenizado",
+                "company_id": self.env.company.id,
+            }
+        )
+        payslip.compute_sheet()
+        proporcional = self._get_line_total(payslip, "DECIMO_RESCISAO")
+        aviso = self._get_line_total(payslip, "DECIMO_AVISO_INDENIZADO")
+        self.assertAlmostEqualMoney(proporcional, 2000.00)
+        self.assertAlmostEqualMoney(aviso, 500.00)
+        bases = dict(self._contracheque(payslip)["bases"])
+        self.assertAlmostEqualMoney(bases["Base INSS 13º"], proporcional + aviso)

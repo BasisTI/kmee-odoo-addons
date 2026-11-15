@@ -337,12 +337,14 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
 # parcela pagou ALÉM do devido não vira valor negativo: sai como desconto
 # (DESCONTO_13_EXCESSO, TG-141).
 # TG-136: só os avos do 13º proporcional (até a data do desligamento); o que o
-# aviso indenizado projeta vai em DECIMO_AVISO_INDENIZADO.
+# aviso indenizado projeta vai em DECIMO_AVISO_INDENIZADO. A rubrica do aviso
+# é calculada pelos próprios avos; o centavo de arredondamento fica aqui, no
+# proporcional, e o total das duas é o DECIMO_DEVIDO.
 quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('decimo')
-proporcional = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * payslip.l10n_br_avos_13_proporcional / 12 * fator)
-result = max(min(proporcional, DECIMO_DEVIDO) - quitado, 0.0)
+aviso = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * payslip.l10n_br_avos_13_aviso / 12 * fator)
+result = max(DECIMO_DEVIDO - aviso - quitado, 0.0)
         </field>
     </record>
 
