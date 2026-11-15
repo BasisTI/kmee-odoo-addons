@@ -225,9 +225,10 @@ class ESocialS1200(models.Model):
                 }
             )
         self.avisos = "\n".join(linhas)
-        _logger.warning(
-            "eSocial S-1200 %s (%s): %s", self.id, self.per_apur, self.avisos
-        )
+        # Só a regra sem configuração é problema de cadastro e vai ao log como
+        # aviso; o provento negativo fica em ``avisos`` (visível no evento).
+        nivel = _logger.warning if sem_config else _logger.info
+        nivel("eSocial S-1200 %s (%s): %s", self.id, self.per_apur, self.avisos)
 
     def _to_esociallib_dict(self):
         self.ensure_one()
