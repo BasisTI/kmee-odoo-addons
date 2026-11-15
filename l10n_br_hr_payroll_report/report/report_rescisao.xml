@@ -53,6 +53,20 @@
                                 </td>
                             </tr>
                             <tr>
+                                <td colspan="2">
+                                    <strong>04 Bairro:</strong>
+                                    <span t-esc="t['empregador']['bairro']" />
+                                </td>
+                                <td colspan="2">
+                                    <strong>08 CNAE:</strong>
+                                    <span t-esc="t['empregador']['cnae']" />
+                                </td>
+                                <td colspan="2">
+                                    <strong>09 CNPJ/CEI Tomador/Obra:</strong>
+                                    <span t-esc="t['empregador']['tomador']" />
+                                </td>
+                            </tr>
+                            <tr>
                                 <td colspan="3">
                                     <strong>05 Município:</strong>
                                     <span t-esc="t['empregador']['municipio']" />
@@ -87,6 +101,12 @@
                                 <td colspan="6">
                                     <strong>12 Endereço:</strong>
                                     <span t-esc="t['trabalhador']['logradouro']" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td colspan="6">
+                                    <strong>13 Bairro:</strong>
+                                    <span t-esc="t['trabalhador']['bairro']" />
                                 </td>
                             </tr>
                             <tr>
@@ -237,9 +257,7 @@
                                     </td>
                                     <td style="width:34%;">
                                         <span t-esc="esq[1]" />
-                                        <t t-if="esq[3]"> (<span
-                                            t-esc="esq[3]"
-                                        />/12 avos)</t>
+                                        <t t-if="esq[3]"> (<span t-esc="esq[3]" />)</t>
                                     </td>
                                     <td class="text-right" style="width:12%;">
                                         <t t-if="esq[2]">
@@ -257,7 +275,7 @@
                                             <span t-esc="dir[1]" />
                                             <t t-if="dir[3]"> (<span
                                                 t-esc="dir[3]"
-                                            />/12 avos)</t>
+                                            />)</t>
                                         </td>
                                         <td class="text-right" style="width:12%;">
                                             <t t-if="dir[2]">
@@ -281,10 +299,11 @@
                                     <tr class="rescisao-outras">
                                         <td colspan="5">
                                             <span t-esc="ov[0]" />
+                                            <span t-esc="ov[1]" />
                                         </td>
                                         <td class="text-right">
                                             <span
-                                                t-esc="ov[1]"
+                                                t-esc="ov[2]"
                                                 t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                             />
                                         </td>
@@ -351,10 +370,11 @@
                                     <tr class="rescisao-outros">
                                         <td colspan="5">
                                             <span t-esc="od[0]" />
+                                            <span t-esc="od[1]" />
                                         </td>
                                         <td class="text-right">
                                             <span
-                                                t-esc="od[1]"
+                                                t-esc="od[2]"
                                                 t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                             />
                                         </td>
@@ -401,10 +421,9 @@
                         </t>
 
                         <p style="font-size: 8px; margin: 4px 0;">
-                            É vedado ao empregador, na rescisão contratual, efetuar
-                            desconto no valor correspondente ao aviso prévio, quando o
-                            empregado não cumprir o prazo previsto em lei (art. 487, §2º,
-                            CLT). Local e data: ____________________________________
+                            A falta de aviso prévio por parte do empregado dá ao empregador o direito
+                            de descontar os salários correspondentes ao prazo respectivo
+                            (art. 487, §2º, CLT). Local e data: ____________________________________
                         </p>
 
                         <table style="width:100%; font-size: 9px;">

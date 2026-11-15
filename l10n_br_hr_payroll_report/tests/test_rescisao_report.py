@@ -13,6 +13,8 @@ from unittest.mock import patch
 
 from lxml import etree
 
+from odoo.exceptions import UserError
+
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
 from odoo.addons.l10n_br_hr_payroll_report.models.report_rescisao import CAMPOS_VERBAS
 
@@ -187,35 +189,20 @@ class TestRescisaoReport(PayrollCommon):
         linhas = payslip.line_ids.filtered(
             lambda ln: ln.code in ("SALDO_SALARIO", "INSS") and ln.total
         )
-        verbas, outras = modelo._agrupar(linhas, {}, {}, "95")
+        verbas, outras = modelo._agrupar(linhas, {}, "95")
         self.assertEqual(
-            sorted(nome for nome, _v in outras), sorted(linhas.mapped("name"))
+            sorted(nome for _s, nome, _v in outras), sorted(linhas.mapped("name"))
         )
+        self.assertEqual([s for s, _n, _v in outras], ["95.1", "95.2"])
         self.assertAlmostEqual(verbas["95"], sum(linhas.mapped("total")), places=2)
-
-    def test_trct_outras_verbas_e_descontos_impressos_com_a_descricao(self):
-        """Uma rubrica sem campo (devolução de INSS do 13º) sai no termo."""
-        payslip = self._rescisao_sem_justa_causa()
-        trct = self._trct(payslip)
-        sem_campo = payslip.line_ids.filtered(
-            lambda ln: ln.code
-            in self.env["report.l10n_br_hr_payroll_report.report_holerite"]
-            .contracheque(payslip)["proventos"]
-            .mapped("code")
-            and ln.code not in CAMPOS_VERBAS
-        )
-        self.assertEqual(
-            sorted(n for n, _v in trct["outras_verbas"]),
-            sorted(sem_campo.mapped("name")),
-        )
 
     def test_trct_dados_do_contrato(self):
         """Causa, código do afastamento (mtvDeslig da TG-96), admissão, aviso
         e afastamento."""
         payslip = self._rescisao_sem_justa_causa()
         contrato = self._trct(payslip)["contrato"]
-        self.assertIn("Sem Justa Causa", contrato["causa"])
-        self.assertEqual(contrato["codigo_afastamento"], "02")
+        self.assertEqual(contrato["causa"], "Dispensa sem justa causa, pelo empregador")
+        self.assertEqual(contrato["codigo_afastamento"], "SJ2")
         self.assertEqual(contrato["admissao"], payslip.contract_id.date_start)
         self.assertEqual(contrato["afastamento"], payslip.date_to)
         self.assertEqual(contrato["aviso"], payslip.date_to)
@@ -233,7 +220,7 @@ class TestRescisaoReport(PayrollCommon):
         payslip.compute_sheet()
         contrato = self._trct(payslip)["contrato"]
         self.assertEqual(contrato["tipo_contrato"], "Prazo determinado")
-        self.assertEqual(contrato["codigo_afastamento"], "06")
+        self.assertEqual(contrato["codigo_afastamento"], "PD0")
         self.assertFalse(contrato["aviso"])
 
     def test_trct_justa_causa_sem_13_nem_aviso(self):
@@ -246,7 +233,7 @@ class TestRescisaoReport(PayrollCommon):
         )
         payslip.compute_sheet()
         trct = self._trct(payslip)
-        self.assertEqual(trct["contrato"]["codigo_afastamento"], "01")
+        self.assertEqual(trct["contrato"]["codigo_afastamento"], "JC2")
         self.assertEqual(self._valor(trct, "verbas", "63"), 0.0)
         self.assertEqual(self._valor(trct, "verbas", "69"), 0.0)
         self.assertAlmostEqual(
@@ -327,7 +314,203 @@ class TestRescisaoReport(PayrollCommon):
             for tr in arvore.xpath("//tr[@class='rescisao-outras']")
         ]
         self.assertEqual(len(detalhe), 1)
+        self.assertIn("95.1", detalhe[0])
         self.assertIn(saldo.name, detalhe[0])
         self.assertAlmostEqual(
             trct["total_bruto"] - trct["total_deducoes"], trct["liquido"], places=2
         )
+
+    def test_trct_codigos_do_quadro_campos_22_e_27(self):
+        """Cada causa da TG-96 imprime o código do quadro da Portaria MTE
+        2.685/2011 (1.057/2012); o acordo do art. 484-A, sem código no
+        quadro, imprime o texto e nunca um código inventado."""
+        esperado = {
+            "sem_justa_causa": "SJ2",
+            "justa_causa": "JC2",
+            "antecipado_empregador": "RA2",
+            "antecipado_empregado": "RA1",
+            "pedido_demissao": "SJ1",
+            "termino_contrato": "PD0",
+            "rescisao_indireta": "RI2",
+            "culpa_reciproca": "CR0",
+            "forca_maior": "FM0",
+            "acordo": "Acordo art. 484-A",
+        }
+        tipos = {
+            t
+            for t, _n in self.env["hr.payslip"]
+            ._fields["l10n_br_tipo_rescisao"]
+            .selection
+        }
+        self.assertEqual(tipos, set(esperado))
+        payslip = self._create_rescisao_payslip()
+        for tipo, codigo in esperado.items():
+            payslip.write(
+                {
+                    "l10n_br_tipo_rescisao": tipo,
+                    "l10n_br_data_termo_contrato": date(2024, 6, 30),
+                }
+            )
+            self.assertEqual(
+                self._trct(payslip)["contrato"]["codigo_afastamento"], codigo
+            )
+
+    def test_trct_aviso_trabalhado_do_pedido_de_demissao_e_de_30_dias(self):
+        """O aviso do empregado é de 30 dias (sem os 3 dias por ano da Lei
+        12.506): o aviso começa 29 dias antes do afastamento. A dispensa sem
+        justa causa do mesmo contrato segue com o aviso proporcional."""
+        payslip = self._create_rescisao_payslip()
+        payslip.write(
+            {
+                "date_from": date(2026, 11, 1),
+                "date_to": date(2026, 11, 20),
+                "l10n_br_tipo_rescisao": "pedido_demissao",
+                "l10n_br_aviso_previo": "trabalhado",
+            }
+        )
+        payslip.contract_id.date_start = date(2023, 3, 1)
+        self.assertEqual(self._trct(payslip)["contrato"]["aviso"], date(2026, 10, 22))
+        payslip.l10n_br_tipo_rescisao = "sem_justa_causa"
+        self.assertEqual(self._trct(payslip)["contrato"]["aviso"], date(2026, 10, 13))
+
+    def test_trct_rodape_do_art_487_par_2(self):
+        payslip = self._rescisao_sem_justa_causa()
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
+        html = self.env["ir.actions.report"]._render_qweb_html(report.id, payslip.ids)[
+            0
+        ]
+        texto = " ".join(
+            " ".join(
+                etree.fromstring(html, etree.HTMLParser()).xpath("//body//text()")
+            ).split()
+        )
+        self.assertIn(
+            "A falta de aviso prévio por parte do empregado dá ao empregador o "
+            "direito de descontar os salários correspondentes ao prazo respectivo",
+            texto,
+        )
+        self.assertNotIn("É vedado ao empregador", texto)
+
+    def test_trct_campos_04_08_09_13_e_categoria_no_html(self):
+        payslip = self._rescisao_sem_justa_causa()
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
+        html = self.env["ir.actions.report"]._render_qweb_html(report.id, payslip.ids)[
+            0
+        ]
+        texto = " ".join(
+            etree.fromstring(html, etree.HTMLParser()).xpath("//body//text()")
+        )
+        for rotulo in (
+            "04 Bairro",
+            "08 CNAE",
+            "09 CNPJ/CEI Tomador/Obra",
+            "13 Bairro",
+            "30 Categoria do trabalhador",
+        ):
+            self.assertIn(rotulo, texto)
+        self.assertEqual(
+            self._trct(payslip)["contrato"]["categoria"], "Empregado - Geral"
+        )
+
+    def test_trct_ferias_vencidas_com_periodo_aquisitivo(self):
+        """66.1 traz o período aquisitivo da alocação vencida e não gozada."""
+        emp = self._create_employee("Vencidas")
+        contract = self._create_contract(emp, date_start=date(2022, 1, 1))
+        tipo = self.env.ref("l10n_br_hr_vacation.leave_type_ferias")
+        aloc = self.env["hr.leave.allocation"].create(
+            {
+                "name": "Aquisitivo 2023",
+                "employee_id": emp.id,
+                "holiday_status_id": tipo.id,
+                "allocation_type": "regular",
+                "date_from": date(2023, 1, 1),
+                "date_to": date(2023, 12, 31),
+            }
+        )
+        aloc.sudo().action_validate()
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão vencidas",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_rescisao.id,
+                "date_from": date(2026, 3, 1),
+                "date_to": date(2026, 3, 31),
+                "l10n_br_tipo_rescisao": "sem_justa_causa",
+                "l10n_br_aviso_previo": "indenizado",
+            }
+        )
+        payslip.compute_sheet()
+        campos = {c: (v, d) for c, _r, v, d in self._trct(payslip)["verbas"]}
+        self.assertGreater(campos["66.1"][0], 0)
+        self.assertEqual(campos["66.1"][1], "01/01/2023 a 31/12/2023")
+
+    def test_trct_excesso_do_13_vai_para_95_e_115_com_subitens(self):
+        """TG-141: 2ª parcela confirmada acima do devido. A devolução de INSS
+        sai em 95.n e o desconto do excesso em 115.n, com o nome, e os totais
+        fecham no termo impresso."""
+        emp = self._create_employee("Excesso 13")
+        contract = self._create_contract(emp, wage=3000.0, date_start=date(2020, 1, 1))
+        segunda = self.env["hr.payslip"].create(
+            {
+                "name": "13º 2ª",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.env.ref(
+                    "l10n_br_hr_vacation.structure_13_segunda_parcela"
+                ).id,
+                "date_from": date(2026, 12, 1),
+                "date_to": date(2026, 12, 20),
+            }
+        )
+        segunda.compute_sheet()
+        segunda.action_payslip_done()
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": "Rescisão excesso",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_rescisao.id,
+                "date_from": date(2026, 12, 1),
+                "date_to": date(2026, 12, 10),
+                "l10n_br_tipo_rescisao": "pedido_demissao",
+                "l10n_br_aviso_previo": "nao_aplicavel",
+            }
+        )
+        payslip.compute_sheet()
+        trct = self._trct(payslip)
+        excesso = payslip.line_ids.filtered(lambda ln: ln.code == "DESCONTO_13_EXCESSO")
+        devolucao = payslip.line_ids.filtered(lambda ln: ln.code == "DEVOLUCAO_INSS_13")
+        self.assertGreater(excesso.total, 0)
+        self.assertGreater(devolucao.total, 0)
+        self.assertIn(
+            ("115.1", excesso.name, excesso.total),
+            [(s, n, round(v, 2)) for s, n, v in trct["outros_descontos"]],
+        )
+        self.assertTrue(
+            [s for s, n, _v in trct["outras_verbas"] if n == devolucao.name]
+        )
+        self.assertAlmostEqual(
+            trct["total_bruto"] - trct["total_deducoes"], trct["liquido"], places=2
+        )
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
+        html = self.env["ir.actions.report"]._render_qweb_html(report.id, payslip.ids)[
+            0
+        ]
+        arvore = etree.fromstring(html, etree.HTMLParser())
+        texto = " ".join(
+            " ".join("".join(tr.itertext()).split())
+            for tr in arvore.xpath("//tr[@class='rescisao-outros']")
+        )
+        self.assertIn("115.1", texto)
+        self.assertIn(excesso.name, texto)
+
+    def test_trct_nao_imprime_de_holerite_que_nao_e_rescisao(self):
+        """A ação recusa holerite de outra estrutura (13º, mensal, férias):
+        sem TRCT nem termo de quitação assinável para quem não foi desligado."""
+        emp = self._create_employee("Mensal")
+        contract = self._create_contract(emp)
+        mensal = self._create_payslip(emp, contract)
+        report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
+        with self.assertRaises(UserError):
+            self.env["ir.actions.report"]._render_qweb_html(report.id, mensal.ids)

@@ -14,7 +14,8 @@ provento, desconto ou informativo não é redecidido aqui.
 """
 from datetime import timedelta
 
-from odoo import api, models
+from odoo import _, api, models
+from odoo.exceptions import UserError
 
 # Campos de verba (50-99): número -> rótulo, na ordem do anexo.
 ROTULOS_VERBAS = {
@@ -91,6 +92,44 @@ ROTULOS_DESCONTOS = {
     "115": "Outros Descontos",
     "116": "Desconto de Valor Líquido de TRCT Quitado Decisão Judicial",
 }
+# Quadro "Campos 22 e 27" das instruções de preenchimento do TRCT (Portaria MTE
+# 2.685/2011; texto vigente do quadro transcrito no Anexo VIII da Portaria MTE
+# 1.057/2012): tipo de rescisão da TG-96 -> (código, causa do afastamento).
+# O acordo do art. 484-A (Lei 13.467/2017) não consta do quadro de 2011 e não
+# achei fonte primária de código próprio no TRCT (a GRRF usa I5 e o saque do FGTS
+# 07, que são outros campos): imprime-se o texto, sem código inventado.
+CAUSAS_AFASTAMENTO = {
+    "sem_justa_causa": ("SJ2", "Dispensa sem justa causa, pelo empregador"),
+    "justa_causa": ("JC2", "Dispensa por justa causa, pelo empregador"),
+    "antecipado_empregador": (
+        "RA2",
+        "Rescisão antecipada, pelo empregador, do contrato de trabalho por "
+        "prazo determinado",
+    ),
+    "antecipado_empregado": (
+        "RA1",
+        "Rescisão antecipada, pelo empregado, do contrato de trabalho por "
+        "prazo determinado",
+    ),
+    "pedido_demissao": ("SJ1", "Rescisão contratual a pedido do empregado"),
+    "termino_contrato": (
+        "PD0",
+        "Extinção normal do contrato de trabalho por prazo determinado",
+    ),
+    "rescisao_indireta": ("RI2", "Rescisão indireta"),
+    "culpa_reciproca": ("CR0", "Rescisão por culpa recíproca"),
+    "forca_maior": ("FM0", "Rescisão por força maior"),
+    "acordo": ("", "Rescisão por acordo entre as partes (art. 484-A da CLT)"),
+}
+TEXTO_ACORDO = "Acordo art. 484-A"
+# Campo 30: categoria do trabalhador, pelo tipo de contrato do cadastro.
+CATEGORIAS_TRABALHADOR = {
+    "clt": "Empregado - Geral",
+    "aprendiz": "Aprendiz",
+    "temporario": "Trabalhador temporário",
+    "estatutario": "Servidor estatutário",
+}
+ESTRUTURA_RESCISAO = "RESCISAO"
 CAMPO_OUTRAS_VERBAS = "95"
 CAMPO_OUTROS_DESCONTOS = "115"
 
@@ -132,6 +171,15 @@ class ReportTermoRescisao(models.AbstractModel):
     @api.model
     def _get_report_values(self, docids, data=None):
         docs = self.env["hr.payslip"].browse(docids)
+        fora = docs.filtered(lambda s: s.struct_id.code != ESTRUTURA_RESCISAO)
+        if fora:
+            raise UserError(
+                _(
+                    "O Termo de Rescisão só é emitido de holerite de rescisão. "
+                    "Holerite(s) fora da estrutura de rescisão: %s.",
+                    ", ".join(fora.mapped("display_name")),
+                )
+            )
         return {
             "doc_ids": docids,
             "doc_model": "hr.payslip",
@@ -140,11 +188,12 @@ class ReportTermoRescisao(models.AbstractModel):
         }
 
     @api.model
-    def _agrupar(self, linhas, mapa, rotulos, campo_outros):
+    def _agrupar(self, linhas, mapa, campo_outros):
         """Soma as linhas por campo e devolve ``(valores, outros)``.
 
         ``valores`` é ``{campo: total}``; ``outros`` lista, por rubrica sem
-        campo, ``(descrição, valor)``, que também entra no total do campo de
+        campo, ``(subitem, descrição, valor)`` com o subitem numerado
+        (``95.1``, ``95.2``...), que também entra no total do campo de
         "outras" para o termo fechar.
         """
         valores = {}
@@ -153,9 +202,24 @@ class ReportTermoRescisao(models.AbstractModel):
             campo = mapa.get(linha.code)
             if campo is None:
                 campo = campo_outros
-                outros.append((linha.name, linha.total))
+                outros.append(
+                    (f"{campo_outros}.{len(outros) + 1}", linha.name, linha.total)
+                )
             valores[campo] = round(valores.get(campo, 0.0) + linha.total, 2)
         return valores, outros
+
+    @api.model
+    def _campo_texto(self, registro, nome):
+        """Texto do campo ``nome`` se o modelo o tiver (localização), senão vazio."""
+        return (registro[nome] or "") if nome in registro._fields else ""
+
+    @api.model
+    def _cnae(self, partner):
+        """Código do CNAE principal, se a localização o cadastrou no parceiro."""
+        cnae = partner["cnae_main_id"] if "cnae_main_id" in partner._fields else None
+        if not cnae:
+            return ""
+        return cnae.code if "code" in cnae._fields else cnae.display_name
 
     @api.model
     def _dados_empregador(self, slip):
@@ -165,9 +229,13 @@ class ReportTermoRescisao(models.AbstractModel):
             "cnpj": empresa.vat or "",
             "razao_social": empresa.name or "",
             "logradouro": ", ".join(p for p in (partner.street, partner.street2) if p),
+            "bairro": self._campo_texto(partner, "district"),
             "municipio": partner.city or "",
             "uf": partner.state_id.code or "",
             "cep": partner.zip or "",
+            "cnae": self._cnae(partner),
+            # Campo 09 (CNPJ/CEI do tomador/obra): sem cadastro de tomador.
+            "tomador": "",
         }
 
     @api.model
@@ -177,6 +245,7 @@ class ReportTermoRescisao(models.AbstractModel):
             "pis": emp.pis_pasep or "",
             "nome": emp.name or "",
             "logradouro": emp.private_street or "",
+            "bairro": self._campo_texto(emp, "private_district"),
             "municipio": emp.private_city or "",
             "uf": emp.private_state_id.code or "",
             "cep": emp.private_zip or "",
@@ -203,7 +272,7 @@ class ReportTermoRescisao(models.AbstractModel):
     def _dados_contrato(self, slip):
         contrato = slip.contract_id
         tipo = slip.l10n_br_tipo_rescisao
-        selecao = dict(slip._fields["l10n_br_tipo_rescisao"].selection)
+        codigo, causa = CAUSAS_AFASTAMENTO.get(tipo, ("", ""))
         prazo_determinado = bool(slip.l10n_br_data_termo_contrato) or tipo in (
             "termino_contrato",
             "antecipado_empregador",
@@ -219,19 +288,19 @@ class ReportTermoRescisao(models.AbstractModel):
             "tipo_contrato": "Prazo determinado"
             if prazo_determinado
             else "Prazo indeterminado",
-            "causa": selecao.get(tipo, ""),
+            "causa": causa,
             "remuneracao": contrato.wage,
             "admissao": contrato.date_start,
             "aviso": self._data_aviso(slip),
             "afastamento": slip.date_to,
-            "codigo_afastamento": slip._l10n_br_motivo_desligamento_esocial() or "",
+            "codigo_afastamento": codigo or (TEXTO_ACORDO if tipo == "acordo" else ""),
             "pensao_trct": slip.employee_id.l10n_br_pensao_percentual,
             # O cadastro só tem um percentual de pensão; o do saque do FGTS
             # (campo 29) é decisão judicial própria e fica em branco.
             "pensao_fgts": 0.0,
-            "categoria": dict(
-                slip.employee_id._fields["l10n_br_tipo_contrato"].selection
-            ).get(slip.employee_id.l10n_br_tipo_contrato, ""),
+            "categoria": CATEGORIAS_TRABALHADOR.get(
+                slip.employee_id.l10n_br_tipo_contrato, ""
+            ),
         }
 
     @api.model
@@ -243,22 +312,29 @@ class ReportTermoRescisao(models.AbstractModel):
         verbas, outras_verbas = self._agrupar(
             contracheque["proventos"],
             CAMPOS_VERBAS,
-            ROTULOS_VERBAS,
             CAMPO_OUTRAS_VERBAS,
         )
         descontos, outros_descontos = self._agrupar(
             contracheque["descontos"],
             CAMPOS_DESCONTOS,
-            ROTULOS_DESCONTOS,
             CAMPO_OUTROS_DESCONTOS,
         )
-        avos = {"63": slip.l10n_br_avos_13, "65": slip.l10n_br_avos_ferias}
+        detalhes = {
+            "63": f"{slip.l10n_br_avos_13}/12 avos",
+            "65": f"{slip.l10n_br_avos_ferias}/12 avos",
+        }
+        periodos = [
+            f"{d['inicio']:%d/%m/%Y} a {d['fim']:%d/%m/%Y}"
+            for d in slip._l10n_br_ferias_vencidas_dados()
+        ]
+        if periodos and verbas.get("66.1"):
+            detalhes["66.1"] = "; ".join(periodos)
         return {
             "empregador": self._dados_empregador(slip),
             "trabalhador": self._dados_trabalhador(slip),
             "contrato": self._dados_contrato(slip),
             "verbas": [
-                (campo, rotulo, verbas.get(campo, 0.0), avos.get(campo))
+                (campo, rotulo, verbas.get(campo, 0.0), detalhes.get(campo))
                 for campo, rotulo in ROTULOS_VERBAS.items()
             ],
             "descontos": [
