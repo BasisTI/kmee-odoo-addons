@@ -66,8 +66,11 @@
         l10n_br_hr_payroll/models/hr_payslip.py). Adicionais CONTRATUAIS
         fixos (periculosidade, insalubridade) ficam FORA da média - são um
         percentual constante do salário, não uma parcela variável - e entram
-        na base pelo valor cheio do contrato (tools.br.adicionais_fixos,
-        TG-88), em férias, abono, 13º, aviso prévio e verbas rescisórias.
+        na base por tools.br.adicionais_fixos (TG-88), em férias, abono, 13º,
+        aviso prévio e verbas rescisórias: o valor vigente se foram uniformes
+        no período aquisitivo (ano civil no 13º), senão a média atualizada
+        pelos reajustes; no aviso indenizado, a remuneração do momento
+        (TG-133, art. 142 § 6º).
     -->
 
     <!-- Categoria de proventos indenizatórios (fora de todas as bases) -->
@@ -100,7 +103,7 @@
 # 45 TST / CLT art. 142), não só o salário contratual seco.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 dias_gozados = payslip.l10n_br_dias_ferias_gozadas
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * dias_gozados / 30)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) * dias_gozados / 30)
         </field>
     </record>
 
@@ -141,7 +144,7 @@ result = payslip.l10n_br_abono_pecuniario or payslip.l10n_br_dias_abono > 0
 # verbas variáveis habituais (RF-18) + adicionais fixos, por dia vendido.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 dias_vendidos = payslip.l10n_br_dias_ferias_vendidas
-result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract)) / 30) * dias_vendidos)
+result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * dias_vendidos)
         </field>
     </record>
 

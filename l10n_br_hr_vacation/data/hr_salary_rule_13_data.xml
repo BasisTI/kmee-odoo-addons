@@ -52,7 +52,7 @@
 ref = payslip.date_to.replace(month=12, day=31)
 avos = tools.br.calc_decimo_avos(contract.date_start, ref)
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * 0.5)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, '13')) * avos / 12 * 0.5)
         </field>
     </record>
 
@@ -111,7 +111,7 @@ result = categories.BASIC + categories.ALW - categories.DED
 # RF-18: base soma a média de horas extras/adicional noturno habituais.
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, '13')) * avos / 12)
         </field>
     </record>
 
@@ -308,7 +308,7 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
 avos = payslip.l10n_br_avos_13
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('decimo')
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * avos / 12 * fator)
+result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, '13')) * avos / 12 * fator)
         </field>
     </record>
 
@@ -343,7 +343,7 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
 quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('decimo')
-aviso = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * payslip.l10n_br_avos_13_aviso / 12 * fator)
+aviso = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, '13')) * payslip.l10n_br_avos_13_aviso / 12 * fator)
 result = max(DECIMO_DEVIDO - aviso - quitado, 0.0)
         </field>
     </record>

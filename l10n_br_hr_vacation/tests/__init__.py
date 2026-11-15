@@ -24,3 +24,4 @@ from . import test_tipos_rescisao
 from . import test_decimo_excesso_rescisao
 from . import test_decimo_pago_rescisao
 from . import test_data_aviso_previo
+from . import test_adicionais_fixos_art142

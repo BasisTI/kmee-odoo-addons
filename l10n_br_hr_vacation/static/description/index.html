@@ -427,14 +427,37 @@ confirmada recusa a alteração (volte-a para rascunho antes). O saldo de
 salário compensa o mensal parcela a parcela (salário, salário-maternidade e
 cada adicional, arredondados como no mensal), sem resíduo de R$ 0,01.</p>
 <p><strong>Média dos adicionais em férias, 13º e rescisão</strong></p>
-<p>A base de férias, 13º, aviso prévio e verbas rescisórias leva o MAIOR entre o
-adicional mensal cheio vigente no contrato e a média do que foi pago nos
-holerites mensais confirmados dos últimos 12 meses (CLT art. 142, § 6º): quem
-tem o adicional hoje recebe o valor cheio; quem o perdeu depois de meses
-pagos recebe a média, e não zero. Não há histórico do indicador no contrato:
-vale o valor pago em cada mensal confirmado (mês de salário parcial entra pelo
-valor proporcional pago, como nas demais médias). O saldo de salário, que paga
-os dias trabalhados, usa só o adicional vigente.</p>
+<p>A base segue a letra do CLT art. 142, § 6º (TG-133):</p>
+<ul class="simple">
+<li><strong>Janela:</strong> férias, abono e férias vencidas usam o período aquisitivo da
+alocação; as férias proporcionais da rescisão, o período aquisitivo em curso até
+o desligamento; o 13º (inclusive o da rescisão), o ano civil.</li>
+<li><strong>Média só se o adicional não foi uniforme.</strong> Se o valor pago em todos os meses
+do período (já atualizado) é o vigente, vale o vigente. Senão vale a média, mesmo
+para quem tem o adicional hoje mas não o teve no período todo: não há mais o
+“maior entre o cheio e a média”. Sem mensal confirmado no período, vale o vigente.</li>
+<li><strong>Divisor:</strong> os dias de salário de cada mês divididos por 30. Mês sem dias de
+salário (férias gozadas o mês inteiro, afastamento) sai do divisor; mês parcial
+entra proporcional aos dias trabalhados.</li>
+<li><strong>Aviso prévio indenizado</strong> (e os arts. 479 e 480 e o desconto do aviso): a
+remuneração do momento, o adicional vigente, sem média.</li>
+<li><strong>Reajustes:</strong> cada importância é multiplicada por salário atual / salário do mês
+(periculosidade) ou salário mínimo atual / salário mínimo do mês (insalubridade,
+calculada sobre o mínimo).</li>
+</ul>
+<p>Só entram mensais confirmados de competência anterior à do holerite. Não há
+histórico do indicador no contrato: vale o valor pago em cada mensal. O saldo de
+salário, que paga os dias trabalhados, usa só o adicional vigente.</p>
+<p><strong>Limite:</strong> a média só lê os mensais do contrato atual (mesmo limite da média
+habitual, RF-18). Na transferência para um novo contrato, o histórico do contrato
+anterior não entra: sem mensal na janela, vale o adicional vigente do contrato novo.</p>
+<p><strong>Migração (18.0.1.12.0):</strong> em bancos instalados, a migração troca a chamada
+<tt class="docutils literal">tools.br.adicionais_fixos(contract)</tt> pela da verba (<tt class="docutils literal">'ferias'</tt>,
+<tt class="docutils literal">'ferias_proporcionais'</tt>, <tt class="docutils literal">'13'</tt> ou <tt class="docutils literal">'momento'</tt>) só nas regras cuja fórmula
+gravada é igual à da 1.11.0 (inclusive as férias vencidas). Regra personalizada
+fica como está, com aviso no log. A chamada antiga, sem verba, passa a valer o
+adicional vigente (sem média): quem mantém a fórmula personalizada precisa
+informar a verba na chamada. Holerites já calculados não mudam.</p>
 <p><strong>Causas de rescisão (TG-96)</strong></p>
 <p>O <tt class="docutils literal">Tipo de Rescisão</tt> define as verbas, a multa do FGTS e o <tt class="docutils literal">mtvDeslig</tt> do
 S-2299 (tabela 19 do eSocial; o S-2299 usa o motivo do tipo e, sem tipo, o do

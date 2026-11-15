@@ -8,6 +8,8 @@ from dateutil.relativedelta import relativedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError, ValidationError
 
+from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
+
 # Regras de cada tipo de rescisão (TG-96). ``mtv`` é o ``mtvDeslig`` do S-2299
 # (tabela 19 do eSocial); ``aviso``, ``decimo`` e ``ferias`` são a fração devida
 # do aviso prévio indenizado, do 13º e das férias proporcionais (+1/3); ``multa``
@@ -578,7 +580,7 @@ class HrPayslip(models.Model):
                         slip._l10n_br_codes_media_habitual()
                     ),
                     "l10n_br_ferias_adicionais": slip._l10n_br_adicionais_fixos(
-                        contrato
+                        contrato, "ferias"
                     ),
                 }
             )
@@ -847,6 +849,143 @@ class HrPayslip(models.Model):
                     avos += 1
             cursor += relativedelta(months=1)
         return min(avos, 12)
+
+    # ------------------------------------------------------------------
+    # Periculosidade e insalubridade na base das verbas (CLT art. 142 § 6º)
+    # ------------------------------------------------------------------
+
+    def _l10n_br_janela_adicionais(self, contract, verba):
+        """``(inicio, fim)`` do período de que sai a média dos adicionais.
+
+        - ``ferias``: o período aquisitivo da alocação do recibo (sem
+          alocação, os 12 meses anteriores ao recibo);
+        - ``ferias_proporcionais``: o período aquisitivo em curso na rescisão,
+          do último aniversário de admissão até a data (projetada) do
+          desligamento;
+        - ``13``: o ano civil do holerite.
+        """
+        self.ensure_one()
+        if verba == "13":
+            ano = (self.date_to or self.date_from).year
+            return date(ano, 1, 1), date(ano, 12, 31)
+        if verba == "ferias_proporcionais":
+            referencia = self._l10n_br_data_projetada_rescisao()
+            anos = referencia.year - contract.date_start.year
+            inicio = contract.date_start + relativedelta(years=anos)
+            if inicio > referencia:
+                inicio = contract.date_start + relativedelta(years=anos - 1)
+            return inicio, referencia
+        alocacao = self.l10n_br_ferias_allocation_id
+        if alocacao and alocacao.date_from and alocacao.date_to:
+            return alocacao.date_from, alocacao.date_to
+        referencia = self.date_from or self.date_to
+        return referencia - relativedelta(months=12), referencia - timedelta(days=1)
+
+    def _l10n_br_adicionais_fixos(self, contract, verba=None, periodo=None):
+        """Periculosidade e insalubridade na remuneração-base de ``verba``.
+
+        TG-133, CLT art. 142 § 6º (letra da lei, decisão TG-133#P1):
+
+        - ``verba`` vazia ou ``momento`` (aviso prévio indenizado, art. 479 e
+          480, desconto do aviso): a remuneração do momento, o valor cheio
+          vigente no contrato, sem média;
+        - ``ferias`` (férias, abono, férias vencidas), ``ferias_proporcionais``
+          e ``13``: o valor cheio vigente SE o adicional foi uniforme em todos
+          os meses do período (aquisitivo, ou ano civil no 13º); senão a média
+          duodecimal do período, atualizada pelos reajustes posteriores
+          (``_l10n_br_media_adicionais_art142``). Quem tem o adicional hoje
+          mas não o teve no período todo leva a média, não o cheio.
+
+        ``periodo`` troca a janela padrão (férias vencidas: o período de cada
+        alocação). Sem mensais confirmados no período, vale o vigente.
+        """
+        self.ensure_one()
+        vigente = self._l10n_br_adicionais_fixos_vigentes(contract)
+        if verba not in ("ferias", "ferias_proporcionais", "13"):
+            return vigente
+        inicio, fim = periodo or self._l10n_br_janela_adicionais(contract, verba)
+        media = self._l10n_br_media_adicionais_art142(contract, inicio, fim, vigente)
+        return vigente if media is None else media
+
+    def _l10n_br_media_adicionais_art142(self, contract, inicio, fim, vigente):
+        """Média dos adicionais fixos pagos nos mensais de ``inicio`` a ``fim``.
+
+        Devolve ``None`` quando não há mensal confirmado no período com dias
+        de salário, ou quando o adicional foi uniforme (igual ao ``vigente``
+        em todos os meses, já atualizado): aí vale o vigente.
+
+        - Mensais confirmados, com competência no período e anterior a este
+          holerite (como a média das demais verbas, RF-18).
+        - Divisor: os dias de salário de cada mês dividido por 30. Mês sem
+          dias de salário (férias gozadas o mês inteiro, afastamento) fica de
+          fora; mês parcial entra proporcional aos dias trabalhados (o valor
+          pago já é proporcional). Escolha da decisão TG-133#P1 (item 3); a lei
+          manda a média "duodecimal" e não diz como tratar o mês sem salário.
+        - Reajuste: cada importância é multiplicada por salário atual /
+          salário do mês (periculosidade, sobre o salário) ou salário mínimo
+          atual / salário mínimo do mês (insalubridade, sobre o mínimo). O
+          salário do mês vem das rubricas de salário do holerite e dos dias
+          de salário dele.
+        """
+        self.ensure_one()
+        referencia = self.date_from or self.date_to
+        if not contract or not referencia:
+            return None
+        mensais = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
+                ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("date_from", "<", referencia),
+                ("date_from", ">=", inicio),
+                ("date_from", "<=", fim),
+            ],
+            order="date_from",
+        )
+        faixa = self.env["l10n_br.hr.payroll.inss.faixa"]
+        minimo_atual = faixa._salario_minimo(self._get_competencia())
+        total, peso, uniforme = 0.0, 0.0, True
+        for mensal in mensais:
+            dias = salary_rules_br.dias_salario_mes(
+                mensal.date_from,
+                mensal.date_to,
+                contract.date_start,
+                contract.date_end,
+                mensal._l10n_br_afastamentos_inss(contract),
+                mensal._l10n_br_ferias_gozadas(contract),
+            )
+            if dias <= 0:
+                continue
+            totais = {}
+            for linha in mensal.line_ids:
+                totais[linha.code] = totais.get(linha.code, 0.0) + linha.total
+            salario_pago = sum(
+                totais.get(c, 0.0) for c in self._L10N_BR_CODIGOS_SALARIO_MENSAL
+            )
+            salario_mes = round(salario_pago * 30 / dias, 2)
+            # Tolerância do arredondamento do salário proporcional do mês.
+            if (
+                not salario_mes
+                or abs(salario_mes - contract.wage) <= 0.005 * 30 / dias + 0.005
+            ):
+                fator_salario = 1.0
+            else:
+                fator_salario = contract.wage / salario_mes
+            minimo_mes = faixa._salario_minimo(mensal._get_competencia())
+            fator_minimo = minimo_atual / minimo_mes if minimo_mes else 1.0
+            atualizado = totais.get(
+                "ADICIONAL_PERICULOSIDADE", 0.0
+            ) * fator_salario + totais.get("ADICIONAL_INSALUBRIDADE", 0.0) * (
+                fator_minimo
+            )
+            total += atualizado
+            peso += dias / 30
+            if abs(atualizado * 30 / dias - vigente) > 0.01 + 0.005 * 30 / dias:
+                uniforme = False
+        if not peso or uniforme:
+            return None
+        return salary_rules_br.round_money(total / peso)
 
     @staticmethod
     def _l10n_br_codes_media_habitual():

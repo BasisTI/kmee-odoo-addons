@@ -6,7 +6,9 @@
    periculosidade e a insalubridade: a rescisão é recalculada quando só o
    adicional muda, e a confirmada recusa a mudança;
 2. o saldo de salário contra o mensal já pago não deixa resíduo de R$ 0,01;
-3. férias e 13º usam a média do adicional pago nos últimos 12 meses.
+3. férias e 13º usam a média do adicional pago no período aquisitivo (ano
+   civil no 13º), atualizada pelos reajustes (TG-133 trocou a janela da TG-130:
+   os testes de regra de janela e divisor estão em ``test_adicionais_fixos_art142``).
 """
 import calendar
 import importlib.util
@@ -129,8 +131,8 @@ class TestAdicionaisFixosIntegridade(VacationCommon):
             {
                 "employee_id": emp.id,
                 "holiday_status_id": self.leave_type_ferias.id,
-                "date_from": date(2024, 1, 2),
-                "date_to": date(2025, 1, 1),
+                "date_from": date(2025, 1, 1),
+                "date_to": date(2025, 12, 31),
             }
         )
         alloc.action_validate()
@@ -159,8 +161,18 @@ class TestAdicionaisFixosIntegridade(VacationCommon):
             self._get_line_total(recibo, "FERIAS"), round((3000 + 750) * 10 / 30, 2)
         )
 
-    def test_ferias_de_quem_tem_o_adicional_hoje_usam_o_valor_cheio(self):
+    def test_ferias_de_quem_tem_o_adicional_hoje_mas_nao_no_periodo_todo(self):
+        # TG-133: o adicional não foi uniforme no período aquisitivo (10 dos 12
+        # meses): vale a média, não mais o "maior entre o cheio e a média".
         emp, contract = self._historico(10)
+        contract.l10n_br_periculosidade = True
+        recibo = self._recibo(emp, contract, 10)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(recibo, "FERIAS"), round((3000 + 750) * 10 / 30, 2)
+        )
+
+    def test_ferias_de_quem_teve_o_adicional_o_periodo_todo_usam_o_valor_cheio(self):
+        emp, contract = self._historico(12)
         contract.l10n_br_periculosidade = True
         recibo = self._recibo(emp, contract, 10)
         self.assertAlmostEqualMoney(
@@ -175,17 +187,19 @@ class TestAdicionaisFixosIntegridade(VacationCommon):
                 "employee_id": emp.id,
                 "contract_id": contract.id,
                 "struct_id": self.structure_13.id,
-                "date_from": date(2026, 1, 1),
-                "date_to": date(2026, 1, 31),
+                "date_from": date(2025, 12, 1),
+                "date_to": date(2025, 12, 31),
                 "company_id": self.env.company.id,
             }
         )
         decimo.compute_sheet()
         avos = decimo.l10n_br_avos_13
         self.assertGreater(avos, 0)
+        # Ano civil de 2025, até os mensais de novembro (o de dezembro é da
+        # mesma competência do 13º): R$ 900 em 10 dos 11 mensais.
         self.assertAlmostEqualMoney(
             self._get_line_total(decimo, "DECIMO_TERCEIRO_BRUTO"),
-            round((3000 + 750) * avos / 12, 2),
+            round((3000 + round(9000 / 11, 2)) * avos / 12, 2),
         )
 
     def test_sem_historico_vale_o_adicional_vigente(self):
