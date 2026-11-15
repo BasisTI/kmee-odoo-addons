@@ -78,14 +78,30 @@ cada adicional, arredondados como no mensal), sem resíduo de R$ 0,01.
 
 **Média dos adicionais em férias, 13º e rescisão**
 
-A base de férias, 13º, aviso prévio e verbas rescisórias leva o MAIOR entre o
-adicional mensal cheio vigente no contrato e a média do que foi pago nos
-holerites mensais confirmados dos últimos 12 meses (CLT art. 142, § 6º): quem
-tem o adicional hoje recebe o valor cheio; quem o perdeu depois de meses
-pagos recebe a média, e não zero. Não há histórico do indicador no contrato:
-vale o valor pago em cada mensal confirmado (mês de salário parcial entra pelo
-valor proporcional pago, como nas demais médias). O saldo de salário, que paga
-os dias trabalhados, usa só o adicional vigente.
+A base segue a letra do CLT art. 142, § 6º (TG-133):
+
+- **Janela:** férias, abono e férias vencidas usam o período aquisitivo da
+  alocação; as férias proporcionais da rescisão, o período aquisitivo em curso até
+  o desligamento; o 13º (inclusive o da rescisão), o ano civil.
+- **Média só se o adicional não foi uniforme.** Se o valor pago em todos os meses
+  do período (já atualizado) é o vigente, vale o vigente. Senão vale a média, mesmo
+  para quem tem o adicional hoje mas não o teve no período todo: não há mais o
+  "maior entre o cheio e a média". Sem mensal confirmado no período, vale o vigente.
+- **Divisor:** os dias de salário de cada mês divididos por 30. Mês sem dias de
+  salário (férias gozadas o mês inteiro, afastamento) sai do divisor; mês parcial
+  entra proporcional aos dias trabalhados.
+- **Aviso prévio indenizado** (e os arts. 479 e 480 e o desconto do aviso): a
+  remuneração do momento, o adicional vigente, sem média.
+- **Reajustes:** cada importância é multiplicada por salário atual / salário do mês
+  (periculosidade) ou salário mínimo atual / salário mínimo do mês (insalubridade,
+  calculada sobre o mínimo).
+
+Só entram mensais confirmados de competência anterior à do holerite. Não há
+histórico do indicador no contrato: vale o valor pago em cada mensal. O saldo de
+salário, que paga os dias trabalhados, usa só o adicional vigente. Em bancos
+instalados, a migração 18.0.1.12.0 troca a chamada nas fórmulas (a das férias
+vencidas, só se estiver como na 1.11.0); regra personalizada fica como está, com
+aviso no log. Holerites já calculados não mudam.
 
 **Causas de rescisão (TG-96)**
 
