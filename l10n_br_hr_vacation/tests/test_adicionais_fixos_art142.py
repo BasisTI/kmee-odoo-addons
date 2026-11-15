@@ -280,8 +280,9 @@ class TestAdicionaisFixosArt142(VacationCommon):
         self.assertEqual(ferias.amount_python_compute, personalizada)
         self.assertEqual(abono.amount_python_compute.strip(), nova_abono.strip())
         self.assertTrue(any("FERIAS" in linha for linha in logs.output))
-        # Idempotente: rodar de novo não muda nada.
-        modulo.migrate(self.env.cr, "18.0.1.11.0")
+        # Idempotente: rodar de novo não muda nada (o aviso volta, capturado).
+        with self.assertLogs(modulo._logger, level="WARNING"):
+            modulo.migrate(self.env.cr, "18.0.1.11.0")
         self.env.invalidate_all()
         self.assertEqual(ferias.amount_python_compute, personalizada)
         self.assertEqual(abono.amount_python_compute.strip(), nova_abono.strip())
