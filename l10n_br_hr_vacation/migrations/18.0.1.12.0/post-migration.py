@@ -6,11 +6,12 @@
 As regras são ``noupdate="1"``: o ``-u`` não troca a fórmula de bancos
 instalados. Cada regra que chama ``tools.br.adicionais_fixos(contract)`` passa a
 dizer de qual verba é (``ferias``, ``ferias_proporcionais``, ``13`` ou
-``momento``): a chamada antiga é trocada pela nova, mesmo em fórmula
-personalizada (só esse trecho muda, o resto fica). As férias vencidas, que
-passam a usar o período aquisitivo de cada alocação, só trocam a fórmula se a
-gravada ainda for exatamente a da 1.11.0; personalizada fica como está, com
-aviso. Holerites já calculados não mudam. Idempotente.
+``momento``), SOMENTE se a fórmula gravada ainda for exatamente a da 1.11.0
+(a atual, com a chamada antiga). Fórmula personalizada fica como está, com aviso
+no log: a chamada antiga, sem verba, passa a valer o adicional vigente (sem
+média), e quem a mantém precisa informar a verba. As férias vencidas, que
+passam a usar o período aquisitivo de cada alocação, seguem a mesma regra.
+Holerites já calculados não mudam. Idempotente.
 """
 import logging
 
@@ -23,21 +24,26 @@ _logger = logging.getLogger(__name__)
 
 CHAMADA_ANTIGA = "tools.br.adicionais_fixos(contract)"
 
+ARQ_13 = "hr_salary_rule_13_data.xml"
+ARQ_FERIAS = "hr_salary_rule_ferias_data.xml"
+ARQ_RESCISAO = "hr_salary_rule_rescisao_data.xml"
+
+# xmlid: (verba, arquivo da fórmula atual)
 VERBAS = {
-    "hr_rule_adiantamento_13": "13",
-    "hr_rule_decimo_bruto": "13",
-    "hr_rule_decimo_devido": "13",
-    "hr_rule_decimo_rescisao": "13",
-    "hr_rule_ferias": "ferias",
-    "hr_rule_abono_pecuniario": "ferias",
-    "hr_rule_ferias_indenizadas": "ferias_proporcionais",
-    "hr_rule_aviso_previo_indenizado": "momento",
-    "hr_rule_indenizacao_art_479": "momento",
-    "hr_rule_desconto_art_480": "momento",
-    "hr_rule_desconto_aviso_previo": "momento",
-    "hr_rule_nao_descontado_aviso_previo": "momento",
-    "hr_rule_nao_descontado_art_480": "momento",
-    "hr_rule_desconto_13_excesso": "momento",
+    "hr_rule_adiantamento_13": ("13", ARQ_13),
+    "hr_rule_decimo_bruto": ("13", ARQ_13),
+    "hr_rule_decimo_devido": ("13", ARQ_13),
+    "hr_rule_decimo_rescisao": ("13", ARQ_13),
+    "hr_rule_ferias": ("ferias", ARQ_FERIAS),
+    "hr_rule_abono_pecuniario": ("ferias", ARQ_FERIAS),
+    "hr_rule_ferias_indenizadas": ("ferias_proporcionais", ARQ_RESCISAO),
+    "hr_rule_aviso_previo_indenizado": ("momento", ARQ_RESCISAO),
+    "hr_rule_indenizacao_art_479": ("momento", ARQ_RESCISAO),
+    "hr_rule_desconto_art_480": ("momento", ARQ_RESCISAO),
+    "hr_rule_desconto_aviso_previo": ("momento", ARQ_RESCISAO),
+    "hr_rule_nao_descontado_aviso_previo": ("momento", ARQ_RESCISAO),
+    "hr_rule_nao_descontado_art_480": ("momento", ARQ_RESCISAO),
+    "hr_rule_desconto_13_excesso": ("momento", ARQ_RESCISAO),
 }
 
 VENCIDAS_XMLID = "hr_rule_ferias_vencidas"
@@ -68,7 +74,7 @@ def _valor_novo(arquivo, xmlid):
 
 def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
-    for xmlid, verba in VERBAS.items():
+    for xmlid, (verba, arquivo) in VERBAS.items():
         regra = env.ref(f"l10n_br_hr_vacation.{xmlid}", raise_if_not_found=False)
         if not regra:
             continue
@@ -76,9 +82,22 @@ def migrate(cr, version):
         if CHAMADA_ANTIGA not in formula:
             _logger.info("TG-133: %s já atualizada", xmlid)
             continue
-        regra.amount_python_compute = formula.replace(
-            CHAMADA_ANTIGA, f"tools.br.adicionais_fixos(contract, '{verba}')"
-        )
+        chamada_nova = f"tools.br.adicionais_fixos(contract, '{verba}')"
+        novo = _valor_novo(arquivo, xmlid)
+        antigo = (novo or "").replace(chamada_nova, CHAMADA_ANTIGA)
+        if novo is None or _normaliza(formula) != _normaliza(antigo):
+            _logger.warning(
+                "TG-133: %s (%s) está personalizada e não foi atualizada: a "
+                "chamada tools.br.adicionais_fixos(contract) passa a valer o "
+                "adicional vigente (sem média). Troque por "
+                "tools.br.adicionais_fixos(contract, '%s') para a média do "
+                "art. 142 § 6º.",
+                regra.code,
+                xmlid,
+                verba,
+            )
+            continue
+        regra.amount_python_compute = novo
         _logger.info("TG-133: %s passa a usar a verba %s", regra.code, verba)
     regra = env.ref(f"l10n_br_hr_vacation.{VENCIDAS_XMLID}", raise_if_not_found=False)
     if not regra:

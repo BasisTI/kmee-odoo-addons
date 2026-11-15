@@ -98,10 +98,19 @@ A base segue a letra do CLT art. 142, § 6º (TG-133):
 
 Só entram mensais confirmados de competência anterior à do holerite. Não há
 histórico do indicador no contrato: vale o valor pago em cada mensal. O saldo de
-salário, que paga os dias trabalhados, usa só o adicional vigente. Em bancos
-instalados, a migração 18.0.1.12.0 troca a chamada nas fórmulas (a das férias
-vencidas, só se estiver como na 1.11.0); regra personalizada fica como está, com
-aviso no log. Holerites já calculados não mudam.
+salário, que paga os dias trabalhados, usa só o adicional vigente.
+
+**Limite:** a média só lê os mensais do contrato atual (mesmo limite da média
+habitual, RF-18). Na transferência para um novo contrato, o histórico do contrato
+anterior não entra: sem mensal na janela, vale o adicional vigente do contrato novo.
+
+**Migração (18.0.1.12.0):** em bancos instalados, a migração troca a chamada
+``tools.br.adicionais_fixos(contract)`` pela da verba (``'ferias'``,
+``'ferias_proporcionais'``, ``'13'`` ou ``'momento'``) só nas regras cuja fórmula
+gravada é igual à da 1.11.0 (inclusive as férias vencidas). Regra personalizada
+fica como está, com aviso no log. A chamada antiga, sem verba, passa a valer o
+adicional vigente (sem média): quem mantém a fórmula personalizada precisa
+informar a verba na chamada. Holerites já calculados não mudam.
 
 **Causas de rescisão (TG-96)**
 

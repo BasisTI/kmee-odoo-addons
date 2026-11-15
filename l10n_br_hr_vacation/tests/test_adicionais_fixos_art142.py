@@ -16,9 +16,11 @@ rescisão em 31/12/2025 cobrem os mesmos meses (janeiro a novembro de 2025, os
 mensais de competência anterior à do holerite).
 """
 import calendar
+import importlib.util
 from datetime import date
 
 from odoo.tests import tagged
+from odoo.tools import file_path
 
 from .common import VacationCommon
 
@@ -250,3 +252,36 @@ class TestAdicionaisFixosArt142(VacationCommon):
         # 6 meses de 900 a salário de 3.000, atualizados a 3.600 (x 1,2), em
         # 11 meses: 6.480 / 11. A média nominal (4.500 / 11) pagaria menos.
         self._confere(emp, contract, round(6480 / 11, 2), salario=3600.0)
+
+    # --- migração 18.0.1.12.0 ------------------------------------------------
+
+    def test_migracao_troca_so_a_formula_igual_a_da_1_11_0(self):
+        arquivo = file_path(
+            "l10n_br_hr_vacation/migrations/18.0.1.12.0/post-migration.py"
+        )
+        spec = importlib.util.spec_from_file_location("migracao_tg133", arquivo)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        antiga = modulo.CHAMADA_ANTIGA
+        ferias = self.env.ref("l10n_br_hr_vacation.hr_rule_ferias")
+        abono = self.env.ref("l10n_br_hr_vacation.hr_rule_abono_pecuniario")
+        nova_ferias = ferias.amount_python_compute
+        nova_abono = abono.amount_python_compute
+        chamada = "tools.br.adicionais_fixos(contract, 'ferias')"
+        self.assertIn(chamada, nova_ferias)
+        # FERIAS personalizada (linha acrescentada): fica intacta, com aviso.
+        personalizada = nova_ferias.replace(chamada, antiga) + "\n# ajuste do cliente\n"
+        ferias.amount_python_compute = personalizada
+        # ABONO como na 1.11.0: troca a chamada.
+        abono.amount_python_compute = nova_abono.replace(chamada, antiga)
+        with self.assertLogs(modulo._logger, level="WARNING") as logs:
+            modulo.migrate(self.env.cr, "18.0.1.11.0")
+        self.env.invalidate_all()
+        self.assertEqual(ferias.amount_python_compute, personalizada)
+        self.assertEqual(abono.amount_python_compute.strip(), nova_abono.strip())
+        self.assertTrue(any("FERIAS" in linha for linha in logs.output))
+        # Idempotente: rodar de novo não muda nada.
+        modulo.migrate(self.env.cr, "18.0.1.11.0")
+        self.env.invalidate_all()
+        self.assertEqual(ferias.amount_python_compute, personalizada)
+        self.assertEqual(abono.amount_python_compute.strip(), nova_abono.strip())
