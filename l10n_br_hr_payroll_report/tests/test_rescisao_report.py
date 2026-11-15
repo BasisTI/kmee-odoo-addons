@@ -197,7 +197,7 @@ class TestRescisaoReport(PayrollCommon):
         self.assertAlmostEqual(verbas["95"], sum(linhas.mapped("total")), places=2)
 
     def test_trct_dados_do_contrato(self):
-        """Causa, código do afastamento (mtvDeslig da TG-96), admissão, aviso
+        """Causa, código do afastamento (quadro dos campos 22 e 27), admissão, aviso
         e afastamento."""
         payslip = self._rescisao_sem_justa_causa()
         contrato = self._trct(payslip)["contrato"]

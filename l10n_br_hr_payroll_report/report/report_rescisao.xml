@@ -203,8 +203,7 @@
                             </tr>
                             <tr>
                                 <td colspan="2">
-                                    <strong
-                                    >27 Cód. afastamento (mtvDeslig eSocial):</strong>
+                                    <strong>27 Cód. afastamento:</strong>
                                     <span t-esc="t['contrato']['codigo_afastamento']" />
                                 </td>
                                 <td>
