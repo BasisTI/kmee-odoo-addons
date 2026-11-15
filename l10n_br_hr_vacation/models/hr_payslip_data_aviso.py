@@ -5,7 +5,10 @@ from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
 
-class HrPayslipDataAviso(models.Model):
+# Arquivo separado de propósito (rebase com a TG-136, que mexe em hr_payslip.py).
+class HrPayslipDataAviso(
+    models.Model
+):  # pylint: disable=consider-merging-classes-inherited
     """Data da concessão do aviso prévio na rescisão (``dtAvPrv`` do S-2299).
 
     Mantido em arquivo próprio: é só o campo e a conferência da data, sem
