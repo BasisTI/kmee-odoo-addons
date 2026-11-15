@@ -3,9 +3,15 @@
 
 from dateutil.relativedelta import relativedelta
 
-from odoo import api, fields, models
+from odoo import _, api, fields, models
+from odoo.exceptions import UserError
 
 from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import calc_ferias_dias
+
+# Validade vista pelo hr_holidays enquanto dura o cálculo do saldo: sem fim prático.
+# O concessivo (CLT art. 134) deixou de limitar o lançamento: depois dele as férias
+# são aceitas e pagas em dobro (CLT art. 137, TG-139).
+L10N_BR_SEM_LIMITE = relativedelta(years=100)
 
 
 class HrLeaveAllocation(models.Model):
@@ -64,6 +70,35 @@ class HrLeaveAllocation(models.Model):
                 # to satisfy the constraint; the field value signals the loss.
                 alloc.number_of_days = max(dias, 1) if dias == 0 else dias
 
+    def _l10n_br_fim_concessivo(self):
+        """Último dia do período concessivo: 12 meses após o fim do aquisitivo
+        (CLT art. 134). Férias gozadas depois dele são pagas em dobro."""
+        self.ensure_one()
+        return self.date_to and self.date_to + relativedelta(years=1)
+
+    def write(self, vals):
+        if {"date_from", "date_to"} & set(vals):
+            confirmados = (
+                self.env["hr.payslip"]
+                .sudo()
+                .search_count(
+                    [
+                        ("l10n_br_ferias_allocation_id", "in", self.ids),
+                        ("state", "=", "done"),
+                        ("l10n_br_fora_de_vigor", "=", False),
+                    ]
+                )
+            )
+            if confirmados:
+                raise UserError(
+                    _(
+                        "O período aquisitivo tem recibo de férias confirmado: a "
+                        "dobra (CLT art. 137) e os dias pagos dependem das datas. "
+                        "Volte o recibo para rascunho antes de alterá-las."
+                    )
+                )
+        return super().write(vals)
+
     @api.model
     def _l10n_br_estender_concessivo(self, employees):
         """Faz o ``hr_holidays`` ver as alocações de férias válidas até o fim
@@ -103,7 +138,7 @@ class HrLeaveAllocation(models.Model):
         originais = {alloc: alloc.date_to for alloc in alocacoes}
         field = self._fields["date_to"]
         for alloc, date_to in originais.items():
-            self.env.cache.set(alloc, field, date_to + relativedelta(years=1))
+            self.env.cache.set(alloc, field, date_to + L10N_BR_SEM_LIMITE)
         cache_cr["l10n_br_concessivo"] = originais
         return originais
 

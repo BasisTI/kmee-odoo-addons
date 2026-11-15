@@ -25,3 +25,4 @@ from . import test_decimo_excesso_rescisao
 from . import test_decimo_pago_rescisao
 from . import test_data_aviso_previo
 from . import test_adicionais_fixos_art142
+from . import test_ferias_dobro

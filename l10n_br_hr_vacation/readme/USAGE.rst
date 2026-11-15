@@ -256,3 +256,22 @@ salarial (as naturezas 6001 e 6002 e o campo 70 da rescisória já existem no m�
 ``DECIMO_RESCISAO`` e o líquido, e liga a rubrica nova à estrutura, só se estiverem
 como na 1.10.0; regra personalizada fica como está, com aviso no log. Holerites já
 calculados não mudam.
+
+**Férias concedidas depois do período concessivo (em dobro)**
+
+O concessivo (CLT art. 134) deixou de limitar o lançamento: férias de período
+aquisitivo vencido podem ser lançadas depois dele. A ausência é aceita e o RH é
+avisado, no formulário e numa nota na ausência, com os dias que ficam depois do
+fim do concessivo. Esses dias são pagos em dobro, com o terço (CLT art. 137).
+
+No recibo de férias, o campo ``Dias de Férias em Dobro`` conta os dias do gozo
+depois do último dia do concessivo (doze meses após o fim do aquisitivo); gozo
+que atravessa o fim do concessivo dobra só os dias depois dele (Súmula 81 do
+TST). A remuneração de cada dia é a das férias (salário, média e adicionais
+fixos): ``FERIAS`` paga todos os dias uma vez e as rubricas ``FERIAS_DOBRO`` e
+``ADICIONAL_FERIAS_DOBRO`` (1/3) pagam de novo os dias em dobro. O abono
+pecuniário não dobra. Incidências: sem INSS e sem FGTS, com IRRF (eSocial,
+Tabela 03: natureza 1024, rubrica padrão eSocial1950, ``codIncCP`` 00,
+``codIncFGTS`` 00, ``codIncIRRF`` 13; a natureza já inclui o terço). Um período
+aquisitivo com recibo de férias confirmado não aceita mudar as datas: volte o
+recibo para rascunho; o recibo em rascunho recalcula ao ser calculado de novo.

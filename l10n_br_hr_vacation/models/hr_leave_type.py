@@ -1,8 +1,6 @@
 # Copyright 2026 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from dateutil.relativedelta import relativedelta
-
 from odoo import api, fields, models
 
 
@@ -26,7 +24,7 @@ class HrLeaveType(models.Model):
 
     @api.depends("requires_allocation", "max_leaves", "virtual_remaining_leaves")
     def _compute_valid(self):
-        """O seletor do tipo de folga também enxerga o concessivo."""
+        """O seletor do tipo de folga também enxerga o concessivo e o que vem depois."""
         res = super()._compute_valid()
         employee_id = self._context.get(
             "default_employee_id",
@@ -34,9 +32,6 @@ class HrLeaveType(models.Model):
         )
         date_from = self._l10n_br_data(
             self._context.get("default_date_from", fields.Datetime.today())
-        )
-        date_to = self._l10n_br_data(
-            self._context.get("default_date_to", fields.Datetime.today())
         )
         for leave_type in self._l10n_br_ferias():
             if (
@@ -53,8 +48,7 @@ class HrLeaveType(models.Model):
                 ]
             )
             alocacoes = alocacoes.filtered(
-                lambda alloc: alloc.date_to + relativedelta(years=1) >= date_to
-                and alloc.max_leaves > 0
+                lambda alloc: alloc.max_leaves > 0
                 and alloc.max_leaves - alloc.leaves_taken > 0
             )
             leave_type.has_valid_allocation = bool(alocacoes)
@@ -68,15 +62,11 @@ class HrLeaveType(models.Model):
         )
         if not vacation_type:
             return domain
-        if {"default_date_from", "default_date_to", "tz"} <= set(self._context):
-            date_from = fields.Date.context_today(
-                self, fields.Datetime.to_datetime(self._context["default_date_from"])
-            )
+        if {"default_date_to", "tz"} <= set(self._context):
             date_to = fields.Date.context_today(
                 self, fields.Datetime.to_datetime(self._context["default_date_to"])
             )
         else:
-            date_from = fields.Date.today().replace(month=1, day=1)
             date_to = fields.Date.today().replace(month=12, day=31)
         employee_id = (
             self._context.get("default_employee_id", self._context.get("employee_id"))
@@ -90,7 +80,6 @@ class HrLeaveType(models.Model):
                     ("state", "=", "validate"),
                     ("date_from", "<=", date_to),
                     ("date_to", "!=", False),
-                    ("date_to", ">=", date_from - relativedelta(years=1)),
                 ]
             )
         )

@@ -58,13 +58,15 @@ class TestFeriasPeriodoVencido(VacationCommon):
         leave = self._ausencia(emp, date(2026, 12, 28), date(2027, 1, 1))
         self.assertEqual(leave.state, "validate")
 
-    def test_ferias_depois_do_concessivo_continuam_recusadas(self):
-        """Depois do concessivo as férias são devidas em dobro (art. 137): a
-        ausência não é aceita pelo saldo vencido."""
+    def test_ferias_depois_do_concessivo_sao_aceitas_e_avisam_o_rh(self):
+        """Depois do concessivo as férias são devidas em dobro (art. 137, TG-139):
+        a ausência é aceita, com aviso ao RH (a TG-95 as recusava)."""
         emp = self._create_employee()
         self._aloca(emp)
-        with self.assertRaises(ValidationError):
-            self._ausencia(emp, date(2027, 2, 1), date(2027, 2, 5))
+        leave = self._ausencia(emp, date(2027, 2, 1), date(2027, 2, 5))
+        self.assertEqual(leave.state, "validate")
+        self.assertIn("5 dia(s)", leave.l10n_br_aviso_dobro)
+        self.assertIn("2027-01-01", leave.l10n_br_aviso_dobro)
 
     def test_ferias_antes_do_inicio_do_aquisitivo_sao_recusadas(self):
         emp = self._create_employee()
@@ -163,12 +165,13 @@ class TestFeriasPeriodoVencido(VacationCommon):
         leave = self._ausencia(emp, date(2026, 11, 2), date(2026, 11, 30))
         self.assertEqual(leave.state, "validate")
 
-    def test_ausencia_que_cruza_o_fim_do_concessivo_e_recusada(self):
-        """A parte depois do concessivo não tem saldo (dobra: art. 137)."""
+    def test_ausencia_que_cruza_o_fim_do_concessivo_e_aceita_com_aviso(self):
+        """Só a parte depois do concessivo é em dobro (art. 137, TG-139): 15 dias."""
         emp = self._create_employee()
         self._aloca(emp)
-        with self.assertRaises(ValidationError):
-            self._ausencia(emp, date(2026, 12, 28), date(2027, 1, 15))
+        leave = self._ausencia(emp, date(2026, 12, 28), date(2027, 1, 15))
+        self.assertEqual(leave.state, "validate")
+        self.assertIn("14 dia(s)", leave.l10n_br_aviso_dobro)
 
     def test_outro_tipo_de_folga_nao_muda(self):
         emp = self._create_employee()
@@ -228,7 +231,7 @@ class TestFeriasPeriodoVencido(VacationCommon):
         )
         self.assertIn(self.leave_type_ferias, tipos)
 
-    def test_seletor_da_tela_nao_lista_ferias_depois_do_concessivo(self):
+    def test_seletor_da_tela_lista_ferias_depois_do_concessivo(self):
         emp = self._create_employee()
         self._aloca(emp)
         ctx = self._contexto_tela(emp, "2027-02-01 11:00:00", "2027-02-05 20:00:00")
@@ -237,7 +240,7 @@ class TestFeriasPeriodoVencido(VacationCommon):
             .with_context(**ctx)
             .search(self._dominio_seletor())
         )
-        self.assertNotIn(self.leave_type_ferias, tipos)
+        self.assertIn(self.leave_type_ferias, tipos)
 
     def test_seletor_da_tela_sem_saldo_nao_lista_ferias(self):
         emp = self._create_employee()

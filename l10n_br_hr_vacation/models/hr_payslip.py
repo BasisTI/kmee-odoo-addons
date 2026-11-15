@@ -174,6 +174,15 @@ class HrPayslip(models.Model):
         string="Dias de Férias Gozadas",
         compute="_compute_dias_ferias_gozadas",
     )
+    l10n_br_dias_ferias_dobro = fields.Integer(
+        string="Dias de Férias em Dobro",
+        compute="_compute_dias_ferias_dobro",
+        help="Dias corridos do gozo deste recibo depois do fim do período "
+        "concessivo do período aquisitivo vinculado (CLT art. 134): pagos em "
+        "dobro, com o terço (CLT art. 137). Só os dias depois do concessivo "
+        "dobram, quando o gozo o atravessa (Súmula 81 do TST). O abono "
+        "pecuniário não dobra.",
+    )
     l10n_br_avos_13 = fields.Integer(
         string="Avos de 13º",
         compute="_compute_avos_13",
@@ -669,6 +678,27 @@ class HrPayslip(models.Model):
                 rec.l10n_br_dias_ferias_gozadas = 20
             else:
                 rec.l10n_br_dias_ferias_gozadas = 30
+
+    @api.depends(
+        "l10n_br_ferias_allocation_id",
+        "l10n_br_ferias_allocation_id.date_to",
+        "l10n_br_dias_ferias_gozadas",
+        "date_from",
+    )
+    def _compute_dias_ferias_dobro(self):
+        for rec in self:
+            alloc = rec.l10n_br_ferias_allocation_id
+            dias = rec.l10n_br_dias_ferias_gozadas
+            rec.l10n_br_dias_ferias_dobro = 0
+            if not alloc or not alloc.date_to or not rec.date_from or dias <= 0:
+                continue
+            if rec.struct_id.code != "FERIAS":
+                continue
+            fim_gozo = rec.date_from + timedelta(days=dias - 1)
+            depois = max(
+                rec.date_from, alloc._l10n_br_fim_concessivo() + timedelta(days=1)
+            )
+            rec.l10n_br_dias_ferias_dobro = max((fim_gozo - depois).days + 1, 0)
 
     @api.depends(
         "l10n_br_ferias_allocation_id",
@@ -1428,7 +1458,7 @@ class HrPayslip(models.Model):
             )
             restante = alloc.number_of_days - dias_pagos
             if restante > 0:
-                periodo_concessivo_fim = alloc.date_to + relativedelta(years=1)
+                periodo_concessivo_fim = alloc._l10n_br_fim_concessivo()
                 dobro = self.date_to > periodo_concessivo_fim
                 resultado.append(
                     {
