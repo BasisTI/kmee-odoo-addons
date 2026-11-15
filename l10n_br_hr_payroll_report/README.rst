@@ -40,10 +40,43 @@ O relatório "Holerite" da OCA (``payroll.action_report_payslip``) deixa de apar
 no menu Imprimir do holerite, para o usuário não ver dois com o mesmo nome. O
 relatório continua instalado, porque o módulo ``payroll`` o usa no envio por e-mail.
 
+Recibo de férias
+~~~~~~~~~~~~~~~~
+
+O recibo traz o período aquisitivo (o da alocação de férias) e o período de gozo
+(início, fim, retorno ao trabalho e data limite de pagamento, CLT art. 145), os
+dias vendidos no abono pecuniário, a remuneração de referência (salário, média das
+variáveis habituais e adicionais fixos), proventos e descontos nas colunas, o líquido
+e o quadro de bases, no mesmo padrão do contracheque. No fracionamento, indica o
+período (1 de 3, por exemplo).
+
+Aviso de férias
+~~~~~~~~~~~~~~~
+
+O relatório "Aviso de Férias" é o comunicado por escrito do art. 135 da CLT, emitido
+a partir do holerite de férias: período de gozo, retorno, data limite de comunicação
+(30 dias antes do início) e campo de ciência do empregado. Se emitido com menos de
+30 dias de antecedência, sai marcado como fora do prazo, sem bloquear a impressão.
+
 **Table of contents**
 
 .. contents::
    :local:
+
+Usage
+=====
+
+**Aviso de férias**
+
+O aviso é impresso da ausência de férias aprovada (Ausências > Gestão > Todas as
+ausências > Imprimir > Aviso de Férias). Quem emite o aviso: Ausências: Oficial ou
+superior. O perfil do DP deve incluir esse grupo (``hr_holidays.group_hr_holidays_user``);
+a folha, sem ele, não vê as ausências dos empregados e não emite o aviso.
+
+A data de comunicação é gravada na primeira emissão do período avisado. Reimprimir
+repete a data. Remarcar a ausência para fora do período avisado gera comunicação nova,
+medida contra a nova data. Emitir com menos de 30 dias de antecedência imprime um
+alerta, sem bloquear.
 
 Bug Tracker
 ===========

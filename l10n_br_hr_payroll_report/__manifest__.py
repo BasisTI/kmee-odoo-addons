@@ -11,6 +11,7 @@
     "depends": [
         "l10n_br_hr_payroll",
         "l10n_br_hr_vacation",
+        "hr_holidays",
     ],
     "data": [
         "report/report_holerite.xml",
