@@ -44,4 +44,4 @@ class TestDataAvisoPrevio(VacationCommon):
 
     def test_copia_do_holerite_nao_leva_a_data(self):
         slip = self._rescisao(l10n_br_data_aviso_previo=date(2026, 10, 30))
-        self.assertFalse(slip.copy().l10n_br_data_aviso_previo)
+        self.assertNotIn("l10n_br_data_aviso_previo", slip.copy_data()[0])
