@@ -6,7 +6,7 @@ import logging
 from dateutil.relativedelta import relativedelta
 from lxml import etree
 
-from odoo import _, fields, models
+from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
 from .s1200_remuneracao import CATEGORIAS_DECLARAVEIS, CODIGOS_FORA_DAS_VERBAS
@@ -73,6 +73,44 @@ class ESocialS2299(models.Model):
         help="dtProjFimAPI: obrigatória com aviso indenizado, igual ou "
         "posterior à data do desligamento.",
     )
+
+    ind_retif = fields.Selection(
+        [("1", "Original"), ("2", "Retificação")],
+        string="Indicativo Retificação",
+        default="1",
+        required=True,
+        copy=False,
+    )
+    nr_recibo = fields.Char(
+        string="Nº Recibo Retificado",
+        copy=False,
+        help="Recibo do S-2299 aceito que este retificador substitui. "
+        "Obrigatório quando o Indicativo de Retificação for 'Retificação'.",
+    )
+    evento_retificado_id = fields.Many2one(
+        "l10n_br.esocial.evento",
+        string="Evento Retificado",
+        readonly=True,
+        copy=False,
+        help="S-2299 aceito que este retificador substitui. Quando o retificador "
+        "é aceito, o evento retificado passa a 'Retificado'.",
+    )
+
+    @api.constrains("nr_recibo")
+    def _check_nr_recibo(self):
+        for rec in self:
+            rec._validar_nr_recibo(rec.nr_recibo, _("Nº Recibo"))
+
+    def _prepare_evento_vals(self, xml, id_evento):
+        vals = super()._prepare_evento_vals(xml, id_evento)
+        vals.update(
+            {
+                "ind_retif": self.ind_retif,
+                "operacao": "R" if self.ind_retif == "2" else "I",
+                "evento_retificado_id": self.evento_retificado_id.id,
+            }
+        )
+        return vals
 
     def _aviso_indenizado(self):
         """``(indPagtoAPI, dtProjFimAPI)`` do desligamento.
@@ -435,6 +473,17 @@ class ESocialS2299(models.Model):
 
         if ind_pagto_api == "S":
             data["dt_proj_fim_api"] = str(dt_proj_fim_api)
+
+        if self.ind_retif == "2":
+            if not self.nr_recibo:
+                raise UserError(
+                    _(
+                        "Retificação (ind_retif=2) exige o Nº do Recibo do S-2299 "
+                        "aceito a ser retificado."
+                    )
+                )
+            data["ind_retif"] = 2
+            data["nr_recibo"] = self.nr_recibo
 
         data.update(self._pens_alim())
         dt_av_prv = self._data_aviso_previo()

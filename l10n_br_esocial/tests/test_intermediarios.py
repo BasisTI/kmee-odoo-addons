@@ -1394,12 +1394,93 @@ class TestS2299(TestESocialIntermediarioBase):
                 "cpf_trab": "07616692941",
             }
         )
-        with self.assertRaisesRegex(UserError, "S-1210 de tpPgto 2"):
+        with self.assertRaisesRegex(UserError, "tem S-1210 que aponta"):
             s3000.action_gerar_evento()
         # Com o S-1210 excluído (aceito o S-3000 dele) o S-3000 do S-2299 sai.
         s1210.evento_id.state = "excluded"
         with mute_logger(self.LOG_BASE):
             self.assertEqual(s3000.action_gerar_evento().tipo, "S-3000")
+
+    def _s2299_com_s1210_tp2(self, estado):
+        """S-2299 aceito (com a rescisão declarada) e S-1210 tpPgto 2 em ``estado``."""
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 3300.0)
+        evento = self._gera_s2299(s2299)
+        evento.write({"state": "success", "nr_recibo": "1.2.0000000000000012345"})
+        s1210 = self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2025-01",
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2025-01-05",
+                            "tp_pgto": "2",
+                            "per_ref": "2024-12",
+                            "ide_dm_dev": s2299.get_ide_dm_dev(resc),
+                            "vr_liq": 3300.0,
+                            "payslip_id": resc.id,
+                        },
+                    )
+                ],
+            }
+        )
+        s1210.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {
+                "tipo": "S-1210",
+                "company_id": self.company.id,
+                "state": estado,
+                "per_apur": "2025-01",
+                "origem_model": "l10n_br.esocial.s1210",
+                "origem_id": s1210.id,
+            }
+        )
+        s3000 = self.env["l10n_br.esocial.s3000"].create(
+            {
+                "evento_origem_id": evento.id,
+                "company_id": self.company.id,
+                "cpf_trab": "07616692941",
+            }
+        )
+        return s2299, evento, s1210, s3000
+
+    def test_s2299_s3000_recusado_com_s1210_tp_pgto_2_em_rascunho_ou_validado(self):
+        """TG-137 r2 (Menor 2): o S-1210 ainda não transmitido também bloqueia o
+        S-3000 do S-2299; a mensagem manda apagá-lo."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        for estado in ("draft", "validated"):
+            with self.subTest(estado=estado):
+                _s2299, _evento, _s1210, s3000 = self._s2299_com_s1210_tp2(estado)
+                with self.assertRaisesRegex(UserError, "apague o S-1210"):
+                    s3000.action_gerar_evento()
+
+    def test_s2299_orientacao_do_aceito_com_s1210_manda_excluir_o_s1210_antes(self):
+        """TG-137 r2 (Menor 1): a mensagem não manda para um S-3000 recusado."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _s2299, evento, _s1210, _s3000 = self._s2299_com_s1210_tp2("success")
+        texto = evento._orientacao_desfazer()
+        self.assertIn("S-1210", texto)
+        self.assertNotIn("já foi aceito: exclua-o por S-3000", texto)
+
+    def test_s1210_tp_pgto_2_orfao_nao_valida(self):
+        """TG-137 r2 (Menor 2): excluído o S-2299, o S-1210 que apontava para ele
+        não valida."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _s2299, evento, s1210, _s3000 = self._s2299_com_s1210_tp2("draft")
+        s1210.evento_id.action_validate()
+        self.assertEqual(s1210.evento_id.state, "validated")
+        s1210.evento_id.state = "draft"
+        evento.state = "excluded"
+        with self.assertRaisesRegex(UserError, "não está mais vigente"):
+            s1210.evento_id.action_validate()
 
     def test_s2299_item4_pens_alim_sem_pensao(self):
         s2299 = self._s2299_rescisao(payslip_id=False)

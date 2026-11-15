@@ -262,9 +262,11 @@ sem rubrica configurada, ou ainda não confirmada quando o S-2299 foi gerado, n�
 fica declarada; estornar a rescisão depois do aceite não muda o que o S-2299
 declarou.
 
-O S-3000 de um S-2299 é recusado enquanto houver S-1210 de ``tpPgto`` 2
-transmitido ou aceito apontando para um ``ideDmDev`` dele: exclua antes esse
-S-1210 por S-3000 e espere o aceite.
+O S-3000 de um S-1200 (``tpPgto`` 1) ou de um S-2299 (``tpPgto`` 2) é recusado
+enquanto houver S-1210 apontando para um ``ideDmDev`` dele: apague o S-1210 em
+rascunho ou validado, ou exclua o transmitido por S-3000 e espere o aceite. O
+S-1210 de ``tpPgto`` 2 não valida se o S-2299 dele foi excluído ou retificado
+por outro que não declara mais o demonstrativo.
 
 No S-1200, o ``indApurIR`` sai em cada rubrica (obrigatório desde 07/2021) e o
 ``infoAgNocivo`` para categorias do RGPS; regras de provento indenizatório
@@ -290,6 +292,19 @@ Fluxo (MOS S-1.3, cap. I item 15.2 e S-1200 item 31):
 Se o evento do estornado ainda não foi aceito (sem recibo), a geração espera o
 retorno do lote. Evento em rascunho/validado do estornado volta a rascunho, sai
 do lote e não pode ser validado. Competência fechada (S-1299 sem S-1298 depois)
-recusa a geração. Estorno sem holerite novo, ou S-2299 de rescisão estornada
-(o módulo não gera retificador de S-2299): evento aceito se exclui por S-3000;
+recusa a geração. Estorno sem holerite novo: evento aceito se exclui por S-3000;
 evento ainda não transmitido se apaga (só o gestor de folha).
+
+Rescisão estornada com S-2299 aceito: a rescisão que a substitui, ao gerar o
+S-2299, sai como retificador (``indRetif`` 2 e ``nrRecibo`` do aceito), e o
+S-1200 dela é recusado (o leiaute recusa o S-1200 da competência do
+desligamento). Se o S-1210 de ``tpPgto`` 2 do S-2299 antigo já foi transmitido,
+exclua-o antes por S-3000 e reenvie-o depois do aceite do retificador. Para
+recomeçar, exclua o S-2299 aceito por S-3000 e gere um novo (original).
+
+Limite conhecido do S-1200: provento (``tpRubr`` 1) com valor negativo fica fora
+do evento, porque o leiaute exige valor maior que 0, e o aviso diz qual linha
+saiu; o total do S-1200 deixa de bater com o holerite nesse caso. O MOS S-1.3
+(item 15.3, p. 109) pede que o valor negativo vá em rubrica de desconto da mesma
+natureza: configure essa rubrica no cálculo em vez de contar com o provento
+negativo.

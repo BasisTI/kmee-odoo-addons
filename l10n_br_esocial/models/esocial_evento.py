@@ -163,6 +163,40 @@ class ESocialEvento(models.Model):
             return self.env["hr.payslip"]
         return origem._esocial_slips()
 
+    def _s1210_dependentes(
+        self, estados=("draft", "validated", "pending", "sent", "success")
+    ):
+        """S-1210 (eventos) cujo pagamento aponta para o demonstrativo deste evento.
+
+        S-1200: pagamentos ``tpPgto`` 1 ligados a ele (``s1200_id``). S-2299:
+        pagamentos ``tpPgto`` 2 do trabalhador cujo ``ideDmDev`` é um dos que o
+        XML do S-2299 declarou. Outros eventos não têm S-1210 dependente.
+        """
+        self.ensure_one()
+        vazio = self.env["l10n_br.esocial.evento"]
+        if self.origem_model not in ("l10n_br.esocial.s1200", "l10n_br.esocial.s2299"):
+            return vazio
+        origem = self.env[self.origem_model].browse(self.origem_id).exists()
+        if not origem:
+            return vazio
+        pagamentos = self.env["l10n_br.esocial.s1210.pagamento"]
+        if self.origem_model == "l10n_br.esocial.s1200":
+            dominio = [("tp_pgto", "=", "1"), ("s1200_id", "=", origem.id)]
+        else:
+            declarados = sorted(
+                origem.get_ide_dm_dev(slip) for slip in origem._slips_declarados()
+            )
+            dominio = [
+                ("tp_pgto", "=", "2"),
+                ("s1210_id.employee_id", "=", origem.employee_id.id),
+                ("s1210_id.company_id", "=", origem.company_id.id),
+                ("ide_dm_dev", "in", declarados),
+            ]
+        pagamentos = pagamentos.search(
+            dominio + [("s1210_id.evento_id.state", "in", list(estados))]
+        )
+        return pagamentos.s1210_id.evento_id
+
     def _orientacao_desfazer(self):
         """Como tirar o evento da frente, conforme a situação dele.
 
@@ -184,7 +218,17 @@ class ESocialEvento(models.Model):
                     "aceite para então excluí-lo por S-3000"
                 )
             elif evento.state == "success":
-                como = _("já foi aceito: exclua-o por S-3000")
+                s1210s = evento._s1210_dependentes()
+                if s1210s:
+                    como = _(
+                        "já foi aceito, mas o S-1210 %(s1210)s aponta para o "
+                        "demonstrativo dele: o S-3000 só é aceito depois da "
+                        "exclusão desse S-1210 (apague-o se ainda não foi "
+                        "transmitido, ou exclua-o por S-3000 e espere o aceite) "
+                        "e então se exclui este"
+                    ) % {"s1210": ", ".join(s1210s.mapped("name"))}
+                else:
+                    como = _("já foi aceito: exclua-o por S-3000")
             else:
                 continue
             textos.append("%s (%s)" % (evento.name, como))
@@ -207,7 +251,36 @@ class ESocialEvento(models.Model):
                         "slips": ", ".join(fora.mapped(lambda s: s.number or s.name)),
                     }
                 )
+            rec._exigir_s2299_dos_pagamentos_rescisorios()
             rec.state = "validated"
+
+    def _exigir_s2299_dos_pagamentos_rescisorios(self):
+        """S-1210 ``tpPgto`` 2 só valida enquanto o S-2299 dele estiver vigente.
+
+        O pagamento aponta para o ``ideDmDev`` de um S-2299. Se esse S-2299 foi
+        excluído (S-3000) ou retificado por outro que não declara mais o
+        demonstrativo, o S-1210 ficou órfão e o governo o recusaria.
+        """
+        from .intermediarios.s2299_desligamento import PREFIXO_IDE_DM_DEV
+
+        self.ensure_one()
+        if self.tipo != "S-1210" or self.origem_model != "l10n_br.esocial.s1210":
+            return
+        s1210 = self.env["l10n_br.esocial.s1210"].browse(self.origem_id).exists()
+        for pagamento in s1210.pagamento_ids.filtered(lambda p: p.tp_pgto == "2"):
+            numero = (pagamento.ide_dm_dev or "")[len(PREFIXO_IDE_DM_DEV) :]
+            slip = self.env["hr.payslip"].browse(int(numero) if numero.isdigit() else 0)
+            if not slip.exists() or not slip._esocial_s2299_declarante():
+                raise UserError(
+                    _(
+                        "O pagamento de tpPgto 2 do demonstrativo %(ide)s aponta "
+                        "para um S-2299 que não está mais vigente (excluído, "
+                        "retificado ou sem o demonstrativo). O governo recusa o "
+                        "S-1210 sem o S-2299 que o apurou: descarte este S-1210 "
+                        "e gere de novo a partir do S-2299 em vigor."
+                    )
+                    % {"ide": pagamento.ide_dm_dev}
+                )
 
     def action_reset_draft(self):
         for rec in self:

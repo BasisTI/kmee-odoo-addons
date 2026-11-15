@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 
 # Arquivo separado de propósito (rebase com a TG-136, que mexe em hr_payslip.py).
@@ -24,6 +24,29 @@ class HrPayslipDataAviso(
         "trabalhado). Opcional: com ela, o S-2299 informa dtAvPrv. Não pode ser "
         "anterior à admissão nem posterior ao fim da rescisão.",
     )
+
+    def write(self, vals):
+        """A data só muda com a rescisão aberta (rascunho ou verificação).
+
+        Confirmada, a data já saiu no TRCT e pode ter ido ao S-2299 (``dtAvPrv``):
+        mudá-la deixaria o holerite divergente do que foi declarado. Volte o
+        holerite para rascunho antes, como nos demais campos que mudam o cálculo.
+        """
+        if "l10n_br_data_aviso_previo" in vals:
+            fechados = self.filtered(lambda r: r.state not in ("draft", "verify"))
+            if fechados:
+                raise UserError(
+                    _(
+                        "A Data da Concessão do Aviso Prévio só pode ser alterada "
+                        "com a rescisão em rascunho ou em verificação: "
+                        "%(fechados)s já está confirmado. Volte-o para rascunho "
+                        "primeiro.",
+                        fechados=", ".join(
+                            fechados.mapped(lambda r: r.number or r.name)
+                        ),
+                    )
+                )
+        return super().write(vals)
 
     @api.constrains("l10n_br_data_aviso_previo", "date_to", "contract_id")
     def _check_l10n_br_data_aviso_previo(self):

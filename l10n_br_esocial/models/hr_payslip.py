@@ -162,6 +162,32 @@ class HrPayslip(models.Model):
                 }
             )
 
+    def _esocial_exigir_sem_s1210_vigente_s2299(self, anterior):
+        """O S-1210 ``tpPgto`` 2 do S-2299 a retificar sai antes (S-3000).
+
+        O retificador troca os demonstrativos do S-2299 (um ``ideDmDev`` por
+        holerite). O S-1210 transmitido que aponta para o demonstrativo antigo
+        ficaria sem apuração: sai antes, e é reenviado depois do aceite do
+        retificador (mesma ordem do S-1200, MOS S-1.3, cap. I item 15.2).
+        """
+        eventos = anterior.evento_id._s1210_dependentes(
+            estados=("pending", "sent", "success")
+        )
+        if eventos:
+            raise UserError(
+                _(
+                    "O S-2299 %(s2299)s a retificar tem S-1210 transmitido que "
+                    "aponta para o demonstrativo dele (%(s1210)s). O eSocial só "
+                    "aceita o retificador depois da exclusão desse S-1210: gere o "
+                    "S-3000 dele, espere o aceite, gere o S-2299 retificador e "
+                    "reenvie o S-1210."
+                )
+                % {
+                    "s2299": anterior.evento_id.name,
+                    "s1210": ", ".join(eventos.mapped("name")),
+                }
+            )
+
     def _esocial_em_vigor(self):
         """Holerites confirmados e em vigor (o par estornado não vai ao eSocial).
 
@@ -277,9 +303,55 @@ class HrPayslip(models.Model):
         )
         return candidatos.filtered(lambda s2299: self in s2299._slips_declarados())[:1]
 
+    def _esocial_s2299_a_retificar(self):
+        """S-2299 vigente do mês que declara uma rescisão estornada (ou vazio).
+
+        Holerite do mês do desligamento que o S-2299 não declarou, enquanto o
+        S-2299 vigente do trabalhador ainda declara a rescisão estornada: é a
+        rescisão que a substitui. O desligamento já existe no governo; o que muda
+        vai na retificação do S-2299 (ou no S-3000 dele e num novo S-2299), nunca
+        no S-1200 da competência do desligamento.
+        """
+        self.ensure_one()
+        if (self.struct_id.code or "").startswith("13_"):
+            return self.env["l10n_br.esocial.s2299"]
+        inicio = self.date_from.replace(day=1)
+        candidatos = self.env["l10n_br.esocial.s2299"].search(
+            [
+                ("employee_id", "=", self.employee_id.id),
+                ("company_id", "=", self.company_id.id),
+                ("dt_deslig", ">=", inicio),
+                ("dt_deslig", "<", inicio + relativedelta(months=1)),
+                ("evento_id.state", "in", EVENTO_VIGENTE),
+                ("payslip_id.l10n_br_fora_de_vigor", "=", True),
+            ]
+        )
+        return candidatos.filtered(lambda s2299: self not in s2299._slips_declarados())[
+            :1
+        ]
+
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self._esocial_em_vigor()
+        for slip in payslips:
+            a_retificar = slip._esocial_s2299_a_retificar()
+            if a_retificar:
+                raise UserError(
+                    _(
+                        "O holerite %(slip)s é do mês do desligamento de "
+                        "'%(name)s', e o S-2299 %(evento)s ainda declara a rescisão "
+                        "estornada. O leiaute recusa o S-1200 da competência do "
+                        "desligamento rescisório: gere o S-2299 da rescisão que "
+                        "substitui a estornada (retificador do S-2299 aceito, com "
+                        "o recibo dele) ou, para recomeçar, exclua o S-2299 por "
+                        "S-3000 e gere um novo."
+                    )
+                    % {
+                        "slip": slip.number or slip.name,
+                        "name": slip.employee_id.name,
+                        "evento": a_retificar.evento_id.name,
+                    }
+                )
         no_s2299 = payslips.filtered(lambda slip: slip._esocial_s2299_declarante())
         if no_s2299 == payslips:
             raise UserError(
@@ -593,6 +665,16 @@ class HrPayslip(models.Model):
                         "como": anterior.evento_id._orientacao_desfazer(),
                     }
                 )
+            retificado = slip._esocial_evento_anterior(
+                "l10n_br.esocial.s2299",
+                [
+                    ("employee_id", "=", slip.employee_id.id),
+                    ("company_id", "=", slip.company_id.id),
+                    ("contract_id", "=", slip.contract_id.id),
+                ],
+            )
+            if retificado:
+                slip._esocial_exigir_sem_s1210_vigente_s2299(retificado)
             motivo = slip._esocial_motivo_desligamento()
             if not motivo:
                 raise UserError(
@@ -602,15 +684,23 @@ class HrPayslip(models.Model):
                     )
                     % {"name": slip.employee_id.name}
                 )
-            s2299 = self.env["l10n_br.esocial.s2299"].create(
-                {
-                    "employee_id": slip.employee_id.id,
-                    "contract_id": slip.contract_id.id,
-                    "dt_deslig": slip.date_to,
-                    "motivo_desligamento_id": motivo.id,
-                    "payslip_id": slip.id,
-                    "company_id": slip.company_id.id,
-                }
-            )
+            vals = {
+                "employee_id": slip.employee_id.id,
+                "contract_id": slip.contract_id.id,
+                "dt_deslig": slip.date_to,
+                "motivo_desligamento_id": motivo.id,
+                "payslip_id": slip.id,
+                "company_id": slip.company_id.id,
+            }
+            if retificado:
+                # O desligamento já está no governo (S-2299 aceito da rescisão
+                # estornada): o S-2299 original seria recusado. A substituta
+                # entra como retificador, com o recibo do aceito.
+                vals.update(
+                    ind_retif="2",
+                    nr_recibo=retificado.evento_id.nr_recibo,
+                    evento_retificado_id=retificado.evento_id.id,
+                )
+            s2299 = self.env["l10n_br.esocial.s2299"].create(vals)
             eventos |= s2299.action_gerar_evento()
         return self._action_esocial_eventos(eventos)

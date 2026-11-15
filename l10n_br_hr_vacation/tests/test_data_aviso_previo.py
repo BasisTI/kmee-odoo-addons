@@ -4,7 +4,7 @@
 
 from datetime import date
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 
 from .common import VacationCommon
@@ -45,3 +45,13 @@ class TestDataAvisoPrevio(VacationCommon):
     def test_copia_do_holerite_nao_leva_a_data(self):
         slip = self._rescisao(l10n_br_data_aviso_previo=date(2026, 10, 30))
         self.assertNotIn("l10n_br_data_aviso_previo", slip.copy_data()[0])
+
+    def test_data_so_muda_com_a_rescisao_aberta(self):
+        slip = self._rescisao()
+        slip.l10n_br_data_aviso_previo = date(2026, 10, 30)
+        slip.state = "done"
+        with self.assertRaisesRegex(UserError, "só pode ser alterada"):
+            slip.l10n_br_data_aviso_previo = date(2026, 10, 15)
+        slip.state = "verify"
+        slip.l10n_br_data_aviso_previo = date(2026, 10, 15)
+        self.assertEqual(slip.l10n_br_data_aviso_previo, date(2026, 10, 15))

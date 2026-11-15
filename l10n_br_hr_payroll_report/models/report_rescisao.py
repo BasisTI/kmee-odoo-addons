@@ -259,7 +259,14 @@ class ReportTermoRescisao(models.AbstractModel):
     @api.model
     def _data_aviso(self, slip):
         """Data do aviso prévio: a do afastamento no indenizado; o início do
-        período trabalhado no trabalhado. Sem aviso, em branco."""
+        período trabalhado no trabalhado. Sem aviso, em branco. A data de
+        concessão informada na rescisão (a mesma do ``dtAvPrv`` do S-2299)
+        prevalece sobre a fórmula."""
+        if slip.l10n_br_data_aviso_previo and slip.l10n_br_aviso_previo in (
+            "indenizado",
+            "trabalhado",
+        ):
+            return slip.l10n_br_data_aviso_previo
         aviso = slip.l10n_br_aviso_previo
         if aviso == "indenizado":
             return slip.date_to

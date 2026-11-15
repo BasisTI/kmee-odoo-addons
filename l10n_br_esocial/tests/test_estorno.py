@@ -2,6 +2,8 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """TG-132: holerite estornado não vai ao eSocial; o evento dele se retifica."""
 
+from lxml import etree
+
 from odoo.exceptions import UserError
 from odoo.tests import tagged
 from odoo.tools import mute_logger
@@ -16,6 +18,8 @@ from .common import (
 )
 
 RECIBO_RETIF = "1.2.0000000000000054321"
+RECIBO_S2299 = "1.2.0000000000000099999"
+LOG_S2299 = "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
 
 
 @tagged("post_install", "-at_install")
@@ -302,6 +306,135 @@ class TestEstornoEsocial(ESocialCicloCommon):
         self.assertTrue(rescisao.l10n_br_esocial_a_retificar)
         with self.assertRaisesRegex(UserError, "fora de vigor"):
             rescisao.action_esocial_gerar_s2299()
+
+    # ── TG-137 r2: rescisão substituta depois do estorno ───────────────────
+
+    def _rescisao_aceita_e_estornada(self):
+        self.contract.l10n_br_esocial_motivo_deslig_id = self.env.ref(
+            "l10n_br_esocial.mot_deslig_02"
+        )
+        estrutura = self.env["hr.payroll.structure"].create(
+            {"name": "Rescisão estorno", "code": "RESCISAO"}
+        )
+        rescisao = self._criar_payslip(struct_id=estrutura.id)
+        with mute_logger(LOG_S2299):
+            rescisao.action_esocial_gerar_s2299()
+        s2299 = rescisao.l10n_br_esocial_s2299_ids
+        self._aceitar(s2299.evento_id, RECIBO_S2299)
+        self._estornar(rescisao)
+        substituta = self._criar_payslip(struct_id=estrutura.id)
+        return rescisao, s2299, substituta
+
+    def test_substituta_nao_gera_s1200_e_retifica_o_s2299_aceito(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        with self.assertRaisesRegex(UserError, "recusa o S-1200"):
+            substituta.action_esocial_gerar_s1200()
+        self.assertFalse(substituta.l10n_br_esocial_s1200_id)
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        retificador = substituta.l10n_br_esocial_s2299_ids
+        self.assertEqual(retificador.ind_retif, "2")
+        self.assertEqual(retificador.nr_recibo, RECIBO_S2299)
+        evento = retificador.evento_id
+        self.assertEqual(evento.ind_retif, "2")
+        self.assertEqual(evento.operacao, "R")
+        self.assertEqual(evento.evento_retificado_id, s2299.evento_id)
+        raiz = etree.fromstring(evento.xml_envio.encode())
+        self.assertEqual([e.text for e in raiz.iter("{*}indRetif")], ["2"])
+        self.assertEqual([e.text for e in raiz.iter("{*}nrRecibo")], [RECIBO_S2299])
+        self.assertEqual(
+            [e.text for e in raiz.iter("{*}ideDmDev")],
+            [retificador.get_ide_dm_dev(substituta)],
+        )
+        # Segunda chamada não gera um segundo S-2299.
+        with self.assertRaisesRegex(UserError, "já tem S-2299"):
+            substituta.action_esocial_gerar_s2299()
+        # Aceito o retificador, o original passa a retificado.
+        evento.registrar_aceite(nr_recibo=RECIBO_RETIF)
+        self.assertEqual(s2299.evento_id.state, "rectified")
+
+    def test_substituta_apos_s3000_aceito_gera_s2299_original(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        s2299.evento_id.state = "excluded"
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        novo = substituta.l10n_br_esocial_s2299_ids
+        self.assertEqual(novo.ind_retif, "1")
+        self.assertFalse(novo.nr_recibo)
+
+    def test_substituta_retificadora_espera_exclusao_do_s1210_tp_pgto_2(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        s1210 = self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2024-05",
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2024-05-05",
+                            "tp_pgto": "2",
+                            "per_ref": "2024-04",
+                            "ide_dm_dev": s2299.get_ide_dm_dev(rescisao),
+                            "vr_liq": 100.0,
+                            "payslip_id": rescisao.id,
+                        },
+                    )
+                ],
+            }
+        )
+        s1210.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {
+                "tipo": "S-1210",
+                "company_id": self.company.id,
+                "state": "success",
+                "nr_recibo": RECIBO_S1210,
+                "per_apur": "2024-05",
+                "origem_model": "l10n_br.esocial.s1210",
+                "origem_id": s1210.id,
+            }
+        )
+        with self.assertRaisesRegex(UserError, "S-3000"):
+            substituta.action_esocial_gerar_s2299()
+        s1210.evento_id.state = "excluded"
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        self.assertEqual(substituta.l10n_br_esocial_s2299_ids.ind_retif, "2")
+
+    def test_s3000_do_s1200_espera_a_exclusao_do_s1210_tp_pgto_1(self):
+        """TG-137 r2 (Menor 1): o S-3000 do S-1200 com S-1210 tpPgto 1 aceito é
+        recusado, e a orientação do S-1200 aceito manda excluir o S-1210 antes."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        original = self._criar_payslip(data_pagamento="2024-04-05")
+        original.action_esocial_gerar_s1200()
+        evento = original.l10n_br_esocial_s1200_id.evento_id
+        self._aceitar(evento, RECIBO_S1200)
+        original.action_esocial_gerar_s1210()
+        s1210 = original.l10n_br_esocial_s1210_id
+        self._aceitar(s1210.evento_id, RECIBO_S1210)
+        self.assertIn("S-1210", evento._orientacao_desfazer())
+        s3000 = self.env["l10n_br.esocial.s3000"].create(
+            {
+                "evento_origem_id": evento.id,
+                "company_id": self.company.id,
+                "per_apur": evento.per_apur,
+                "ind_apuracao": "1",
+                "cpf_trab": "11144477735",
+            }
+        )
+        with self.assertRaisesRegex(UserError, "tem S-1210 que aponta"):
+            s3000.action_gerar_evento()
+        s1210.evento_id.state = "excluded"
+        self.assertEqual(s3000.action_gerar_evento().tipo, "S-3000")
 
     def test_marcacao_e_pesquisavel(self):
         if not HAS_ESOCIALLIB:

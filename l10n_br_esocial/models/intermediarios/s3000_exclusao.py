@@ -199,42 +199,36 @@ class ESocialS3000(models.Model):
             )
 
     def _check_s1210_dependentes(self):
-        """S-2299 com S-1210 de ``tpPgto`` 2 transmitido apontando para ele.
+        """S-1210 que aponta para o demonstrativo do evento a excluir.
 
-        O S-1210 de ``tpPgto`` 2 referencia o ``ideDmDev`` do S-2299. Excluir
-        o S-2299 deixaria esse pagamento sem o demonstrativo que o apurou: o
-        S-1210 sai antes, e o S-3000 do S-2299 só depois do aceite da
-        exclusão dele (mesma ordem que o MOS S-1.3, cap. I item 15.2, pede
-        para o S-1200).
+        O S-1210 referencia o ``ideDmDev`` do S-1200 (``tpPgto`` 1) ou do S-2299
+        (``tpPgto`` 2). Excluir o evento deixaria o pagamento sem o demonstrativo
+        que o apurou (MOS S-1.3, cap. I item 15.2): o S-1210 sai antes e o S-3000
+        do S-1200/S-2299 só depois do aceite da exclusão dele. Vale também para o
+        S-1210 ainda em rascunho ou validado, que seria transmitido depois com o
+        demonstrativo já excluído: ele se apaga antes.
         """
         self.ensure_one()
         origem = self.evento_origem_id
-        if origem.tipo != "S-2299" or origem.origem_model != "l10n_br.esocial.s2299":
+        if origem.tipo not in ("S-1200", "S-2299"):
             return
-        s2299 = self.env["l10n_br.esocial.s2299"].browse(origem.origem_id).exists()
-        if not s2299:
+        eventos = origem._s1210_dependentes()
+        if not eventos:
             return
-        declarados = {s2299.get_ide_dm_dev(slip) for slip in s2299._slips_declarados()}
-        pagamentos = self.env["l10n_br.esocial.s1210.pagamento"].search(
-            [
-                ("tp_pgto", "=", "2"),
-                ("s1210_id.employee_id", "=", s2299.employee_id.id),
-                ("s1210_id.company_id", "=", s2299.company_id.id),
-                ("ide_dm_dev", "in", sorted(declarados)),
-                ("s1210_id.evento_id.state", "in", ("pending", "sent", "success")),
-            ]
-        )
-        if pagamentos:
-            eventos = pagamentos.s1210_id.evento_id
-            raise UserError(
-                _(
-                    "O S-2299 %(nome)s tem S-1210 de tpPgto 2 transmitido que "
-                    "aponta para o demonstrativo dele (%(s1210)s). Excluí-lo "
-                    "deixaria o pagamento sem a apuração: gere antes o S-3000 "
-                    "desse S-1210, espere o aceite e só então exclua o S-2299."
-                )
-                % {"nome": origem.name, "s1210": ", ".join(eventos.mapped("name"))}
+        raise UserError(
+            _(
+                "O %(tipo)s %(nome)s tem S-1210 que aponta para o demonstrativo "
+                "dele (%(s1210)s). Excluí-lo deixaria o pagamento sem a apuração: "
+                "apague o S-1210 ainda em rascunho ou validado, ou gere o S-3000 "
+                "do S-1210 transmitido e espere o aceite, e só então exclua o "
+                "%(tipo)s."
             )
+            % {
+                "tipo": origem.tipo,
+                "nome": origem.name,
+                "s1210": ", ".join("%s (%s)" % (ev.name, ev.state) for ev in eventos),
+            }
+        )
 
     def action_gerar_evento(self):
         self.ensure_one()
