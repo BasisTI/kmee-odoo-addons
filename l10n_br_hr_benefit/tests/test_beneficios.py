@@ -162,9 +162,12 @@ class TestBeneficios(PayrollCommon):
         # Sem plano
         payslip_sem = self._create_payslip_benefit(emp, contract)
         irrf_sem = self._get_line_total(payslip_sem, "IRRF")
-        # Com plano
-        self._add_advantage(contract, self.template_plano, 500.00)
-        payslip_com = self._create_payslip_benefit(emp, contract)
+        # Com plano (outro empregado: o mesmo empregado não tem dois holerites
+        # no mesmo período)
+        emp2 = self._create_employee(name="Com plano")
+        contract2 = self._create_contract(emp2, wage=5000.00)
+        self._add_advantage(contract2, self.template_plano, 500.00)
+        payslip_com = self._create_payslip_benefit(emp2, contract2)
         irrf_com = self._get_line_total(payslip_com, "IRRF")
         # IRRF deve ser IGUAL com e sem plano (base inalterada).
         self.assertAlmostEqualMoney(
@@ -192,10 +195,13 @@ class TestBeneficios(PayrollCommon):
         # Folha sem benefícios
         payslip_sem = self._create_payslip_benefit(emp, contract)
         net_sem = self._get_line_total(payslip_sem, "NET")
-        # Folha com VT + plano
-        self._add_advantage(contract, self.template_vt, 200.00)
-        self._add_advantage(contract, self.template_plano, 150.00)
-        payslip_com = self._create_payslip_benefit(emp, contract)
+        # Folha com VT + plano (outro empregado: o mesmo empregado não tem dois
+        # holerites no mesmo período)
+        emp2 = self._create_employee(name="Com benefícios")
+        contract2 = self._create_contract(emp2, wage=5000.00)
+        self._add_advantage(contract2, self.template_vt, 200.00)
+        self._add_advantage(contract2, self.template_plano, 150.00)
+        payslip_com = self._create_payslip_benefit(emp2, contract2)
         net_com = self._get_line_total(payslip_com, "NET")
         self.assertLess(net_com, net_sem)
 
@@ -373,8 +379,27 @@ class TestValeTransporteDiario(PayrollCommon):
         return payslip
 
     def _estrutura_sem_vt(self):
+        # Só a linha de líquido: com o l10n_br_hr_validacao_folha instalado, o
+        # holerite sem linhas calculadas ou sem NET não é confirmado.
+        regra = self.env["hr.salary.rule"].create(
+            {
+                "name": "Líquido sem VT (teste)",
+                "code": "NET",
+                "sequence": 1,
+                "category_id": self.env.ref(
+                    "l10n_br_hr_payroll.hr_salary_rule_category_net"
+                ).id,
+                "condition_select": "none",
+                "amount_select": "fix",
+                "amount_fix": 1.0,
+            }
+        )
         return self.env["hr.payroll.structure"].create(
-            {"name": "Estrutura sem VT (teste)", "code": "SEMVT"}
+            {
+                "name": "Estrutura sem VT (teste)",
+                "code": "SEMVT",
+                "rule_ids": [(4, regra.id)],
+            }
         )
 
     def test_holerite_aberto_recalcula_ao_mudar_o_valor_diario(self):

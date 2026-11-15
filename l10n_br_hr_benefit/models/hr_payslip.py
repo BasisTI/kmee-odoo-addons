@@ -15,7 +15,7 @@ class HrPayslip(models.Model):
 
     def _get_baselocaldict(self, contracts):
         localdict = super()._get_baselocaldict(contracts)
-        for code in ("DESC_VT", "DESC_PLANO_SAUDE", "VT_INFO"):
+        for code in ("DESC_VT", "DESC_VAVR", "DESC_PLANO_SAUDE", "VT_INFO"):
             localdict.setdefault(code, 0.0)
         return localdict
 
@@ -195,4 +195,5 @@ class HrPayslip(models.Model):
 
         tools["br"].credito_vt = credito_vt
         tools["br"].dias_uteis_vt = dias_uteis_vt
+        tools["br"].desconto_vt = vale_transporte.desconto_vt
         return tools
