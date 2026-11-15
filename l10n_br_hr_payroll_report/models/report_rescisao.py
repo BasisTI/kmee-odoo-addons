@@ -320,13 +320,23 @@ class ReportTermoRescisao(models.AbstractModel):
             CAMPOS_DESCONTOS,
             CAMPO_OUTROS_DESCONTOS,
         )
+        # TG-136: o 63 mostra só os avos do 13º proporcional quando o holerite
+        # tem a rubrica do aviso (os que o aviso projeta aparecem no 70). Um
+        # holerite calculado antes da 1.11.0 não a tem: o DECIMO_RESCISAO
+        # carrega o 13º inteiro e o 63 mostra os avos totais.
+        tem_rubrica_aviso = any(
+            ln.code == "DECIMO_AVISO_INDENIZADO" for ln in slip.line_ids
+        )
+        avos_63 = (
+            slip.l10n_br_avos_13_proporcional
+            if tem_rubrica_aviso
+            else slip.l10n_br_avos_13
+        )
         detalhes = {
-            # TG-136: o 63 mostra só os avos do 13º proporcional; os que o
-            # aviso indenizado projeta aparecem no 70.
-            "63": f"{slip.l10n_br_avos_13_proporcional}/12 avos",
+            "63": f"{avos_63}/12 avos",
             "65": f"{slip.l10n_br_avos_ferias}/12 avos",
         }
-        if verbas.get("70"):
+        if tem_rubrica_aviso and verbas.get("70"):
             detalhes["70"] = f"{slip.l10n_br_avos_13_aviso}/12 avos"
         periodos = [
             f"{d['inicio']:%d/%m/%Y} a {d['fim']:%d/%m/%Y}"

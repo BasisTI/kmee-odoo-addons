@@ -7,9 +7,12 @@ Regras e estruturas são ``noupdate="1"``: o ``-u`` cria a regra nova
 (``DECIMO_AVISO_INDENIZADO``), mas não a liga à estrutura da rescisão nem troca
 a fórmula do ``DECIMO_RESCISAO`` nem o líquido em bancos instalados. Aqui a
 fórmula do ``DECIMO_RESCISAO`` e o NET passam a usar a rubrica nova SOMENTE se
-a gravada ainda for exatamente a da 1.10.0; regra personalizada fica como está,
-com aviso no log, e a regra nova NÃO é ligada à estrutura (o líquido não
-divergiria das linhas). Holerites já calculados não mudam. Idempotente.
+a gravada ainda for exatamente a da 1.10.0; se qualquer das duas estiver
+personalizada, nada é atualizado e a regra nova NÃO é ligada à estrutura (o
+líquido não divergiria das linhas), com aviso no log. As 4 regras de desconto
+só ganham a rubrica no "disponível" (não mudam valor): uma personalizada é
+pulada, com aviso, sem barrar a separação do 13º. Holerites já calculados não
+mudam. Idempotente.
 """
 import logging
 
@@ -89,6 +92,7 @@ def _normaliza(texto):
 def migrate(cr, version):
     env = api.Environment(cr, SUPERUSER_ID, {})
     atualizar = []
+    essenciais = {"hr_rule_decimo_rescisao", "hr_rule_net_rescisao"}
     for xmlid, arquivo, antigo in CAMPOS:
         regra = env.ref(f"l10n_br_hr_vacation.{xmlid}", raise_if_not_found=False)
         if not regra:
@@ -101,6 +105,14 @@ def migrate(cr, version):
             _logger.info("TG-136: %s já atualizada", xmlid)
         elif atual == _normaliza(antigo):
             atualizar.append((regra, novo))
+        elif xmlid not in essenciais:
+            _logger.warning(
+                "TG-136: a regra de desconto '%s' (%s) está personalizada: foi "
+                "pulada (só o 'disponível' ganha DECIMO_AVISO_INDENIZADO). "
+                "Inclua a rubrica nela, se usar o 'disponível'.",
+                regra.name,
+                xmlid,
+            )
         else:
             _logger.warning(
                 "TG-136: a regra '%s' (%s) está personalizada: NADA foi atualizado "

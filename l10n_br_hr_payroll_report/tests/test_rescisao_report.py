@@ -575,3 +575,24 @@ class TestRescisaoReport(PayrollCommon):
         trct = self._trct(payslip)
         self.assertEqual(self._valor(trct, "verbas", "70"), 0.0)
         self.assertFalse(self._detalhe(trct, "70"))
+
+    def test_trct_holerite_calculado_antes_da_rubrica_do_aviso(self):
+        """Holerite calculado na 1.10.0 (sem DECIMO_AVISO_INDENIZADO, com o 13º
+        inteiro no DECIMO_RESCISAO): o 63 mostra os avos totais e o 70 fica em
+        branco."""
+        payslip = self._rescisao_aviso(date(2025, 7, 1), date(2026, 11, 30))
+        avos_totais = payslip.l10n_br_avos_13
+        aviso = payslip.line_ids.filtered(
+            lambda ln: ln.code == "DECIMO_AVISO_INDENIZADO"
+        )
+        decimo = payslip.line_ids.filtered(lambda ln: ln.code == "DECIMO_RESCISAO")
+        self.assertTrue(aviso)
+        inteiro = decimo.total + aviso.total
+        decimo.write({"amount": inteiro})
+        aviso.unlink()
+        trct = self._trct(payslip)
+        self.assertEqual(self._detalhe(trct, "63"), f"{avos_totais}/12 avos")
+        self.assertEqual(avos_totais, 12)
+        self.assertAlmostEqual(self._valor(trct, "verbas", "63"), inteiro, places=2)
+        self.assertEqual(self._valor(trct, "verbas", "70"), 0.0)
+        self.assertFalse(self._detalhe(trct, "70"))
