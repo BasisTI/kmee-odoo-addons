@@ -2,6 +2,8 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """TG-132: holerite estornado não vai ao eSocial; o evento dele se retifica."""
 
+from unittest.mock import patch
+
 from lxml import etree
 
 from odoo.exceptions import UserError
@@ -408,6 +410,109 @@ class TestEstornoEsocial(ESocialCicloCommon):
         with mute_logger(LOG_S2299):
             substituta.action_esocial_gerar_s2299()
         self.assertEqual(substituta.l10n_br_esocial_s2299_ids.ind_retif, "2")
+
+    def _s1210_tp2(self, s2299, slip, per_apur="2024-05"):
+        s1210 = self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": per_apur,
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2024-05-05",
+                            "tp_pgto": "2",
+                            "per_ref": "2024-03",
+                            "ide_dm_dev": s2299.get_ide_dm_dev(slip),
+                            "vr_liq": 100.0,
+                            "payslip_id": slip.id,
+                        },
+                    )
+                ],
+            }
+        )
+        s1210.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {
+                "tipo": "S-1210",
+                "company_id": self.company.id,
+                "state": "success",
+                "nr_recibo": RECIBO_S1210,
+                "per_apur": per_apur,
+                "origem_model": "l10n_br.esocial.s1210",
+                "origem_id": s1210.id,
+            }
+        )
+        return s1210
+
+    def test_substituta_com_mes_diferente_nao_retifica_o_s2299(self):
+        """TG-137 r4: mudança de mês do desligamento: S-3000 + S-2299 novo."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        substituta.write({"date_from": "2024-04-01", "date_to": "2024-04-05"})
+        with self.assertRaisesRegex(UserError, "mudança de mês"):
+            substituta.action_esocial_gerar_s2299()
+        self.assertFalse(substituta.l10n_br_esocial_s2299_ids)
+        # Depois do S-3000 aceito, sai o S-2299 novo (original).
+        s2299.evento_id.state = "excluded"
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        self.assertEqual(substituta.l10n_br_esocial_s2299_ids.ind_retif, "1")
+
+    def test_substituta_mesmo_mes_com_data_anterior_retifica(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _rescisao, _s2299, substituta = self._rescisao_aceita_e_estornada()
+        substituta.write({"date_to": "2024-03-15"})
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        self.assertEqual(substituta.l10n_br_esocial_s2299_ids.ind_retif, "2")
+
+    def test_s1210_de_demonstrativo_que_segue_igual_nao_bloqueia_o_retificador(self):
+        """TG-137 r4: só o S-1210 do demonstrativo que muda ou some precisa sair."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        mensal = self._criar_payslip()
+        classe = self.env.registry["l10n_br.esocial.s2299"]
+        declarados = rescisao | mensal
+        with patch.object(classe, "_slips_declarados", lambda rec: declarados):
+            s1210_mensal = self._s1210_tp2(s2299, mensal)
+            s1210_resc = self._s1210_tp2(s2299, rescisao, per_apur="2024-06")
+            # O da rescisão estornada some no retificador: bloqueia.
+            with self.assertRaisesRegex(UserError, "não repete"):
+                substituta.action_esocial_gerar_s2299()
+            self.assertIn(
+                s1210_resc.evento_id.name,
+                s2299.evento_id._s1210_dependentes(
+                    manter_ides=[s2299.get_ide_dm_dev(mensal)]
+                ).mapped("name"),
+            )
+            s1210_resc.evento_id.state = "excluded"
+            # O do mensal segue igual: o retificador sai com ele ainda aceito.
+            with mute_logger(LOG_S2299):
+                substituta.action_esocial_gerar_s2299()
+        self.assertEqual(s1210_mensal.evento_id.state, "success")
+        self.assertEqual(substituta.l10n_br_esocial_s2299_ids.ind_retif, "2")
+
+    def test_mensagem_do_s1200_da_substituta_segue_o_estado_do_s2299(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _rescisao, s2299, substituta = self._rescisao_aceita_e_estornada()
+        # Original aceito, sem retificador: gere o retificador.
+        with self.assertRaisesRegex(UserError, "gere o S-2299 da rescisão"):
+            substituta.action_esocial_gerar_s1200()
+        # Retificador gerado e não transmitido: transmita-o.
+        with mute_logger(LOG_S2299):
+            substituta.action_esocial_gerar_s2299()
+        substituta.l10n_br_esocial_s2299_ids.evento_id.state = "validated"
+        with self.assertRaisesRegex(UserError, "transmita-o"):
+            substituta.action_esocial_gerar_s1200()
+        substituta.l10n_br_esocial_s2299_ids.evento_id.state = "sent"
+        with self.assertRaisesRegex(UserError, "aguarde o retorno"):
+            substituta.action_esocial_gerar_s1200()
 
     def test_s3000_do_s1200_espera_a_exclusao_do_s1210_tp_pgto_1(self):
         """TG-137 r2 (Menor 1): o S-3000 do S-1200 com S-1210 tpPgto 1 aceito é

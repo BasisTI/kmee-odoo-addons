@@ -694,7 +694,12 @@ evento ainda não transmitido se apaga (só o gestor de folha).</p>
 S-2299, sai como retificador (<tt class="docutils literal">indRetif</tt> 2 e <tt class="docutils literal">nrRecibo</tt> do aceito), e o
 S-1200 dela é recusado (o leiaute recusa o S-1200 da competência do
 desligamento). Se o S-1210 de <tt class="docutils literal">tpPgto</tt> 2 do S-2299 antigo já foi transmitido,
-exclua-o antes por S-3000 e reenvie-o depois do aceite do retificador. Para
+exclua-o antes por S-3000 e reenvie-o depois do aceite do retificador (só o
+S-1210 de demonstrativo que o retificador não repete precisa sair; o do mensal,
+que segue igual, fica). O S-1210 da rescisão substituta só sai depois do aceite
+do retificador. Se o desligamento da substituta cai em <strong>outro mês</strong> que o do
+S-2299 aceito, o eSocial não aceita retificador: exclua o aceito por S-3000
+(antes, os S-1210 que apontam para ele) e gere um S-2299 novo. Para
 recomeçar, exclua o S-2299 aceito por S-3000 e gere um novo (original).</p>
 <p>Limite conhecido do S-1200: provento (<tt class="docutils literal">tpRubr</tt> 1) com valor negativo fica fora
 do evento, porque o leiaute exige valor maior que 0, e o aviso diz qual linha

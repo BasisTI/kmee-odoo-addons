@@ -301,7 +301,12 @@ Rescisão estornada com S-2299 aceito: a rescisão que a substitui, ao gerar o
 S-2299, sai como retificador (``indRetif`` 2 e ``nrRecibo`` do aceito), e o
 S-1200 dela é recusado (o leiaute recusa o S-1200 da competência do
 desligamento). Se o S-1210 de ``tpPgto`` 2 do S-2299 antigo já foi transmitido,
-exclua-o antes por S-3000 e reenvie-o depois do aceite do retificador. Para
+exclua-o antes por S-3000 e reenvie-o depois do aceite do retificador (só o
+S-1210 de demonstrativo que o retificador não repete precisa sair; o do mensal,
+que segue igual, fica). O S-1210 da rescisão substituta só sai depois do aceite
+do retificador. Se o desligamento da substituta cai em **outro mês** que o do
+S-2299 aceito, o eSocial não aceita retificador: exclua o aceito por S-3000
+(antes, os S-1210 que apontam para ele) e gere um S-2299 novo. Para
 recomeçar, exclua o S-2299 aceito por S-3000 e gere um novo (original).
 
 Limite conhecido do S-1200: provento (``tpRubr`` 1) com valor negativo fica fora

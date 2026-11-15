@@ -164,13 +164,16 @@ class ESocialEvento(models.Model):
         return origem._esocial_slips()
 
     def _s1210_dependentes(
-        self, estados=("draft", "validated", "pending", "sent", "success")
+        self,
+        estados=("draft", "validated", "pending", "sent", "success"),
+        manter_ides=(),
     ):
         """S-1210 (eventos) cujo pagamento aponta para o demonstrativo deste evento.
 
         S-1200: pagamentos ``tpPgto`` 1 ligados a ele (``s1200_id``). S-2299:
         pagamentos ``tpPgto`` 2 do trabalhador cujo ``ideDmDev`` é um dos que o
         XML do S-2299 declarou. Outros eventos não têm S-1210 dependente.
+        ``manter_ides``: demonstrativos que continuam iguais (ficam de fora).
         """
         self.ensure_one()
         vazio = self.env["l10n_br.esocial.evento"]
@@ -193,7 +196,9 @@ class ESocialEvento(models.Model):
                 ("ide_dm_dev", "in", declarados),
             ]
         pagamentos = pagamentos.search(
-            dominio + [("s1210_id.evento_id.state", "in", list(estados))]
+            dominio
+            + [("s1210_id.evento_id.state", "in", list(estados))]
+            + ([("ide_dm_dev", "not in", list(manter_ides))] if manter_ides else [])
         )
         return pagamentos.s1210_id.evento_id
 
