@@ -89,6 +89,15 @@ class L10nBrHrCollectiveConvention(models.Model):
         help="A CCT isenta da contribuição assistencial quem está em contrato "
         "de experiência.",
     )
+    assistencial_exempt_contract_type_ids = fields.Many2many(
+        comodel_name="hr.contract.type",
+        relation="l10n_br_cct_assistencial_exempt_type_rel",
+        column1="convention_id",
+        column2="contract_type_id",
+        string="Tipos de Contratação Isentos",
+        help="Tipos de contratação que a CCT isenta da contribuição "
+        "assistencial (617).",
+    )
     monthly_fee_amount = fields.Float(
         string="Mensalidade Sindical (R$)",
         digits="Payroll",
@@ -124,6 +133,7 @@ class L10nBrHrCollectiveConvention(models.Model):
         "assistencial_amount",
         "assistencial_sindicalizado",
         "assistencial_exempt_trial",
+        "assistencial_exempt_contract_type_ids",
         "monthly_fee_amount",
         "dsr_days_per_week",
         "vt_employee_pct",

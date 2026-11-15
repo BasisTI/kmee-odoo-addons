@@ -1,7 +1,7 @@
 # Copyright 2024 KMEE
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
-from odoo import fields, models
+from odoo import api, fields, models
 
 
 class HrPayslip(models.Model):
@@ -22,10 +22,38 @@ class HrPayslip(models.Model):
         return any(
             "br.cct(" in (r.condition_python or "")
             or "br.cct(" in (r.amount_python_compute or "")
-            or "contribuicao_sindical(" in (r.condition_python or "")
-            or "contribuicao_sindical(" in (r.amount_python_compute or "")
+            or "contribuicao_sindical" in (r.condition_python or "")
+            or "contribuicao_sindical" in (r.amount_python_compute or "")
             for r in self._get_salary_rules()
         )
+
+    def _l10n_br_contribuicao_snapshot(self):
+        """O que 617 e 602 dão a cada holerite: só a diferença tem efeito."""
+        return {
+            s.id: tuple(
+                s.contract_id._l10n_br_contribuicao_resolver(s._get_competencia(), t)
+                for t in ("assistencial", "sindical")
+            )
+            for s in self
+        }
+
+    @api.model
+    def _l10n_br_contribuicao_guardar(self, holerites, operacao):
+        """Executa ``operacao()``; só os holerites cuja 617/602 mudou são aplicados.
+
+        Mudança sem efeito (valor individual de vigência que não cobre a
+        competência, fim de experiência anterior a ela) não recalcula nem recusa.
+        """
+        holerites = holerites.sudo().filtered(
+            lambda s: s.date_to and s.contract_id and s._l10n_br_le_cct()
+        )
+        antes = holerites._l10n_br_contribuicao_snapshot()
+        res = operacao()
+        holerites = holerites.exists()
+        depois = holerites._l10n_br_contribuicao_snapshot()
+        mudaram = holerites.filtered(lambda s: antes[s.id] != depois[s.id])
+        self.env["l10n.br.hr.collective.convention"]._cct_aplicar_aos_holerites(mudaram)
+        return res
 
     def _l10n_br_cct_aviso_texto(self, cct, motivo):
         dados = {
@@ -75,9 +103,15 @@ class HrPayslip(models.Model):
         ``cct.vt_employee_pct``, ``cct.dsr_days_per_week``,
         ``cct.vavr_rate(salario)``, ``cct.wage_floor_for(cargo)``...).
 
-        ``tools.br.contribuicao_sindical(contract, tipo)``: valor da contribuição
-        do tipo (``assistencial``, ``confederativa`` ou ``sindical``) cadastrada
-        para o sindicato da CCT no mês do holerite; 0.0 sem CCT ou sem cadastro.
+        ``tools.br.contribuicao_sindical(contract, tipo)``: valor devido pelo
+        contrato da contribuição do tipo (``assistencial`` = 617, ``sindical`` =
+        602, ``confederativa``) cadastrada para o sindicato da CCT no mês do
+        holerite, com a oposição e a marca de sindicalista do funcionário, as
+        isenções da CCT e o valor individual do 602; 0.0 em branco.
+        ``tools.br.contribuicao_sindical_detalhe(contract, tipo)`` devolve
+        ``(valor, motivo)``: ``valor`` ``None`` é célula em branco (sem CCT, sem
+        cadastro e sem valor individual), distinta do 0.0 de isenção; a condição
+        da regra usa ``valor is not None``.
         """
         tools = super()._get_tools_dict()
         competencia = self._get_competencia()
@@ -85,20 +119,13 @@ class HrPayslip(models.Model):
         def cct(contrato):
             return contrato._l10n_br_cct_vigente(competencia)
 
+        def contribuicao_sindical_detalhe(contrato, tipo):
+            return contrato._l10n_br_contribuicao_resolver(competencia, tipo)
+
         def contribuicao_sindical(contrato, tipo):
-            convencao = cct(contrato)
-            if not convencao or not competencia:
-                return 0.0
-            contribuicoes = self.env["l10n.br.hr.syndicate.contribution"].search(
-                [
-                    ("partner_union_id", "=", convencao.partner_union_id.id),
-                    ("year", "=", competencia.year),
-                    ("month", "=", str(competencia.month)),
-                    ("contribution_type", "=", tipo),
-                ]
-            )
-            return sum(c.amount_for(contrato.wage) for c in contribuicoes)
+            return contribuicao_sindical_detalhe(contrato, tipo)[0] or 0.0
 
         tools["br"].cct = cct
         tools["br"].contribuicao_sindical = contribuicao_sindical
+        tools["br"].contribuicao_sindical_detalhe = contribuicao_sindical_detalhe
         return tools

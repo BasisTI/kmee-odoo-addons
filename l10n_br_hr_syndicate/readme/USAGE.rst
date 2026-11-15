@@ -30,3 +30,24 @@ Salário acima da última faixa de VA/VR e CCT apontada por contrato apagada sã
 **O que o módulo não decide.** Quem paga a contribuição assistencial ou sindical
 (autorização expressa do empregado, direito de oposição, art. 545 e 578 da CLT depois da
 Reforma Trabalhista; STF, Tema 935) é decisão da regra salarial: o módulo só informa o valor.
+
+**Oposição e sindicalista (617 e 602).** No cadastro do funcionário (aba *Configurações*),
+marque *Fez oposição à contribuição assistencial* e *Sindicalista*: a escolha é da pessoa e
+vale para todos os contratos dela. ``tools.br.contribuicao_sindical(contract, tipo)`` aplica:
+
+* **617** (``assistencial``): o opositor paga 0,00 (a oposição prevalece sobre a marca de
+  sindicalista); depois as isenções da CCT (*Tipos de Contratação Isentos* e *Isenta Contrato
+  de Experiência*, em que o contrato de tipo marcado como *Prazo Determinado* (campo do tipo de contratação) não conta como experiência e
+  quem termina a experiência no meio do mês já deve o mês); depois o sindicalista paga
+  integral, metade (arredondada para cima, ``HALF_UP``) ou nada conforme a CCT.
+* **602** (``sindical``): o valor individual do funcionário com vigência (*Contribuição
+  Sindical Individual*) prevalece sobre o da CCT e é devido mesmo sem a marca; a vigência vale na competência se cobre o dia 1 dela, como no Sistema DP; senão só o
+  sindicalista paga o valor cadastrado; os demais ficam em branco.
+* Sem CCT ou sem contribuição cadastrada para a competência, a célula fica em branco:
+  ``tools.br.contribuicao_sindical_detalhe(contract, tipo)`` devolve ``(None, motivo)`` e a
+  condição da regra decide não gerar a linha (``contribuicao_sindical`` devolve 0.0). A
+  lacuna de configuração nunca vira isenção.
+
+Mudar a marca, o valor individual, o tipo de contratação, o fim da experiência, o *Prazo Determinado* do tipo ou os tipos
+isentos da CCT recalcula os holerites abertos da competência corrente em diante e recusa a
+mudança se houver holerite confirmado.

@@ -43,6 +43,10 @@
                             <field name="assistencial_amount" />
                             <field name="assistencial_sindicalizado" />
                             <field name="assistencial_exempt_trial" />
+                            <field
+                                name="assistencial_exempt_contract_type_ids"
+                                widget="many2many_tags"
+                            />
                             <field name="monthly_fee_amount" />
                         </group>
                         <group>
@@ -95,6 +99,48 @@
         <field name="name">Conven&#231;&#245;es Coletivas</field>
         <field name="res_model">l10n.br.hr.collective.convention</field>
         <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="view_employee_form_syndicate" model="ir.ui.view">
+        <field name="name">hr.employee.form.syndicate</field>
+        <field name="model">hr.employee</field>
+        <field name="inherit_id" ref="hr.view_employee_form" />
+        <field name="arch" type="xml">
+            <xpath expr="//page[@name='hr_settings']" position="inside">
+                <group
+                    string="Contribui&#231;&#245;es Sindicais"
+                    name="l10n_br_contribuicoes_sindicais"
+                    groups="hr.group_hr_user"
+                >
+                    <group>
+                        <field name="l10n_br_oposicao_contribuicao" />
+                        <field name="l10n_br_sindicalista" />
+                    </group>
+                    <field
+                        name="l10n_br_contribuicao_individual_ids"
+                        colspan="2"
+                        nolabel="1"
+                    >
+                        <list editable="bottom">
+                            <field name="date_start" />
+                            <field name="date_end" />
+                            <field name="amount" />
+                        </list>
+                    </field>
+                </group>
+            </xpath>
+        </field>
+    </record>
+
+    <record id="view_contract_type_tree_syndicate" model="ir.ui.view">
+        <field name="name">hr.contract.type.list.syndicate</field>
+        <field name="model">hr.contract.type</field>
+        <field name="inherit_id" ref="hr.hr_contract_type_view_tree" />
+        <field name="arch" type="xml">
+            <xpath expr="//field[@name='name']" position="after">
+                <field name="l10n_br_prazo_determinado" />
+            </xpath>
+        </field>
     </record>
 
     <menuitem

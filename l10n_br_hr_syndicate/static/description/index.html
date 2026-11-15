@@ -428,6 +428,26 @@ Salário acima da última faixa de VA/VR e CCT apontada por contrato apagada sã
 <p><strong>O que o módulo não decide.</strong> Quem paga a contribuição assistencial ou sindical
 (autorização expressa do empregado, direito de oposição, art. 545 e 578 da CLT depois da
 Reforma Trabalhista; STF, Tema 935) é decisão da regra salarial: o módulo só informa o valor.</p>
+<p><strong>Oposição e sindicalista (617 e 602).</strong> No cadastro do funcionário (aba <em>Configurações</em>),
+marque <em>Fez oposição à contribuição assistencial</em> e <em>Sindicalista</em>: a escolha é da pessoa e
+vale para todos os contratos dela. <tt class="docutils literal">tools.br.contribuicao_sindical(contract, tipo)</tt> aplica:</p>
+<ul class="simple">
+<li><strong>617</strong> (<tt class="docutils literal">assistencial</tt>): o opositor paga 0,00 (a oposição prevalece sobre a marca de
+sindicalista); depois as isenções da CCT (<em>Tipos de Contratação Isentos</em> e <em>Isenta Contrato
+de Experiência</em>, em que o contrato de tipo marcado como <em>Prazo Determinado</em> (campo do tipo de contratação) não conta como experiência e
+quem termina a experiência no meio do mês já deve o mês); depois o sindicalista paga
+integral, metade (arredondada para cima, <tt class="docutils literal">HALF_UP</tt>) ou nada conforme a CCT.</li>
+<li><strong>602</strong> (<tt class="docutils literal">sindical</tt>): o valor individual do funcionário com vigência (<em>Contribuição
+Sindical Individual</em>) prevalece sobre o da CCT e é devido mesmo sem a marca; a vigência vale na competência se cobre o dia 1 dela, como no Sistema DP; senão só o
+sindicalista paga o valor cadastrado; os demais ficam em branco.</li>
+<li>Sem CCT ou sem contribuição cadastrada para a competência, a célula fica em branco:
+<tt class="docutils literal">tools.br.contribuicao_sindical_detalhe(contract, tipo)</tt> devolve <tt class="docutils literal">(None, motivo)</tt> e a
+condição da regra decide não gerar a linha (<tt class="docutils literal">contribuicao_sindical</tt> devolve 0.0). A
+lacuna de configuração nunca vira isenção.</li>
+</ul>
+<p>Mudar a marca, o valor individual, o tipo de contratação, o fim da experiência, o <em>Prazo Determinado</em> do tipo ou os tipos
+isentos da CCT recalcula os holerites abertos da competência corrente em diante e recusa a
+mudança se houver holerite confirmado.</p>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
