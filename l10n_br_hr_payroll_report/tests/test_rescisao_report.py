@@ -9,6 +9,7 @@ Cobertura:
   - Conteúdo HTML contém dados esperados
 """
 from datetime import date
+from unittest.mock import patch
 
 from lxml import etree
 
@@ -302,3 +303,31 @@ class TestRescisaoReport(PayrollCommon):
         recibo = self.env.ref("l10n_br_hr_payroll_report.action_report_recibo_ferias")
         self.assertEqual(trct.groups_id, recibo.groups_id)
         self.assertEqual(trct.binding_model_id, recibo.binding_model_id)
+
+    def test_trct_rubrica_sem_campo_aparece_no_pdf_em_outras_verbas(self):
+        """Sem o campo do saldo no mapa, a rubrica sai em 95 com o nome dela e
+        os totais seguem fechando (nada some no termo impresso)."""
+        payslip = self._rescisao_sem_justa_causa()
+        saldo = payslip.line_ids.filtered(lambda ln: ln.code == "SALDO_SALARIO")
+        mapa = {k: v for k, v in CAMPOS_VERBAS.items() if k != "SALDO_SALARIO"}
+        with patch.dict(CAMPOS_VERBAS, clear=True):
+            CAMPOS_VERBAS.update(mapa)
+            trct = self._trct(payslip)
+            report = self.env.ref(
+                "l10n_br_hr_payroll_report.action_report_termo_rescisao"
+            )
+            html = self.env["ir.actions.report"]._render_qweb_html(
+                report.id, payslip.ids
+            )[0]
+        self.assertEqual(self._valor(trct, "verbas", "50"), 0.0)
+        self.assertAlmostEqual(self._valor(trct, "verbas", "95"), saldo.total, places=2)
+        arvore = etree.fromstring(html, etree.HTMLParser())
+        detalhe = [
+            " ".join("".join(tr.itertext()).split())
+            for tr in arvore.xpath("//tr[@class='rescisao-outras']")
+        ]
+        self.assertEqual(len(detalhe), 1)
+        self.assertIn(saldo.name, detalhe[0])
+        self.assertAlmostEqual(
+            trct["total_bruto"] - trct["total_deducoes"], trct["liquido"], places=2
+        )
