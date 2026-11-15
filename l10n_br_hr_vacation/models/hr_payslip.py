@@ -851,10 +851,17 @@ class HrPayslip(models.Model):
         )
 
     def _l10n_br_dias_aviso_previo(self):
-        """Dias de aviso prévio devidos (Lei 12.506/2011). Ver salary_rules_br."""
+        """Dias de aviso prévio devidos (Lei 12.506/2011). Ver salary_rules_br.
+
+        O acréscimo de 3 dias por ano é só a favor do empregado (Lei 12.506/2011,
+        art. 1º, parágrafo único; aviso prévio que o empregador deve ao empregado):
+        no pedido de demissão o prazo do aviso é de 30 dias (CLT art. 487, I).
+        """
         self.ensure_one()
         if not self.contract_id or not self.contract_id.date_start or not self.date_to:
             return 0
+        if self.l10n_br_tipo_rescisao == "pedido_demissao":
+            return 30
         from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import (
             calc_aviso_previo_dias,
         )
@@ -1226,8 +1233,9 @@ class HrPayslip(models.Model):
         pagos (gozados + vendidos) em qualquer fração anterior.
 
         Returns:
-            list[dict]: ``[{"dias": int, "dobro": bool}, ...]``, um item por
-            período aquisitivo vencido com saldo residual.
+            list[dict]: ``[{"dias": int, "dobro": bool, "inicio": date,
+            "fim": date}, ...]``, um item por período aquisitivo vencido com
+            saldo residual (``inicio`` e ``fim`` são os da alocação).
         """
         self.ensure_one()
         if not self.employee_id or not self.date_to:
@@ -1262,7 +1270,14 @@ class HrPayslip(models.Model):
             if restante > 0:
                 periodo_concessivo_fim = alloc.date_to + relativedelta(years=1)
                 dobro = self.date_to > periodo_concessivo_fim
-                resultado.append({"dias": restante, "dobro": dobro})
+                resultado.append(
+                    {
+                        "dias": restante,
+                        "dobro": dobro,
+                        "inicio": alloc.date_from,
+                        "fim": alloc.date_to,
+                    }
+                )
         return resultado
 
     @api.depends("line_ids", "l10n_br_primeira_parcela_13_paga")

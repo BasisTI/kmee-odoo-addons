@@ -120,6 +120,15 @@ class TestTRCTSemJustaCausa(VacationCommon):
         self.assertEqual(calc_aviso_previo_dias(self.date_start, self.date_to), 36)
         self.assertEqual(self.rescisao._l10n_br_dias_aviso_previo(), 36)
 
+    def test_01b_aviso_do_empregado_e_de_30_dias(self):
+        """TG-100: o acréscimo da Lei 12.506/2011 é só a favor do empregado; no
+        pedido de demissão o aviso é de 30 dias, e a dispensa sem justa causa
+        segue com os 36 dias do mesmo contrato."""
+        self.rescisao.l10n_br_tipo_rescisao = "pedido_demissao"
+        self.assertEqual(self.rescisao._l10n_br_dias_aviso_previo(), 30)
+        self.rescisao.l10n_br_tipo_rescisao = "sem_justa_causa"
+        self.assertEqual(self.rescisao._l10n_br_dias_aviso_previo(), 36)
+
     def test_02_saldo_de_salario(self):
         """Saldo = dias de vigência no mês (1 a 20/08) x salário/30. Sem média."""
         dias = dias_trabalhados_mes(
@@ -182,6 +191,7 @@ class TestTRCTSemJustaCausa(VacationCommon):
         self.assertEqual(len(dados), 1)
         self.assertEqual(dados[0]["dias"], 30)
         self.assertTrue(dados[0]["dobro"])
+        self.assertTrue(dados[0]["inicio"] and dados[0]["fim"])
 
         base_com_media = self.wage + self.media
         esperado = round_money(base_com_media / 30 * 30 * 2)
