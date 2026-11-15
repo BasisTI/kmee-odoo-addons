@@ -176,6 +176,20 @@ class HrPayslip(models.Model):
         string="Avos de 13º",
         compute="_compute_avos_13",
     )
+    l10n_br_avos_13_proporcional = fields.Integer(
+        string="Avos de 13º Proporcional",
+        compute="_compute_avos_13",
+        help="Avos do 13º até a data do desligamento (regra dos 15 dias), "
+        "sem a projeção do aviso prévio indenizado: base do DECIMO_RESCISAO "
+        "(natureza 6002 do eSocial; campo 63 do TRCT).",
+    )
+    l10n_br_avos_13_aviso = fields.Integer(
+        string="Avos de 13º do Aviso Indenizado",
+        compute="_compute_avos_13",
+        help="Avos que a projeção do aviso prévio indenizado acrescenta ao 13º "
+        "(Súmula 371 TST), inclusive os do ano seguinte: base do "
+        "DECIMO_AVISO_INDENIZADO (natureza 6001 do eSocial; campo 70 do TRCT).",
+    )
     l10n_br_avos_ferias = fields.Integer(
         string="Avos de Férias Proporcionais",
         compute="_compute_avos_ferias",
@@ -780,8 +794,15 @@ class HrPayslip(models.Model):
                     avos += calc_decimo_avos(admissao, date(ano, 12, 31))
                 avos += calc_decimo_avos(admissao, referencia)
                 rec.l10n_br_avos_13 = avos
+                # O 13º proporcional é o do desligamento (até 12 avos); o que
+                # o aviso projeta é rubrica própria (TG-136).
+                proporcional = calc_decimo_avos(admissao, rec.date_to)
+                rec.l10n_br_avos_13_proporcional = min(proporcional, avos)
+                rec.l10n_br_avos_13_aviso = avos - rec.l10n_br_avos_13_proporcional
             else:
                 rec.l10n_br_avos_13 = 0
+                rec.l10n_br_avos_13_proporcional = 0
+                rec.l10n_br_avos_13_aviso = 0
 
     @api.depends(
         "contract_id", "date_to", "l10n_br_tipo_rescisao", "l10n_br_aviso_previo"
@@ -1319,6 +1340,8 @@ class HrPayslip(models.Model):
             # pensão (regra condicional que não dispara).
             "PENSAO_ALIMENTICIA_13",
             "DECIMO_RESCISAO",
+            # TG-136: 13º sobre o aviso prévio indenizado, em rubrica própria.
+            "DECIMO_AVISO_INDENIZADO",
             "SALDO_SALARIO",
             "FERIAS_INDENIZADAS",
             "ADICIONAL_FERIAS_INDENIZADAS",

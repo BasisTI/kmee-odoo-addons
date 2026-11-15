@@ -514,3 +514,85 @@ class TestRescisaoReport(PayrollCommon):
         report = self.env.ref("l10n_br_hr_payroll_report.action_report_termo_rescisao")
         with self.assertRaises(UserError):
             self.env["ir.actions.report"]._render_qweb_html(report.id, mensal.ids)
+
+    # ── TG-136: 13º proporcional (63) e 13º do aviso indenizado (70) ────
+
+    def _rescisao_aviso(self, date_start, date_to, wage=2000.00):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=wage, date_start=date_start)
+        payslip = self.env["hr.payslip"].create(
+            {
+                "name": f"Rescisão - {emp.name}",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_rescisao.id,
+                "date_from": date_to.replace(day=1),
+                "date_to": date_to,
+                "l10n_br_tipo_rescisao": "sem_justa_causa",
+                "l10n_br_aviso_previo": "indenizado",
+            }
+        )
+        payslip.compute_sheet()
+        return payslip
+
+    def _detalhe(self, trct, campo):
+        return {c: a for c, _r, _v, a in trct["verbas"]}[campo]
+
+    def test_trct_63_e_70_mostram_os_avos_de_cada_rubrica(self):
+        """63 só com os avos do proporcional e 70 com os do aviso (30 dias de
+        aviso a partir de 30/11: 11 avos + 1)."""
+        payslip = self._rescisao_aviso(date(2025, 7, 1), date(2026, 11, 30))
+        trct = self._trct(payslip)
+        self.assertEqual(self._detalhe(trct, "63"), "11/12 avos")
+        self.assertEqual(self._detalhe(trct, "70"), "1/12 avos")
+        self.assertAlmostEqual(
+            self._valor(trct, "verbas", "63"),
+            self._linha(payslip, "DECIMO_RESCISAO"),
+            places=2,
+        )
+        self.assertAlmostEqual(
+            self._valor(trct, "verbas", "70"),
+            self._linha(payslip, "DECIMO_AVISO_INDENIZADO"),
+            places=2,
+        )
+        self.assertGreater(self._valor(trct, "verbas", "70"), 0)
+
+    def test_trct_aviso_de_90_dias_com_dispensa_em_31_12(self):
+        """Aviso de 90 dias: o 63 nunca passa de 12/12 e o 70 leva os 3 avos
+        de janeiro a março."""
+        payslip = self._rescisao_aviso(date(2006, 1, 1), date(2026, 12, 31))
+        trct = self._trct(payslip)
+        self.assertEqual(self._detalhe(trct, "63"), "12/12 avos")
+        self.assertEqual(self._detalhe(trct, "70"), "3/12 avos")
+        self.assertAlmostEqual(self._valor(trct, "verbas", "63"), 2000.00, places=2)
+        self.assertAlmostEqual(self._valor(trct, "verbas", "70"), 500.00, places=2)
+
+    def test_trct_70_sem_valor_nao_mostra_avos(self):
+        """Sem 13º do aviso (aviso trabalhado) o 70 fica em branco."""
+        payslip = self._rescisao_sem_justa_causa()
+        payslip.write({"l10n_br_aviso_previo": "trabalhado"})
+        payslip.compute_sheet()
+        trct = self._trct(payslip)
+        self.assertEqual(self._valor(trct, "verbas", "70"), 0.0)
+        self.assertFalse(self._detalhe(trct, "70"))
+
+    def test_trct_holerite_calculado_antes_da_rubrica_do_aviso(self):
+        """Holerite calculado na 1.10.0 (sem DECIMO_AVISO_INDENIZADO, com o 13º
+        inteiro no DECIMO_RESCISAO): o 63 mostra os avos totais e o 70 fica em
+        branco."""
+        payslip = self._rescisao_aviso(date(2025, 7, 1), date(2026, 11, 30))
+        avos_totais = payslip.l10n_br_avos_13
+        aviso = payslip.line_ids.filtered(
+            lambda ln: ln.code == "DECIMO_AVISO_INDENIZADO"
+        )
+        decimo = payslip.line_ids.filtered(lambda ln: ln.code == "DECIMO_RESCISAO")
+        self.assertTrue(aviso)
+        inteiro = decimo.total + aviso.total
+        decimo.write({"amount": inteiro})
+        aviso.unlink()
+        trct = self._trct(payslip)
+        self.assertEqual(self._detalhe(trct, "63"), f"{avos_totais}/12 avos")
+        self.assertEqual(avos_totais, 12)
+        self.assertAlmostEqual(self._valor(trct, "verbas", "63"), inteiro, places=2)
+        self.assertEqual(self._valor(trct, "verbas", "70"), 0.0)
+        self.assertFalse(self._detalhe(trct, "70"))

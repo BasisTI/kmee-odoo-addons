@@ -115,7 +115,7 @@ class ReportHolerite(models.AbstractModel):
         rotulo_fgts = "Base FGTS"
         if estrutura == "RESCISAO":
             quitado = slip._l10n_br_decimo_pago_ano(contrato)["quitado"]
-            decimo = v("DECIMO_RESCISAO") + quitado
+            decimo = v("DECIMO_RESCISAO", "DECIMO_AVISO_INDENIZADO") + quitado
             bases.append(("Sal. contribuição INSS", v("SALDO_SALARIO")))
             bases.append(("Base INSS 13º", decimo))
             # O FGTS das parcelas do 13º já pagas foi recolhido na competência

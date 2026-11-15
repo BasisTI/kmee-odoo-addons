@@ -133,12 +133,13 @@ ESTRUTURA_RESCISAO = "RESCISAO"
 CAMPO_OUTRAS_VERBAS = "95"
 CAMPO_OUTROS_DESCONTOS = "115"
 
-# Rubrica da rescisão -> campo do anexo. O 13º do aviso indenizado (campo 70)
-# ainda vem dentro de ``DECIMO_RESCISAO`` (TG-136): sai inteiro no 63.
+# Rubrica da rescisão -> campo do anexo. O 13º sobre o aviso indenizado
+# (``DECIMO_AVISO_INDENIZADO``, TG-136) tem campo próprio, o 70.
 CAMPOS_VERBAS = {
     "SALDO_SALARIO": "50",
     "INDENIZACAO_ART_479": "61",
     "DECIMO_RESCISAO": "63",
+    "DECIMO_AVISO_INDENIZADO": "70",
     "FERIAS_INDENIZADAS": "65",
     "FERIAS_VENCIDAS": "66.1",
     "ADICIONAL_FERIAS_INDENIZADAS": "68",
@@ -319,10 +320,24 @@ class ReportTermoRescisao(models.AbstractModel):
             CAMPOS_DESCONTOS,
             CAMPO_OUTROS_DESCONTOS,
         )
+        # TG-136: o 63 mostra só os avos do 13º proporcional quando o holerite
+        # tem a rubrica do aviso (os que o aviso projeta aparecem no 70). Um
+        # holerite calculado antes da 1.11.0 não a tem: o DECIMO_RESCISAO
+        # carrega o 13º inteiro e o 63 mostra os avos totais.
+        tem_rubrica_aviso = any(
+            ln.code == "DECIMO_AVISO_INDENIZADO" for ln in slip.line_ids
+        )
+        avos_63 = (
+            slip.l10n_br_avos_13_proporcional
+            if tem_rubrica_aviso
+            else slip.l10n_br_avos_13
+        )
         detalhes = {
-            "63": f"{slip.l10n_br_avos_13}/12 avos",
+            "63": f"{avos_63}/12 avos",
             "65": f"{slip.l10n_br_avos_ferias}/12 avos",
         }
+        if tem_rubrica_aviso and verbas.get("70"):
+            detalhes["70"] = f"{slip.l10n_br_avos_13_aviso}/12 avos"
         periodos = [
             f"{d['inicio']:%d/%m/%Y} a {d['fim']:%d/%m/%Y}"
             for d in slip._l10n_br_ferias_vencidas_dados()

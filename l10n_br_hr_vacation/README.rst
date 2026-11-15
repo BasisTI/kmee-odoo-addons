@@ -242,6 +242,30 @@ antes de 15/12 com a 2ª parcela pagando 12 avos), a rescisão cobra o excesso:
 Mesma integridade entre holerites: a rescisão aberta recalcula quando a 2ª
 parcela muda; a confirmada recusa.
 
+13º sobre o aviso prévio indenizado (TG-136)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Na rescisão com aviso indenizado, o 13º sai em duas rubricas:
+
+* ``DECIMO_RESCISAO``: os avos do 13º proporcional, até a data do desligamento (regra
+  dos 15 dias, no máximo 12). eSocial natureza 6002; campo 63 do TRCT.
+* ``DECIMO_AVISO_INDENIZADO``: os avos que o aviso projeta (Súmula 371 do TST),
+  inclusive os do ano seguinte, cada ano com a regra dos 15 dias. eSocial natureza
+  6001; campo 70 do TRCT. Só existe quando o aviso acrescenta avos.
+
+INSS, IRRF, pensão e FGTS do 13º seguem calculados sobre o 13º devido total (as duas
+rubricas), e o total pago é o mesmo de antes da separação. Exemplo: salário de
+2.000,00, admissão em 01/07/2025, dispensa em 13/12/2026 com aviso até 15/01/2027:
+11 avos de proporcional (1.833,34) mais 2 do aviso (333,33), 13 avos no total
+(2.166,67). Cada rubrica sai pelos próprios avos e o centavo de arredondamento fica no
+proporcional. Com a 2ª parcela já paga, ela abate primeiro o proporcional e depois a
+rubrica do aviso. O cadastro da natureza de cada rubrica no eSocial é feito na regra
+salarial (as naturezas 6001 e 6002 e o campo 70 da rescisória já existem no módulo
+``l10n_br_esocial``). Em bancos instalados, a migração 18.0.1.11.0 troca a fórmula do
+``DECIMO_RESCISAO`` e o líquido, e liga a rubrica nova à estrutura, só se estiverem
+como na 1.10.0; regra personalizada fica como está, com aviso no log. Holerites já
+calculados não mudam.
+
 Bug Tracker
 ===========
 

@@ -84,6 +84,7 @@
             eval="[(6, 0, [
                 ref('hr_rule_saldo_salario'),
                 ref('hr_rule_decimo_rescisao'),
+                ref('hr_rule_decimo_aviso_indenizado'),
                 ref('hr_rule_ferias_indenizadas'),
                 ref('hr_rule_adicional_ferias_indenizadas'),
                 ref('hr_rule_ferias_vencidas'),

@@ -164,7 +164,10 @@ class TestTRCTSemJustaCausa(VacationCommon):
 
         base_com_media = self.wage + self.media
         decimo_esperado = round_money(base_com_media * avos_esperado / 12)
-        self.assertAlmostEqualMoney(self.g("DECIMO_RESCISAO"), decimo_esperado)
+        self.assertAlmostEqualMoney(
+            (self.g("DECIMO_RESCISAO") + self.g("DECIMO_AVISO_INDENIZADO")),
+            decimo_esperado,
+        )
 
     def test_05_ferias_proporcionais_indenizadas(self):
         """Férias proporcionais (avos do período em curso, já projetado)."""
@@ -180,7 +183,7 @@ class TestTRCTSemJustaCausa(VacationCommon):
         inss = self.g("INSS")
         inss_13 = self.g("INSS_13")
         saldo = self.g("SALDO_SALARIO")
-        decimo = self.g("DECIMO_RESCISAO")
+        decimo = self.g("DECIMO_RESCISAO") + self.g("DECIMO_AVISO_INDENIZADO")
         self.assertAlmostEqualMoney(inss, calc_inss(saldo, self._tabela_inss()))
         self.assertAlmostEqualMoney(inss_13, calc_inss(decimo, self._tabela_inss()))
 
@@ -240,6 +243,7 @@ class TestTRCTSemJustaCausa(VacationCommon):
         esperado = (
             g("SALDO_SALARIO")
             + g("DECIMO_RESCISAO")
+            + g("DECIMO_AVISO_INDENIZADO")
             + g("FERIAS_INDENIZADAS")
             + g("ADICIONAL_FERIAS_INDENIZADAS")
             + g("FERIAS_VENCIDAS")

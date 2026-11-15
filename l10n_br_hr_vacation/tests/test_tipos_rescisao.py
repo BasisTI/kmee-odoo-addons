@@ -91,7 +91,10 @@ class TestTiposRescisao(VacationCommon):
         self.assertEqual(self._g(r, "AVISO_PREVIO_INDENIZADO"), 0)
         self.assertEqual(self._g(r, "FGTS_AVISO"), 0)
         # Sem projeção do aviso: 9 avos.
-        self.assertAlmostEqualMoney(self._g(r, "DECIMO_RESCISAO"), 2250.00)
+        self.assertAlmostEqualMoney(
+            (self._g(r, "DECIMO_RESCISAO") + self._g(r, "DECIMO_AVISO_INDENIZADO")),
+            2250.00,
+        )
 
     # ── culpa recíproca (art. 484 CLT; Súmula 14 TST) ──────────────────
 
@@ -99,7 +102,10 @@ class TestTiposRescisao(VacationCommon):
         r = self._rescisao("culpa_reciproca", "indenizado")
         self.assertAlmostEqualMoney(self._g(r, "AVISO_PREVIO_INDENIZADO"), 1500.00)
         # 10 avos (aviso projetado) x 50%.
-        self.assertAlmostEqualMoney(self._g(r, "DECIMO_RESCISAO"), 1250.00)
+        self.assertAlmostEqualMoney(
+            (self._g(r, "DECIMO_RESCISAO") + self._g(r, "DECIMO_AVISO_INDENIZADO")),
+            1250.00,
+        )
         self.assertAlmostEqualMoney(self._g(r, "FERIAS_INDENIZADAS"), 1250.00)
         self.assertAlmostEqualMoney(
             self._g(r, "ADICIONAL_FERIAS_INDENIZADAS"), round(1250.00 / 3, 2)
@@ -113,7 +119,10 @@ class TestTiposRescisao(VacationCommon):
     def test_forca_maior_multa_20_sem_aviso(self):
         r = self._rescisao("forca_maior", "indenizado")
         self.assertEqual(self._g(r, "AVISO_PREVIO_INDENIZADO"), 0)
-        self.assertAlmostEqualMoney(self._g(r, "DECIMO_RESCISAO"), 2250.00)
+        self.assertAlmostEqualMoney(
+            (self._g(r, "DECIMO_RESCISAO") + self._g(r, "DECIMO_AVISO_INDENIZADO")),
+            2250.00,
+        )
         self.assertAlmostEqualMoney(self._g(r, "FERIAS_INDENIZADAS"), 2250.00)
         self.assertAlmostEqualMoney(
             self._g(r, "MULTA_FGTS"), self._multa_esperada(r, 0.20)
@@ -124,7 +133,10 @@ class TestTiposRescisao(VacationCommon):
     def test_acordo_metade_do_aviso_e_multa_20(self):
         r = self._rescisao("acordo", "indenizado")
         self.assertAlmostEqualMoney(self._g(r, "AVISO_PREVIO_INDENIZADO"), 1500.00)
-        self.assertAlmostEqualMoney(self._g(r, "DECIMO_RESCISAO"), 2500.00)
+        self.assertAlmostEqualMoney(
+            (self._g(r, "DECIMO_RESCISAO") + self._g(r, "DECIMO_AVISO_INDENIZADO")),
+            2500.00,
+        )
         self.assertAlmostEqualMoney(
             self._g(r, "MULTA_FGTS"), self._multa_esperada(r, 0.20)
         )
@@ -150,7 +162,10 @@ class TestTiposRescisao(VacationCommon):
             "DESCONTO_ART_480",
         ):
             self.assertEqual(self._g(r, code), 0, code)
-        self.assertAlmostEqualMoney(self._g(r, "DECIMO_RESCISAO"), 2250.00)
+        self.assertAlmostEqualMoney(
+            (self._g(r, "DECIMO_RESCISAO") + self._g(r, "DECIMO_AVISO_INDENIZADO")),
+            2250.00,
+        )
         self.assertAlmostEqualMoney(self._g(r, "FERIAS_INDENIZADAS"), 2250.00)
 
     def test_antecipado_empregador_art_479_e_multa_40(self):
