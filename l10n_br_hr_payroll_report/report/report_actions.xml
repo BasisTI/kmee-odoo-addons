@@ -49,7 +49,7 @@
         </field>
         <field
             name="groups_id"
-            eval="[(6, 0, [ref('hr_holidays.group_hr_holidays_user'), ref('payroll.group_payroll_user')])]"
+            eval="[(6, 0, [ref('hr_holidays.group_hr_holidays_user')])]"
         />
         <field name="binding_model_id" ref="hr_holidays.model_hr_leave" />
         <field name="binding_type">report</field>

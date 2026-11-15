@@ -21,11 +21,11 @@ from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
 DIAS_ANTECEDENCIA_AVISO = 30
 # CLT art. 145: o pagamento é feito até 2 dias antes do início do período.
 DIAS_ANTECEDENCIA_PAGAMENTO = 2
-# Quem emite o aviso (ato do empregador): gestão de ausências ou folha.
-GRUPOS_EMISSAO_AVISO = (
-    "hr_holidays.group_hr_holidays_user",
-    "payroll.group_payroll_user",
-)
+# Quem emite o aviso (gestão de ausências): Ausências: Oficial ou superior, o
+# mesmo grupo que o Odoo exige para ver as ausências de outros empregados. A
+# folha, sem esse grupo, não emite: não há regra nem ``sudo`` que lhe abra
+# ``hr.leave``.
+GRUPOS_EMISSAO_AVISO = ("hr_holidays.group_hr_holidays_user",)
 # Sem calendário no contrato, segunda a sexta.
 SEMANA_UTIL_PADRAO = {0, 1, 2, 3, 4}
 
@@ -231,9 +231,6 @@ class ReportAvisoFerias(models.AbstractModel):
 
     @api.model
     def _get_report_values(self, docids, data=None):
-        # Grupo e empresa conferidos antes de ler qualquer coisa; só então a
-        # ausência vai para ``sudo``: a folha não lê ``hr.leave`` (a regra de
-        # acesso é do empregado e do Ausências: Oficial).
         docs = self._ausencias_emissao(docids)
         return {
             "doc_ids": docids,
@@ -244,26 +241,27 @@ class ReportAvisoFerias(models.AbstractModel):
 
     @api.model
     def _ausencias_emissao(self, docids):
+        """Ausências a avisar, lidas com os direitos de quem emite."""
         self._verificar_grupo()
-        ausencias = self.env["hr.leave"].sudo().browse(docids).exists()
+        ausencias = self.env["hr.leave"].browse(docids).exists()
         self._verificar_empresa(ausencias)
         return ausencias
 
     @api.model
     def _verificar_grupo(self):
-        """Só gestão de ausências ou da folha emite o aviso.
+        """Só quem é Ausências: Oficial (ou superior) emite o aviso.
 
-        Emitir grava a data de comunicação e lê holerites e contrato com
-        ``sudo``: o empregado, que não tem esses acessos, não pode imprimir o
-        aviso da própria ausência. Chamada de sistema (``sudo``) passa.
+        Emitir grava a data de comunicação e busca holerites e contrato com
+        ``sudo``: o empregado e a folha sem esse grupo não emitem. Chamada de
+        sistema (``sudo``) passa.
         """
         if not self.env.su and not any(
             self.env.user.has_group(grupo) for grupo in GRUPOS_EMISSAO_AVISO
         ):
             raise AccessError(
                 _(
-                    "O aviso de férias é emitido pelo empregador: é preciso ser "
-                    "gestor de ausências ou da folha."
+                    "O aviso de férias é emitido pela gestão de ausências: é "
+                    "preciso ser Ausências: Oficial ou superior."
                 )
             )
 

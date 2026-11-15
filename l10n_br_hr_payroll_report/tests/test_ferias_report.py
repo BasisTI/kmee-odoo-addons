@@ -489,28 +489,44 @@ class TestReciboAvisoFerias(PayrollCommon):
             self.assertIn("AVISO DE FÉRIAS", html)
         return dados
 
-    def test_folha_emite_o_aviso_sem_ler_a_ausencia(self):
-        """O DP não lê ``hr.leave`` (regra do empregado): emite pela leitura com sudo."""
+    def test_oficial_de_ausencias_emite_o_aviso(self):
+        """Ausências: Oficial emite, por dados e PDF, com o cache limpo."""
         emp, _contract, _alloc = self._contrato()
         leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
-        folha = self._usuario("folha_tg99", ["payroll.group_payroll_user"])
-        self.assertEqual(self._emite_como(folha, leave)["dias"], 20)
-
-    def test_gestor_da_folha_do_poc_emite_o_aviso(self):
-        """Perfil dp do POC: gestor da folha e usuário de RH, sem Ausências."""
-        emp, _contract, _alloc = self._contrato()
-        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
-        dp = self._usuario(
-            "dp_tg99", ["payroll.group_payroll_manager", "hr.group_hr_user"]
-        )
-        self.assertEqual(self._emite_como(dp, leave)["dias"], 20)
+        oficial = self._usuario("oficial_tg99", ["hr_holidays.group_hr_holidays_user"])
+        self.assertEqual(self._emite_como(oficial, leave)["dias"], 20)
         self.assertEqual(leave.l10n_br_aviso_ferias_data, date(2025, 2, 1))
+
+    def test_folha_sem_o_grupo_de_ausencias_nao_emite(self):
+        """A folha (usuário, gestor e perfil dp) não ganha acesso a ``hr.leave``."""
+        emp, _contract, _alloc = self._contrato()
+        leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
+        perfis = {
+            "folha_user_tg99": ["payroll.group_payroll_user"],
+            "folha_manager_tg99": ["payroll.group_payroll_manager"],
+            "dp_tg99": ["payroll.group_payroll_manager", "hr.group_hr_user"],
+        }
+        for login, grupos in perfis.items():
+            usuario = self._usuario(login, grupos)
+            with self.assertRaises(AccessError, msg=login):
+                self._emite_como(usuario, leave, pdf=False)
+            report = self.env.ref(
+                "l10n_br_hr_payroll_report.action_report_aviso_ferias"
+            )
+            self.env.invalidate_all()
+            with self.assertRaises(AccessError, msg=login):
+                self.env["ir.actions.report"].with_user(usuario)._render_qweb_html(
+                    report.id, leave.ids
+                )
+        self.assertFalse(leave.l10n_br_aviso_ferias_data)
 
     def test_folha_de_outra_empresa_nao_emite(self):
         emp, _contract, _alloc = self._contrato()
         leave = self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))
         outra = self.env["res.company"].create({"name": "Outra empresa TG-99"})
-        folha = self._usuario("folha_outra_tg99", ["payroll.group_payroll_user"])
+        folha = self._usuario(
+            "oficial_outra_tg99", ["hr_holidays.group_hr_holidays_user"]
+        )
         folha.company_ids = [(4, outra.id)]
         self.env.invalidate_all()
         modelo = self.modelo_aviso.with_user(folha).with_context(
@@ -526,20 +542,21 @@ class TestReciboAvisoFerias(PayrollCommon):
         report = self.env.ref("l10n_br_hr_payroll_report.action_report_aviso_ferias")
         self.assertEqual(
             set(report.groups_id.ids),
-            {
-                self.env.ref("hr_holidays.group_hr_holidays_user").id,
-                self.env.ref("payroll.group_payroll_user").id,
-            },
+            {self.env.ref("hr_holidays.group_hr_holidays_user").id},
         )
         empregado = self._usuario("empregado_menu_tg99", ["base.group_user"])
         folha = self._usuario("folha_menu_tg99", ["payroll.group_payroll_user"])
+        oficial = self._usuario(
+            "oficial_menu_tg99", ["hr_holidays.group_hr_holidays_user"]
+        )
 
         def ids(usuario):
             acoes = self.env["ir.actions.actions"].with_user(usuario)
             return {a["id"] for a in acoes.get_bindings("hr.leave").get("report", [])}
 
         self.assertNotIn(report.id, ids(empregado))
-        self.assertIn(report.id, ids(folha))
+        self.assertNotIn(report.id, ids(folha))
+        self.assertIn(report.id, ids(oficial))
 
     def test_ausencia_dividida_herda_a_comunicacao(self):
         """As peças nascem com a data e o período avisados: sem alerta à toa."""
