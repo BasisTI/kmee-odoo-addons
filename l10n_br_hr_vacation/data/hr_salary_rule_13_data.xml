@@ -336,8 +336,42 @@ result = payslip._l10n_br_fator_rescisao('decimo') > 0
 # não entra aqui: sai como desconto próprio (ADIANTAMENTO_13). O que a 2ª
 # parcela pagou ALÉM do devido não vira valor negativo: sai como desconto
 # (DESCONTO_13_EXCESSO, TG-141).
+# TG-136: só os avos do 13º proporcional (até a data do desligamento); o que o
+# aviso indenizado projeta vai em DECIMO_AVISO_INDENIZADO.
 quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
-result = max(DECIMO_DEVIDO - quitado, 0.0)
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+fator = payslip._l10n_br_fator_rescisao('decimo')
+proporcional = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract)) * payslip.l10n_br_avos_13_proporcional / 12 * fator)
+result = max(min(proporcional, DECIMO_DEVIDO) - quitado, 0.0)
+        </field>
+    </record>
+
+    <!-- TG-136: 13º sobre o aviso prévio indenizado (natureza 6001 do eSocial,
+         campo 70 do TRCT), separado do 13º proporcional (6002, campo 63).
+         Paga os avos que o aviso projeta (Súmula 371 TST), inclusive os do ano
+         seguinte. INSS, IRRF, pensão e FGTS do 13º seguem calculados sobre o
+         13º devido total (DECIMO_DEVIDO). O que a 2ª parcela já pagou abate
+         primeiro o proporcional e só depois esta rubrica: o total pago é o de
+         antes da separação. -->
+    <record id="hr_rule_decimo_aviso_indenizado" model="hr.salary.rule">
+        <field name="name">13º Salário sobre o Aviso Prévio Indenizado</field>
+        <field name="sequence" eval="6" />
+        <field name="code">DECIMO_AVISO_INDENIZADO</field>
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_alw"
+        />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = (
+    payslip._l10n_br_fator_rescisao('decimo') > 0
+    and payslip.l10n_br_avos_13_aviso > 0
+)
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+quitado = payslip._l10n_br_decimo_pago_ano(contract)['quitado']
+result = max(max(DECIMO_DEVIDO - quitado, 0.0) - DECIMO_RESCISAO, 0.0)
         </field>
     </record>
 </odoo>

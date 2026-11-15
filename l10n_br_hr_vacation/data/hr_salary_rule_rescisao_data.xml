@@ -307,7 +307,7 @@ devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
 # para o conjunto das compensações (art. 477, §5º). O que não couber vai à
 # linha informativa NAO_DESCONTADO_ART_480.
 disponivel = (
-    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    SALDO_SALARIO + DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + FERIAS_INDENIZADAS
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
@@ -346,7 +346,7 @@ result = payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'] &gt; 0
         <field name="amount_python_compute">
 adiantamento = tools.br.round_money(payslip._l10n_br_decimo_pago_ano(contract)['adiantamento'])
 disponivel = (
-    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    SALDO_SALARIO + DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + FERIAS_INDENIZADAS
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
@@ -403,7 +403,7 @@ devido = tools.br.round_money(remuneracao)
 # 477, §5º): desconta só o que sobra dos créditos depois dos descontos
 # obrigatórios. O restante vai à linha informativa NAO_DESCONTADO_AVISO_PREVIO.
 disponivel = (
-    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    SALDO_SALARIO + DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + FERIAS_INDENIZADAS
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
@@ -502,7 +502,7 @@ media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract)
 compensado = ADIANTAMENTO_13 + DESCONTO_AVISO_PREVIO + DESCONTO_ART_480
 disponivel = (
-    SALDO_SALARIO + DECIMO_RESCISAO + FERIAS_INDENIZADAS
+    SALDO_SALARIO + DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + FERIAS_INDENIZADAS
     + ADICIONAL_FERIAS_INDENIZADAS + FERIAS_VENCIDAS + ADICIONAL_FERIAS_VENCIDAS
     + AVISO_PREVIO_INDENIZADO + INDENIZACAO_ART_479
     - INSS - INSS_13 - IRRF - IRRF_13 - PENSAO_ALIMENTICIA - PENSAO_ALIMENTICIA_13
@@ -996,6 +996,7 @@ result = tools.br.round_money((saldo + depositos) * percentual)
 result = (
     SALDO_SALARIO
     + DECIMO_RESCISAO
+    + DECIMO_AVISO_INDENIZADO
     + FERIAS_INDENIZADAS
     + ADICIONAL_FERIAS_INDENIZADAS
     + FERIAS_VENCIDAS

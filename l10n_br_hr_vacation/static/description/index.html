@@ -374,11 +374,14 @@ ul.auto-toc {
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">
-<li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a></li>
-<li><a class="reference internal" href="#bug-tracker" id="toc-entry-2">Bug Tracker</a></li>
-<li><a class="reference internal" href="#credits" id="toc-entry-3">Credits</a><ul>
-<li><a class="reference internal" href="#authors" id="toc-entry-4">Authors</a></li>
-<li><a class="reference internal" href="#maintainers" id="toc-entry-5">Maintainers</a></li>
+<li><a class="reference internal" href="#usage" id="toc-entry-1">Usage</a><ul>
+<li><a class="reference internal" href="#o-sobre-o-aviso-previo-indenizado-tg-136" id="toc-entry-2">13º sobre o aviso prévio indenizado (TG-136)</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#bug-tracker" id="toc-entry-3">Bug Tracker</a></li>
+<li><a class="reference internal" href="#credits" id="toc-entry-4">Credits</a><ul>
+<li><a class="reference internal" href="#authors" id="toc-entry-5">Authors</a></li>
+<li><a class="reference internal" href="#maintainers" id="toc-entry-6">Maintainers</a></li>
 </ul>
 </li>
 </ul>
@@ -572,9 +575,31 @@ na base da multa.</li>
 </ul>
 <p>Mesma integridade entre holerites: a rescisão aberta recalcula quando a 2ª
 parcela muda; a confirmada recusa.</p>
+<div class="section" id="o-sobre-o-aviso-previo-indenizado-tg-136">
+<h2><a class="toc-backref" href="#toc-entry-2">13º sobre o aviso prévio indenizado (TG-136)</a></h2>
+<p>Na rescisão com aviso indenizado, o 13º sai em duas rubricas:</p>
+<ul class="simple">
+<li><tt class="docutils literal">DECIMO_RESCISAO</tt>: os avos do 13º proporcional, até a data do desligamento (regra
+dos 15 dias, no máximo 12). eSocial natureza 6002; campo 63 do TRCT.</li>
+<li><tt class="docutils literal">DECIMO_AVISO_INDENIZADO</tt>: os avos que o aviso projeta (Súmula 371 do TST),
+inclusive os do ano seguinte, cada ano com a regra dos 15 dias. eSocial natureza
+6001; campo 70 do TRCT. Só existe quando o aviso acrescenta avos.</li>
+</ul>
+<p>INSS, IRRF, pensão e FGTS do 13º seguem calculados sobre o 13º devido total (as duas
+rubricas), e o total pago é o mesmo de antes da separação. Exemplo: salário de
+2.000,00, admissão em 01/07/2025, dispensa em 13/12/2026 com aviso até 15/01/2027:
+11 avos de proporcional (1.833,33) mais 2 do aviso (333,34), 13 avos no total
+(2.166,67). Com a 2ª parcela já paga, ela abate primeiro o proporcional e depois a
+rubrica do aviso. O cadastro da natureza de cada rubrica no eSocial é feito na regra
+salarial (as naturezas 6001 e 6002 e o campo 70 da rescisória já existem no módulo
+<tt class="docutils literal">l10n_br_esocial</tt>). Em bancos instalados, a migração 18.0.1.11.0 troca a fórmula do
+<tt class="docutils literal">DECIMO_RESCISAO</tt> e o líquido, e liga a rubrica nova à estrutura, só se estiverem
+como na 1.10.0; regra personalizada fica como está, com aviso no log. Holerites já
+calculados não mudam.</p>
+</div>
 </div>
 <div class="section" id="bug-tracker">
-<h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-3">Bug Tracker</a></h1>
 <p>Bugs are tracked on <a class="reference external" href="https://github.com/KMEE/kmee-odoo-addons/issues">GitHub Issues</a>.
 In case of trouble, please check there if your issue has already been reported.
 If you spotted it first, help us to smash it by providing a detailed and welcomed
@@ -582,15 +607,15 @@ If you spotted it first, help us to smash it by providing a detailed and welcome
 <p>Do not contact contributors directly about support or help with technical issues.</p>
 </div>
 <div class="section" id="credits">
-<h1><a class="toc-backref" href="#toc-entry-3">Credits</a></h1>
+<h1><a class="toc-backref" href="#toc-entry-4">Credits</a></h1>
 <div class="section" id="authors">
-<h2><a class="toc-backref" href="#toc-entry-4">Authors</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-5">Authors</a></h2>
 <ul class="simple">
 <li>KMEE</li>
 </ul>
 </div>
 <div class="section" id="maintainers">
-<h2><a class="toc-backref" href="#toc-entry-5">Maintainers</a></h2>
+<h2><a class="toc-backref" href="#toc-entry-6">Maintainers</a></h2>
 <p>This module is part of the <a class="reference external" href="https://github.com/KMEE/kmee-odoo-addons/tree/18.0/l10n_br_hr_vacation">KMEE/kmee-odoo-addons</a> project on GitHub.</p>
 <p>You are welcome to contribute.</p>
 </div>

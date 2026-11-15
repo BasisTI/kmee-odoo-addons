@@ -158,7 +158,13 @@ class TestDecimoExcessoRescisao(VacationCommon):
         segunda = self._segunda_parcela(emp, contract, primeira=1500.00)
         self.assertAlmostEqualMoney(self._g(segunda, "DECIMO_TERCEIRO_BRUTO"), 3000.00)
         resc = self._rescisao(emp, contract, date(2026, 12, 22), "justa_causa")
-        self.assertEqual(self._g(resc, "DECIMO_RESCISAO"), 0.0)
+        self.assertEqual(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            0.0,
+        )
         self.assertEqual(self._g(resc, "DECIMO_DEVIDO"), 0.0)
         # O devido é zero, mas o líquido limita o desconto: só volta o imposto
         # da parte descontada (exato, sobre o 13º que o empregado mantém).
@@ -208,7 +214,13 @@ class TestDecimoExcessoRescisao(VacationCommon):
         )
         self.assertAlmostEqualMoney(self._g(resc, "DECIMO_DEVIDO"), 2166.67)
         self.assertAlmostEqualMoney(self._g(ref, "INSS_13"), 170.69)
-        self.assertEqual(self._g(resc, "DECIMO_RESCISAO"), 0.0)
+        self.assertEqual(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            0.0,
+        )
         self.assertAlmostEqualMoney(self._g(resc, "DESCONTO_13_EXCESSO"), 1833.33)
         self.assertEqual(self._g(resc, "NAO_DESCONTADO_13_EXCESSO"), 0.0)
         # Retido na 2ª parcela (sobre 4.000,00) menos o devido (sobre 2.166,67):
@@ -239,7 +251,10 @@ class TestDecimoExcessoRescisao(VacationCommon):
         self.assertAlmostEqualMoney(
             self._g(resc, "NET"),
             self._g(ref, "NET")
-            - self._g(ref, "DECIMO_RESCISAO")
+            - (
+                self._g(ref, "DECIMO_RESCISAO")
+                + self._g(ref, "DECIMO_AVISO_INDENIZADO")
+            )
             + self._g(ref, "INSS_13")
             + self._g(ref, "IRRF_13")
             + self._devolucao(resc)
@@ -254,7 +269,13 @@ class TestDecimoExcessoRescisao(VacationCommon):
         resc = self._rescisao(emp, contract, date(2026, 12, 10), "pedido_demissao")
         self.assertEqual(resc.l10n_br_avos_13, 11)
         self.assertAlmostEqualMoney(self._g(resc, "DECIMO_DEVIDO"), 2750.00)
-        self.assertEqual(self._g(resc, "DECIMO_RESCISAO"), 0.0)
+        self.assertEqual(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            0.0,
+        )
         self.assertAlmostEqualMoney(self._g(resc, "DESCONTO_13_EXCESSO"), 250.00)
         self.assertEqual(self._g(resc, "NAO_DESCONTADO_13_EXCESSO"), 0.0)
         self.assertGreater(self._devolucao(resc), 0.0)
@@ -297,7 +318,13 @@ class TestDecimoExcessoRescisao(VacationCommon):
             "sem_justa_causa",
             l10n_br_aviso_previo="indenizado",
         )
-        self.assertAlmostEqualMoney(self._g(resc, "DECIMO_RESCISAO"), 166.67)
+        self.assertAlmostEqualMoney(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            166.67,
+        )
         for codigo in (
             "DESCONTO_13_EXCESSO",
             "NAO_DESCONTADO_13_EXCESSO",
@@ -338,10 +365,22 @@ class TestDecimoExcessoRescisao(VacationCommon):
         segunda = self._segunda_parcela(emp, contract, confirmar=False)
         resc = self._rescisao(emp, contract, date(2026, 12, 10), "pedido_demissao")
         self.assertEqual(self._g(resc, "DESCONTO_13_EXCESSO"), 0.0)
-        self.assertAlmostEqualMoney(self._g(resc, "DECIMO_RESCISAO"), 2750.00)
+        self.assertAlmostEqualMoney(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            2750.00,
+        )
         segunda.action_payslip_done()
         self.assertAlmostEqualMoney(self._g(resc, "DESCONTO_13_EXCESSO"), 250.00)
-        self.assertEqual(self._g(resc, "DECIMO_RESCISAO"), 0.0)
+        self.assertEqual(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            0.0,
+        )
 
     def test_estorno_da_segunda_parcela_tira_o_desconto_da_rescisao_aberta(self):
         emp, contract = self._contrato("excesso estorno")
@@ -351,7 +390,13 @@ class TestDecimoExcessoRescisao(VacationCommon):
         segunda.refund_sheet()
         self.assertEqual(self._g(resc, "DESCONTO_13_EXCESSO"), 0.0)
         self.assertEqual(self._devolucao(resc), 0.0)
-        self.assertAlmostEqualMoney(self._g(resc, "DECIMO_RESCISAO"), 2750.00)
+        self.assertAlmostEqualMoney(
+            (
+                self._g(resc, "DECIMO_RESCISAO")
+                + self._g(resc, "DECIMO_AVISO_INDENIZADO")
+            ),
+            2750.00,
+        )
 
     def test_rescisao_confirmada_recusa_mudar_a_segunda_parcela(self):
         emp, contract = self._contrato("excesso confirmada")
