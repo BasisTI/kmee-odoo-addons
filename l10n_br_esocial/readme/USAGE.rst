@@ -237,9 +237,11 @@ tela do evento e no log): nada com valor some em silêncio. A multa do FGTS
 isso não entra no ``verbasResc``. Rescisão que não está confirmada, e os
 ``mtvDeslig`` para os quais o leiaute proíbe o grupo (11, 12, 13, 25, 28, 29,
 30, 34, 36, 43 e 44), não geram ``verbasResc``. ``pensAlim`` (obrigatório para o
-celetista) sai sempre: 0 sem pensão, e 1, 2 ou 3 com ``percAliment`` e/ou
-``vrAlim`` conforme a pensão que a folha desconta do empregado (valor fixo e
-percentual no cadastro do empregado). ``dtAvPrv`` sai quando a rescisão tem a
+celetista) sai sempre 0, sem ``percAliment`` nem ``vrAlim``: o grupo é a retenção
+da pensão sobre o saldo do FGTS (MOS S-1.3, S-2299 item 5, p. 281-282), e a
+pensão que a folha desconta do empregado tem outra base e não entra. Limite
+conhecido: a retenção sobre o FGTS não é declarada até existir campo próprio
+para ela (o TRCT também deixa o campo 29 em branco). ``dtAvPrv`` sai quando a rescisão tem a
 *Data da Concessão do Aviso Prévio* (campo opcional do módulo de rescisão; entre
 a admissão e o desligamento). O S-2299 de uma rescisão não se gera duas vezes:
 para regerar, desfaça o anterior: evento aceito se exclui por S-3000; evento

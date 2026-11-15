@@ -1489,40 +1489,33 @@ class TestS2299(TestESocialIntermediarioBase):
         self.assertNotIn("perc_aliment", data)
         self.assertNotIn("vr_alim", data)
 
-    def test_s2299_item4_pens_alim_percentual_valor_e_ambos(self):
+    def test_s2299_item4_pensao_da_folha_nao_vira_pens_alim(self):
+        """TG-137#P1: a pensão da folha (P024: 20% da remuneração) não é retenção
+        sobre o saldo do FGTS; ``pensAlim`` é sempre 0."""
         s2299 = self._s2299_rescisao(payslip_id=False)
-        casos = (
-            (0.0, 30.0, 1, 30.0, None),
-            (500.0, 0.0, 2, None, 500.0),
-            (500.0, 10.0, 3, 10.0, 500.0),
-        )
-        for fixo, perc, esperado, p, v in casos:
+        casos = ((0.0, 20.0), (500.0, 0.0), (500.0, 10.0))
+        for fixo, perc in casos:
             self.employee.write(
                 {"l10n_br_pensao_alimenticia": fixo, "l10n_br_pensao_percentual": perc}
             )
             data = s2299._to_esociallib_dict()
-            self.assertEqual(data["pens_alim"], esperado)
-            self.assertEqual(data.get("perc_aliment"), p)
-            self.assertEqual(data.get("vr_alim"), v)
+            self.assertEqual(data["pens_alim"], 0)
+            self.assertNotIn("perc_aliment", data)
+            self.assertNotIn("vr_alim", data)
 
-    def test_s2299_item4_xml_leva_pens_alim_na_ordem_do_leiaute(self):
+    def test_s2299_item4_xml_com_pensao_na_folha_sai_pens_alim_0(self):
         if not HAS_ESOCIALLIB:
             self.skipTest("esociallib não instalada")
         self.employee.write(
-            {"l10n_br_pensao_alimenticia": 500.0, "l10n_br_pensao_percentual": 10.0}
+            {"l10n_br_pensao_alimenticia": 0.0, "l10n_br_pensao_percentual": 20.0}
         )
         s2299 = self._s2299_rescisao(payslip_id=False)
         with mute_logger(self.LOG_BASE):
             xml = s2299._gerar_xml()
-        raiz = etree.fromstring(xml.encode())
-        info = raiz.find(".//{*}infoDeslig")
-        nomes = [etree.QName(c).localname for c in info]
-        self.assertEqual(
-            nomes[-3:], ["pensAlim", "percAliment", "vrAlim"], "ordem do XSD"
-        )
-        self.assertEqual(info.findtext("{*}pensAlim"), "3")
-        self.assertEqual(info.findtext("{*}percAliment"), "10.0")
-        self.assertEqual(info.findtext("{*}vrAlim"), "500.0")
+        info = etree.fromstring(xml.encode()).find(".//{*}infoDeslig")
+        self.assertEqual(info.findtext("{*}pensAlim"), "0")
+        self.assertIsNone(info.find("{*}percAliment"))
+        self.assertIsNone(info.find("{*}vrAlim"))
 
     def _com_data_aviso(self, data):
         classe = self.env.registry["hr.payslip"]

@@ -130,28 +130,20 @@ class ESocialS2299(models.Model):
         return self.ind_pagto_api or "N", self.dt_proj_fim_api
 
     def _pens_alim(self):
-        """``pensAlim``, ``percAliment`` e ``vrAlim`` (retenção de FGTS).
+        """``pensAlim``: sempre 0 (sem retenção de FGTS para pensão alimentícia).
 
-        Leiaute S-1.3, ``evtDeslig.xsd``, infoDeslig/pensAlim: obrigatório e
-        exclusivo para o vínculo celetista (``tpRegTrab`` = 1 no S-2200, que o
-        módulo declara para todo vínculo). ``TS_pensAlim``: 0 sem pensão, 1
-        percentual, 2 valor, 3 percentual e valor; ``percAliment`` (maior que 0
-        e até 100) é obrigatório e exclusivo com 1 ou 3 e ``vrAlim`` (maior que
-        0) com 2 ou 3. A pensão é a mesma que a folha desconta: parcela fixa
-        e percentual da remuneração do empregado.
+        Leiaute S-1.3, ``evtDeslig.xsd``, infoDeslig/pensAlim, e MOS S-1.3
+        (S-2299, item 5, p. 281-282): o grupo informa a retenção da pensão
+        sobre o **saldo do FGTS**, obrigatório e exclusivo para o celetista
+        (``tpRegTrab`` = 1 no S-2200, que o módulo declara para todo vínculo).
+        A pensão que a folha desconta do empregado
+        (``l10n_br_pensao_percentual``/``l10n_br_pensao_alimenticia``) é sobre a
+        remuneração, outra base, e não entra aqui. Enquanto o cadastro não tiver
+        um campo próprio de retenção sobre o saldo do FGTS, a declaração é 0, o
+        mesmo que o TRCT deixa em branco no campo 29 (decisão TG-137#P1).
         """
         self.ensure_one()
-        employee = self.employee_id
-        valor = round(employee.l10n_br_pensao_alimenticia or 0.0, 2)
-        perc = round(employee.l10n_br_pensao_percentual or 0.0, 2)
-        dados = {"pens_alim": 0}
-        if perc > 0 and valor > 0:
-            dados.update(pens_alim=3, perc_aliment=perc, vr_alim=valor)
-        elif perc > 0:
-            dados.update(pens_alim=1, perc_aliment=perc)
-        elif valor > 0:
-            dados.update(pens_alim=2, vr_alim=valor)
-        return dados
+        return {"pens_alim": 0}
 
     def _data_aviso_previo(self):
         """``dtAvPrv``: data de concessão do aviso prévio, quando a folha a tem.
