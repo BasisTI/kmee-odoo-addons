@@ -23,3 +23,4 @@ from . import test_ferias_periodo_vencido
 from . import test_tipos_rescisao
 from . import test_decimo_excesso_rescisao
 from . import test_decimo_pago_rescisao
+from . import test_data_aviso_previo

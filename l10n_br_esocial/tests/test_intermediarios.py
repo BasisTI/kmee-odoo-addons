@@ -960,6 +960,17 @@ class TestS2299(TestESocialIntermediarioBase):
             for d in lot["det_verbas"]
         ]
 
+    def _xml_declarando(self, s2299, slips):
+        """XML mínimo do S-2299 com um ``dmDev`` por holerite declarado."""
+        dms = "".join(
+            "<dmDev><ideDmDev>%s</ideDmDev></dmDev>" % s2299.get_ide_dm_dev(slip)
+            for slip in slips
+        )
+        return (
+            "<eSocial><evtDeslig><infoDeslig><verbasResc>%s</verbasResc>"
+            "</infoDeslig></evtDeslig></eSocial>" % dms
+        )
+
     def test_s2299_verbas_rescisorias_levam_aviso_indenizado_e_reflexos(self):
         """TG-103: aviso, férias indenizadas, 13º e descontos saem em detVerbas."""
         s2299 = self._s2299_rescisao()
@@ -1094,7 +1105,12 @@ class TestS2299(TestESocialIntermediarioBase):
         # Sem S-2299 vigente, o holerite ainda não é do S-2299.
         self.assertFalse(mensal._esocial_s2299_declarante())
         s2299.evento_id = self.env["l10n_br.esocial.evento"].create(
-            {"tipo": "S-2299", "company_id": self.company.id, "state": "draft"}
+            {
+                "tipo": "S-2299",
+                "company_id": self.company.id,
+                "state": "draft",
+                "xml_envio": self._xml_declarando(s2299, resc | mensal),
+            }
         )
         self.assertEqual(mensal._esocial_s2299_declarante(), s2299)
         with self.assertRaisesRegex(UserError, "S-2299 do desligamento"):
@@ -1174,3 +1190,361 @@ class TestS2299(TestESocialIntermediarioBase):
         xml = s2299._gerar_xml()
         self.assertIn("eSocial", xml)
         self.assertIn("evtDeslig", xml)
+
+    # ── TG-137: casos de borda do S-2299 e dos eventos que o seguem ─────────
+
+    LOG_S2299 = "odoo.addons.l10n_br_esocial.models.intermediarios.s2299_desligamento"
+    LOG_BASE = "odoo.addons.l10n_br_esocial.models.intermediarios.base_intermediario"
+
+    def _gera_s2299(self, s2299):
+        """Gera o evento do S-2299 (XML real) com o aviso indenizado da folha."""
+        with self._com_aviso_da_folha(True), mute_logger(self.LOG_S2299, self.LOG_BASE):
+            return s2299.action_gerar_evento()
+
+    def _mensal_dezembro(self, valor=5000.0):
+        mensal = self.env["hr.payslip"].create(
+            {
+                "name": "Mensal",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "date_from": "2024-12-01",
+                "date_to": "2024-12-31",
+                "state": "done",
+            }
+        )
+        self._linha_rescisao(mensal, self._regra_rubrica("SAL_X", "SAL"), valor)
+        return mensal
+
+    def _ide_dm_dev_do_xml(self, evento):
+        raiz = etree.fromstring(evento.xml_envio.encode())
+        return [e.text for e in raiz.iter("{*}ideDmDev")]
+
+    def test_s2299_item1_rescisao_sem_rubrica_nao_e_declarada(self):
+        """TG-137 (1a): sem rubrica configurada o S-2299 sai sem a rescisão e o
+        S-1210 não aponta para um ``ideDmDev`` que não existe no XML."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        self._linha_rescisao(resc, self._regra_rubrica("FERIAS_SEM"), 1100.0)
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 1100.0)
+        evento = self._gera_s2299(s2299)
+        self.assertEqual(self._ide_dm_dev_do_xml(evento), [])
+        self.assertFalse(s2299._slips_declarados())
+        self.assertFalse(resc._esocial_s2299_declarante())
+        resc.l10n_br_esocial_data_pagamento = "2025-01-05"
+        with self.assertRaisesRegex(UserError, "não possui S-1200"):
+            resc._esocial_dados_pagamento()
+
+    def test_s2299_item1_rescisao_em_verify_na_geracao_e_confirmada_depois(self):
+        """TG-137 (1b): o que o S-2299 declarou não muda porque a rescisão foi
+        confirmada depois; o mensal segue no S-1200 e o S-1210 não sai tpPgto 2."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        resc.state = "verify"
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 3300.0)
+        mensal = self._mensal_dezembro()
+        evento = self._gera_s2299(s2299)
+        self.assertEqual(self._ide_dm_dev_do_xml(evento), [])
+        resc.state = "done"
+        self.assertFalse(resc._esocial_s2299_declarante())
+        self.assertFalse(mensal._esocial_s2299_declarante())
+        # O S-1200 do mensal não é recusado por um S-2299 que não o declarou.
+        mensal.action_esocial_gerar_s1200()
+        self.assertEqual(mensal.l10n_br_esocial_s1200_id.evento_id.tipo, "S-1200")
+        resc.l10n_br_esocial_data_pagamento = "2025-01-05"
+        with self.assertRaisesRegex(UserError, "não possui S-1200"):
+            resc._esocial_dados_pagamento()
+
+    def test_s2299_item1_estorno_depois_do_aceite_mantem_o_declarado(self):
+        """TG-137 (1c): estornada a rescisão depois do aceite, o mensal continua
+        declarado no S-2299: o S-1200 segue recusado e o S-1210 é tpPgto 2."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        mensal = self._mensal_dezembro()
+        self._linha_rescisao(mensal, self._regra_rubrica("NET", None), 4700.0)
+        evento = self._gera_s2299(s2299)
+        evento.write({"state": "success", "nr_recibo": "1.2.0000000000000012345"})
+        ides = self._ide_dm_dev_do_xml(evento)
+        self.assertEqual(
+            sorted(ides),
+            sorted([s2299.get_ide_dm_dev(resc), s2299.get_ide_dm_dev(mensal)]),
+        )
+        resc.write({"l10n_br_fora_de_vigor": True})
+        self.assertEqual(mensal._esocial_s2299_declarante(), s2299)
+        with self.assertRaisesRegex(UserError, "S-2299 do desligamento"):
+            mensal.action_esocial_gerar_s1200()
+        mensal.l10n_br_esocial_data_pagamento = "2025-01-05"
+        pgto = mensal._esocial_dados_pagamento()
+        self.assertEqual(pgto["tp_pgto"], "2")
+        self.assertIn(pgto["ide_dm_dev"], ides)
+
+    def test_s2299_item2_mensagens_por_estado_do_evento(self):
+        """TG-137 (2): evento não transmitido se apaga; só o aceito se exclui
+        por S-3000."""
+        Evento = self.env["l10n_br.esocial.evento"]
+        rascunho = Evento.create({"tipo": "S-2299", "company_id": self.company.id})
+        aceito = Evento.create(
+            {"tipo": "S-2299", "company_id": self.company.id, "state": "success"}
+        )
+        enviado = Evento.create(
+            {"tipo": "S-2299", "company_id": self.company.id, "state": "sent"}
+        )
+        texto = rascunho._orientacao_desfazer()
+        self.assertIn("apague o evento", texto)
+        self.assertIn("gestor de folha", texto)
+        self.assertNotIn("exclua-o por S-3000", texto)
+        validado = rascunho.copy({"state": "validated"})
+        self.assertIn("apague o evento", validado._orientacao_desfazer())
+        self.assertIn("exclua-o por S-3000", aceito._orientacao_desfazer())
+        self.assertIn("aguarda o retorno", enviado._orientacao_desfazer())
+        self.assertNotIn("apague", enviado._orientacao_desfazer())
+
+    def test_s2299_item2_segunda_geracao_com_evento_nao_transmitido_manda_apagar(self):
+        s2299 = self._s2299_rescisao()
+        s2299.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-2299", "company_id": self.company.id, "state": "validated"}
+        )
+        slip = s2299.payslip_id
+        slip.struct_id = self.env["hr.payroll.structure"].create(
+            {"name": "Rescisão", "code": "RESCISAO"}
+        )
+        with self.assertRaises(UserError) as erro:
+            slip.action_esocial_gerar_s2299()
+        mensagem = str(erro.exception)
+        self.assertIn("apague o evento", mensagem)
+        self.assertNotIn("exclua-o por S-3000", mensagem)
+
+    def test_s2299_item2_s1200_vigente_nao_transmitido_manda_apagar(self):
+        s2299 = self._s2299_rescisao()
+        mensal = self._mensal_dezembro()
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        s1200 = self.env["l10n_br.esocial.s1200"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2024-12",
+                "ind_apuracao": "1",
+                "company_id": self.company.id,
+                "payslip_ids": [(6, 0, mensal.ids)],
+            }
+        )
+        s1200.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-1200", "company_id": self.company.id, "state": "draft"}
+        )
+        mensal.l10n_br_esocial_s1200_id = s1200
+        with self.assertRaises(UserError) as erro:
+            self._verbas(s2299)
+        mensagem = str(erro.exception)
+        self.assertIn("apague o evento", mensagem)
+        self.assertNotIn("exclua-o por S-3000", mensagem)
+
+    def test_s2299_item3_s3000_recusado_com_s1210_tp_pgto_2_aceito(self):
+        """TG-137 (3): o S-3000 do S-2299 espera a exclusão do S-1210 que aponta
+        para ele."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 3300.0)
+        evento = self._gera_s2299(s2299)
+        evento.write({"state": "success", "nr_recibo": "1.2.0000000000000012345"})
+        s1210 = self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2025-01",
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2025-01-05",
+                            "tp_pgto": "2",
+                            "per_ref": "2024-12",
+                            "ide_dm_dev": s2299.get_ide_dm_dev(resc),
+                            "vr_liq": 3300.0,
+                            "payslip_id": resc.id,
+                        },
+                    )
+                ],
+            }
+        )
+        s1210.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {
+                "tipo": "S-1210",
+                "company_id": self.company.id,
+                "state": "success",
+                "nr_recibo": "1.2.0000000000000067890",
+                "per_apur": "2025-01",
+            }
+        )
+        s3000 = self.env["l10n_br.esocial.s3000"].create(
+            {
+                "evento_origem_id": evento.id,
+                "company_id": self.company.id,
+                "cpf_trab": "07616692941",
+            }
+        )
+        with self.assertRaisesRegex(UserError, "tem S-1210 que aponta"):
+            s3000.action_gerar_evento()
+        # Com o S-1210 excluído (aceito o S-3000 dele) o S-3000 do S-2299 sai.
+        s1210.evento_id.state = "excluded"
+        with mute_logger(self.LOG_BASE):
+            self.assertEqual(s3000.action_gerar_evento().tipo, "S-3000")
+
+    def _s2299_com_s1210_tp2(self, estado):
+        """S-2299 aceito (com a rescisão declarada) e S-1210 tpPgto 2 em ``estado``."""
+        s2299 = self._s2299_rescisao()
+        resc = s2299.payslip_id
+        self._linha_rescisao(resc, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0)
+        self._linha_rescisao(resc, self._regra_rubrica("NET", None), 3300.0)
+        evento = self._gera_s2299(s2299)
+        evento.write({"state": "success", "nr_recibo": "1.2.0000000000000012345"})
+        s1210 = self.env["l10n_br.esocial.s1210"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2025-01",
+                "company_id": self.company.id,
+                "pagamento_ids": [
+                    (
+                        0,
+                        0,
+                        {
+                            "dt_pgto": "2025-01-05",
+                            "tp_pgto": "2",
+                            "per_ref": "2024-12",
+                            "ide_dm_dev": s2299.get_ide_dm_dev(resc),
+                            "vr_liq": 3300.0,
+                            "payslip_id": resc.id,
+                        },
+                    )
+                ],
+            }
+        )
+        s1210.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {
+                "tipo": "S-1210",
+                "company_id": self.company.id,
+                "state": estado,
+                "per_apur": "2025-01",
+                "origem_model": "l10n_br.esocial.s1210",
+                "origem_id": s1210.id,
+            }
+        )
+        s3000 = self.env["l10n_br.esocial.s3000"].create(
+            {
+                "evento_origem_id": evento.id,
+                "company_id": self.company.id,
+                "cpf_trab": "07616692941",
+            }
+        )
+        return s2299, evento, s1210, s3000
+
+    def test_s2299_s3000_recusado_com_s1210_tp_pgto_2_em_rascunho_ou_validado(self):
+        """TG-137 r2 (Menor 2): o S-1210 ainda não transmitido também bloqueia o
+        S-3000 do S-2299; a mensagem manda apagá-lo."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        for estado in ("draft", "validated"):
+            with self.subTest(estado=estado):
+                _s2299, _evento, _s1210, s3000 = self._s2299_com_s1210_tp2(estado)
+                with self.assertRaisesRegex(UserError, "apague o S-1210"):
+                    s3000.action_gerar_evento()
+
+    def test_s2299_orientacao_do_aceito_com_s1210_manda_excluir_o_s1210_antes(self):
+        """TG-137 r2 (Menor 1): a mensagem não manda para um S-3000 recusado."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _s2299, evento, _s1210, _s3000 = self._s2299_com_s1210_tp2("success")
+        texto = evento._orientacao_desfazer()
+        self.assertIn("S-1210", texto)
+        self.assertNotIn("já foi aceito: exclua-o por S-3000", texto)
+
+    def test_s1210_tp_pgto_2_orfao_nao_valida(self):
+        """TG-137 r2 (Menor 2): excluído o S-2299, o S-1210 que apontava para ele
+        não valida."""
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        _s2299, evento, s1210, _s3000 = self._s2299_com_s1210_tp2("draft")
+        s1210.evento_id.action_validate()
+        self.assertEqual(s1210.evento_id.state, "validated")
+        s1210.evento_id.state = "draft"
+        evento.state = "excluded"
+        with self.assertRaisesRegex(UserError, "não está mais vigente"):
+            s1210.evento_id.action_validate()
+
+    def test_s2299_item4_pens_alim_sem_pensao(self):
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        data = s2299._to_esociallib_dict()
+        self.assertEqual(data["pens_alim"], 0)
+        self.assertNotIn("perc_aliment", data)
+        self.assertNotIn("vr_alim", data)
+
+    def test_s2299_item4_pensao_da_folha_nao_vira_pens_alim(self):
+        """TG-137#P1: a pensão da folha (P024: 20% da remuneração) não é retenção
+        sobre o saldo do FGTS; ``pensAlim`` é sempre 0."""
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        casos = ((0.0, 20.0), (500.0, 0.0), (500.0, 10.0))
+        for fixo, perc in casos:
+            self.employee.write(
+                {"l10n_br_pensao_alimenticia": fixo, "l10n_br_pensao_percentual": perc}
+            )
+            data = s2299._to_esociallib_dict()
+            self.assertEqual(data["pens_alim"], 0)
+            self.assertNotIn("perc_aliment", data)
+            self.assertNotIn("vr_alim", data)
+
+    def test_s2299_item4_xml_com_pensao_na_folha_sai_pens_alim_0(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        self.employee.write(
+            {"l10n_br_pensao_alimenticia": 0.0, "l10n_br_pensao_percentual": 20.0}
+        )
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        with mute_logger(self.LOG_BASE):
+            xml = s2299._gerar_xml()
+        info = etree.fromstring(xml.encode()).find(".//{*}infoDeslig")
+        self.assertEqual(info.findtext("{*}pensAlim"), "0")
+        self.assertIsNone(info.find("{*}percAliment"))
+        self.assertIsNone(info.find("{*}vrAlim"))
+
+    def _com_data_aviso(self, data):
+        classe = self.env.registry["hr.payslip"]
+        return patch.multiple(classe, create=True, l10n_br_data_aviso_previo=data)
+
+    def test_s2299_item6_dt_av_prv_vem_da_rescisao(self):
+        s2299 = self._s2299_rescisao()
+        with self._com_data_aviso(date(2024, 11, 30)):
+            data = s2299._to_esociallib_dict()
+        self.assertEqual(data["dt_av_prv"], "2024-11-30")
+        self.assertNotIn("dt_av_prv", s2299._to_esociallib_dict())
+
+    def test_s2299_item6_dt_av_prv_fora_do_intervalo_recusa(self):
+        s2299 = self._s2299_rescisao()
+        for fora in (date(2025, 1, 2), date(2023, 12, 31)):
+            with self._com_data_aviso(fora), self.assertRaisesRegex(
+                UserError, "concessão do aviso prévio"
+            ):
+                s2299._to_esociallib_dict()
+
+    def test_s2299_item6_xml_leva_dt_av_prv_antes_de_ind_pagto_api(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao()
+        with self._com_data_aviso(date(2024, 11, 30)), self._com_aviso_da_folha(
+            False
+        ), mute_logger(self.LOG_BASE):
+            xml = s2299._gerar_xml()
+        info = etree.fromstring(xml.encode()).find(".//{*}infoDeslig")
+        nomes = [etree.QName(c).localname for c in info]
+        self.assertEqual(info.findtext("{*}dtAvPrv"), "2024-11-30")
+        self.assertLess(nomes.index("dtAvPrv"), nomes.index("indPagtoAPI"))

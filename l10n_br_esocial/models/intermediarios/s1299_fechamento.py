@@ -212,8 +212,11 @@ class ESocialS1299(models.Model):
                     "Não é possível fechar a competência %(per)s: "
                     "%(qtd)s evento(s) periódico(s) ainda não foram aceitos "
                     "pelo eSocial.\n\n%(detalhe)s\n\n"
-                    "Transmita e confirme o aceite desses eventos (ou exclua-os "
-                    "com S-3000) antes do fechamento."
+                    "Transmita e confirme o aceite desses eventos antes do "
+                    "fechamento. Evento ainda não transmitido (rascunho ou "
+                    "validado) que não vai ao eSocial se apaga, o que só o "
+                    "gestor de folha pode fazer; o S-3000 só exclui evento já "
+                    "aceito."
                 )
                 % {
                     "per": self.per_apur,

@@ -20,6 +20,7 @@
         "data/hr_salary_rule_rescisao_data.xml",
         "data/hr_payroll_structure_data.xml",
         "views/hr_payslip_views.xml",
+        "views/hr_payslip_data_aviso_views.xml",
     ],
     "demo": [
         "demo/hr_leave_allocation_demo.xml",

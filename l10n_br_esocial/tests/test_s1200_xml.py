@@ -240,6 +240,55 @@ class TestS1200XML(TransactionCase):
         self.assertIn("AVISO_SEM_RUBRICA", s1200.avisos)
         self.assertNotIn("MULTA_FGTS", s1200.avisos)
 
+    def test_s1200_provento_negativo_nao_vira_positivo(self):
+        """TG-137 (5): vrRubr não tem sinal (TS_vrRubr: maior que 0); provento
+        negativo fica fora e avisa, em vez de sair como positivo."""
+        payslip = self._create_payslip_with_lines([5000.0, -300.0])
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        with mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s1200_remuneracao"
+        ):
+            itens = s1200._build_itens_remun()
+        self.assertEqual([i["vr_rubr"] for i in itens], ["5000.0"])
+        self.assertIn("valor negativo", s1200.avisos)
+        self.assertIn("-300.00", s1200.avisos)
+
+    def test_s1200_desconto_com_qualquer_sinal_sai_sem_sinal(self):
+        """O desconto (tpRubr 2) já é dedução pelo tipo; a folha o grava com
+        qualquer sinal e o S-1200 o declara pelo módulo."""
+        desconto = self.env["hr.salary.rule"].create(
+            {
+                "name": "INSS_T",
+                "code": "INSS_T",
+                "category_id": self.rule.category_id.id,
+                "l10n_br_esocial_cod_rubr": "INSS",
+                "l10n_br_esocial_ide_tab_rubr": "1",
+                "l10n_br_esocial_nat_rubr_id": self.nat_rubr.id,
+                "l10n_br_esocial_tp_rubr": "2",
+            }
+        )
+        payslip = self._create_payslip_with_lines([5000.0])
+        for amount in (-330.0, 120.0):
+            self.env["hr.payslip.line"].create(
+                {
+                    "slip_id": payslip.id,
+                    "salary_rule_id": desconto.id,
+                    "name": "INSS_T",
+                    "code": "INSS_T",
+                    "employee_id": self.employee.id,
+                    "contract_id": self.contract.id,
+                    "quantity": 1,
+                    "amount": amount,
+                    "rate": 100,
+                }
+            )
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        itens = s1200._build_itens_remun()
+        self.assertEqual(
+            sorted(i["vr_rubr"] for i in itens), ["120.0", "330.0", "5000.0"]
+        )
+        self.assertFalse(s1200.avisos)
+
     def test_s1200_requires_matricula(self):
         """Deve dar erro se empregado não tem matrícula.
 

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <record id="hr_payslip_view_form_data_aviso" model="ir.ui.view">
+        <field name="name">hr.payslip.form.data.aviso</field>
+        <field name="model">hr.payslip</field>
+        <field name="inherit_id" ref="hr_payslip_view_form_vacation" />
+        <field name="arch" type="xml">
+            <field name="l10n_br_aviso_previo" position="after">
+                <field
+                    name="l10n_br_data_aviso_previo"
+                    readonly="state not in ('draft', 'verify')"
+                />
+            </field>
+        </field>
+    </record>
+</odoo>

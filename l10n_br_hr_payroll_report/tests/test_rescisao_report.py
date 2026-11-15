@@ -8,7 +8,7 @@ Cobertura:
   - Relatório renderiza sem erro
   - Conteúdo HTML contém dados esperados
 """
-from datetime import date
+from datetime import date, timedelta
 from unittest.mock import patch
 
 from lxml import etree
@@ -208,6 +208,15 @@ class TestRescisaoReport(PayrollCommon):
         self.assertEqual(contrato["aviso"], payslip.date_to)
         self.assertEqual(contrato["tipo_contrato"], "Prazo indeterminado")
         self.assertEqual(contrato["remuneracao"], 5000.0)
+
+    def test_trct_campo_25_usa_a_data_do_aviso_informada(self):
+        """TG-137: a data de concessão informada na rescisão (a do ``dtAvPrv`` do
+        S-2299) vai ao campo 25; sem ela, vale a fórmula."""
+        payslip = self._rescisao_sem_justa_causa()
+        self.assertEqual(self._trct(payslip)["contrato"]["aviso"], payslip.date_to)
+        data = payslip.date_from - timedelta(days=15)
+        payslip.l10n_br_data_aviso_previo = data
+        self.assertEqual(self._trct(payslip)["contrato"]["aviso"], data)
 
     def test_trct_termo_de_termino_de_contrato_e_prazo_determinado(self):
         payslip = self._create_rescisao_payslip()
