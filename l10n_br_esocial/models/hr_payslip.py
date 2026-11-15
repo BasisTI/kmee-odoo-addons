@@ -47,8 +47,9 @@ class HrPayslip(models.Model):
         help="Holerite fora de vigor (estornado) que ainda tem S-1200, S-1210 ou "
         "S-2299 gerado e não retificado nem excluído: o evento declara valores "
         "que a folha desfez. Gere o S-1200 do holerite que o substitui "
-        "(retificação, com o recibo do evento aceito) ou exclua o evento por "
-        "S-3000.",
+        "(retificação, com o recibo do evento aceito). Evento aceito se exclui "
+        "por S-3000; evento ainda não transmitido (rascunho ou validado) se "
+        "apaga, o que só o gestor de folha pode fazer.",
     )
 
     @api.depends(
@@ -179,7 +180,9 @@ class HrPayslip(models.Model):
                     "Os holerites selecionados estão fora de vigor (estorno ou "
                     "holerite estornado) e não vão ao eSocial. Gere o evento do "
                     "holerite que substitui o estornado; o evento já gerado do "
-                    "estornado se retifica por ele ou se exclui por S-3000."
+                    "estornado, se aceito, se retifica por ele ou se exclui por "
+                    "S-3000; se ainda não foi transmitido (rascunho ou validado), "
+                    "o gestor de folha o apaga."
                 )
             )
         return vigentes
@@ -257,7 +260,9 @@ class HrPayslip(models.Model):
 
         O S-2299 com ``verbasResc`` declara a remuneração do mês do
         desligamento; o leiaute recusa o S-1200 dessa competência e o
-        pagamento vai no S-1210 de ``tpPgto`` 2.
+        pagamento vai no S-1210 de ``tpPgto`` 2. Vale o que o XML do evento
+        declarou (``_slips_declarados``), não o que o holerite diria hoje: a
+        rescisão pode ter mudado de estado depois da geração do S-2299.
         """
         self.ensure_one()
         inicio = self.date_from.replace(day=1)
@@ -270,7 +275,7 @@ class HrPayslip(models.Model):
                 ("evento_id.state", "in", EVENTO_VIGENTE),
             ]
         )
-        return candidatos.filtered(lambda s2299: self in s2299._slips_verbas())[:1]
+        return candidatos.filtered(lambda s2299: self in s2299._slips_declarados())[:1]
 
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
@@ -554,13 +559,17 @@ class HrPayslip(models.Model):
         )
         payslips = rescisoes.filtered(lambda slip: not slip.l10n_br_fora_de_vigor)
         if rescisoes and not payslips:
+            eventos = rescisoes.l10n_br_esocial_s2299_ids.evento_id.filtered(
+                lambda evento: evento.state in EVENTO_VIGENTE
+            )
             raise UserError(
                 _(
                     "A rescisão selecionada está fora de vigor (estorno ou "
                     "estornada) e não vai ao eSocial. O S-2299 já gerado do "
-                    "holerite estornado fica marcado como a retificar: exclua-o "
-                    "por S-3000 e gere o S-2299 da rescisão que o substitui."
+                    "holerite estornado fica marcado como a retificar: %(como)s "
+                    "e gere o S-2299 da rescisão que o substitui."
                 )
+                % {"como": eventos._orientacao_desfazer() or _("desfaça-o")}
             )
         if not payslips:
             raise UserError(
@@ -575,12 +584,13 @@ class HrPayslip(models.Model):
                 raise UserError(
                     _(
                         "O holerite '%(name)s' já tem S-2299 gerado (%(evento)s). "
-                        "Use o evento existente; para regerar, exclua-o antes por "
-                        "S-3000."
+                        "Use o evento existente; para regerar, desfaça-o antes: "
+                        "%(como)s."
                     )
                     % {
                         "name": slip.number or slip.name,
                         "evento": anterior.evento_id.name,
+                        "como": anterior.evento_id._orientacao_desfazer(),
                     }
                 )
             motivo = slip._esocial_motivo_desligamento()

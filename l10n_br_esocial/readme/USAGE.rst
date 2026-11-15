@@ -236,17 +236,35 @@ tela do evento e no log): nada com valor some em silêncio. A multa do FGTS
 (``MULTA_FGTS``) vai à conta vinculada e não é verba paga ao trabalhador, por
 isso não entra no ``verbasResc``. Rescisão que não está confirmada, e os
 ``mtvDeslig`` para os quais o leiaute proíbe o grupo (11, 12, 13, 25, 28, 29,
-30, 34, 36, 43 e 44), não geram ``verbasResc``. ``dtAvPrv`` (data da concessão
-do aviso) não é gerada: a rescisão não a registra. O S-2299 de uma rescisão não
-se gera duas vezes: para regerar, exclua o anterior por S-3000.
+30, 34, 36, 43 e 44), não geram ``verbasResc``. ``pensAlim`` (obrigatório para o
+celetista) sai sempre: 0 sem pensão, e 1, 2 ou 3 com ``percAliment`` e/ou
+``vrAlim`` conforme a pensão que a folha desconta do empregado (valor fixo e
+percentual no cadastro do empregado). ``dtAvPrv`` sai quando a rescisão tem a
+*Data da Concessão do Aviso Prévio* (campo opcional do módulo de rescisão; entre
+a admissão e o desligamento). O S-2299 de uma rescisão não se gera duas vezes:
+para regerar, desfaça o anterior: evento aceito se exclui por S-3000; evento
+ainda não transmitido (rascunho ou validado) se apaga, o que só o gestor de
+folha pode fazer.
 
 O leiaute recusa o S-1200 da competência do desligamento rescisório
 (``REGRA_REMUN_JA_EXISTE_DESLIGAMENTO``); por isso o S-2299 com ``verbasResc``
 declara também os holerites confirmados do mês do desligamento (mensal e
 férias; o 13º tem competência própria) e o S-1200 não é gerado para eles. Se
-algum já tem S-1200 vigente, o S-2299 recusa e pede o S-3000 dele antes. O
-pagamento desses holerites vai no S-1210 com ``tpPgto`` 2, ``perRef`` do mês do
+algum já tem S-1200 vigente, o S-2299 recusa e pede que ele seja desfeito antes
+(S-3000 se aceito; apagar o evento se ainda não foi transmitido). O pagamento
+desses holerites vai no S-1210 com ``tpPgto`` 2, ``perRef`` do mês do
 desligamento e o ``ideDmDev`` do S-2299, depois do aceite do S-2299.
+
+Quem o S-2299 declarou é lido do XML do evento (os ``ideDmDev`` do
+``verbasResc``), não recalculado: o S-1200 só é recusado para holerite que o
+S-2299 de fato declarou, e o S-1210 de ``tpPgto`` 2 só sai para ele. Rescisão
+sem rubrica configurada, ou ainda não confirmada quando o S-2299 foi gerado, não
+fica declarada; estornar a rescisão depois do aceite não muda o que o S-2299
+declarou.
+
+O S-3000 de um S-2299 é recusado enquanto houver S-1210 de ``tpPgto`` 2
+transmitido ou aceito apontando para um ``ideDmDev`` dele: exclua antes esse
+S-1210 por S-3000 e espere o aceite.
 
 No S-1200, o ``indApurIR`` sai em cada rubrica (obrigatório desde 07/2021) e o
 ``infoAgNocivo`` para categorias do RGPS; regras de provento indenizatório
@@ -273,4 +291,5 @@ Se o evento do estornado ainda não foi aceito (sem recibo), a geração espera 
 retorno do lote. Evento em rascunho/validado do estornado volta a rascunho, sai
 do lote e não pode ser validado. Competência fechada (S-1299 sem S-1298 depois)
 recusa a geração. Estorno sem holerite novo, ou S-2299 de rescisão estornada
-(o módulo não gera retificador de S-2299): exclua o evento por S-3000.
+(o módulo não gera retificador de S-2299): evento aceito se exclui por S-3000;
+evento ainda não transmitido se apaga (só o gestor de folha).

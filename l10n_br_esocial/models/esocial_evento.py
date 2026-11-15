@@ -163,6 +163,33 @@ class ESocialEvento(models.Model):
             return self.env["hr.payslip"]
         return origem._esocial_slips()
 
+    def _orientacao_desfazer(self):
+        """Como tirar o evento da frente, conforme a situação dele.
+
+        O S-3000 só existe para evento já aceito pelo eSocial. Evento em
+        rascunho ou validado nunca foi transmitido: não há o que excluir no
+        governo, o caminho é apagar o evento, o que só o gestor de folha de
+        pagamento pode fazer. Evento aguardando retorno ainda não tem recibo.
+        """
+        textos = []
+        for evento in self:
+            if evento.state in ("draft", "validated"):
+                como = _(
+                    "ainda não foi transmitido: apague o evento (só o gestor de "
+                    "folha de pagamento pode apagá-lo); não use o S-3000"
+                )
+            elif evento.state in ("pending", "sent"):
+                como = _(
+                    "foi enviado e aguarda o retorno do eSocial: espere o "
+                    "aceite para então excluí-lo por S-3000"
+                )
+            elif evento.state == "success":
+                como = _("já foi aceito: exclua-o por S-3000")
+            else:
+                continue
+            textos.append("%s (%s)" % (evento.name, como))
+        return "; ".join(textos)
+
     def action_validate(self):
         for rec in self:
             if rec.state != "draft":

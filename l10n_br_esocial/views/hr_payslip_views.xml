@@ -34,8 +34,10 @@
                 >
                     Holerite fora de vigor (estornado) com S-1200/S-1210 já
                     gerado: o evento declara valores que a folha desfez. Gere o
-                    S-1200/S-1210 do holerite que o substitui (retificação) ou
-                    exclua o evento por S-3000.
+                    S-1200/S-1210 do holerite que o substitui (retificação).
+                    Evento aceito se exclui por S-3000; evento ainda não
+                    transmitido (rascunho ou validado) se apaga, o que só o
+                    gestor de folha pode fazer.
                 </div>
             </xpath>
             <xpath expr="//notebook" position="inside">

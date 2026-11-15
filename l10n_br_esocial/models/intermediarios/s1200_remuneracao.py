@@ -122,6 +122,7 @@ class ESocialS1200(models.Model):
         """Build list of rubric items from payslip lines."""
         itens = []
         sem_config = {}
+        negativos = {}
         for payslip in self.payslip_ids:
             payslip._esocial_exigir_rubrica_maternidade()
             for line in payslip.line_ids:
@@ -141,10 +142,16 @@ class ESocialS1200(models.Model):
                     ):
                         sem_config.setdefault(rule, []).append(line.total)
                     continue
-                valor = abs(line.total)
-                if valor:
-                    itens.append(self._item_remun(rule, valor))
-        self._registrar_avisos_sem_config(sem_config)
+                # vrRubr não tem sinal (TS_vrRubr, evtRemun.xsd: "deve ser maior
+                # que 0"). O desconto (tpRubr 2) já é a dedução pelo tipo da
+                # rubrica e a folha o grava com qualquer sinal, então vale o
+                # módulo. Provento negativo, que seria declarado como positivo,
+                # não se troca em silêncio: fica fora e vai a ``avisos``.
+                if rule.l10n_br_esocial_tp_rubr == "1" and line.total < 0:
+                    negativos.setdefault(rule, []).append(line.total)
+                    continue
+                itens.append(self._item_remun(rule, abs(line.total)))
+        self._registrar_avisos_sem_config(sem_config, negativos)
         return itens
 
     def _exige_ind_apur_ir(self):
@@ -177,12 +184,26 @@ class ESocialS1200(models.Model):
         grau = self._grau_exp(contrato, inicio, fim)
         return self._xml_com_info_ag_nocivo(xml, "S-1200", "remunPerApur", grau)
 
-    def _registrar_avisos_sem_config(self, sem_config):
+    def _registrar_avisos_sem_config(self, sem_config, negativos=None):
         """Avisa (log e campo ``avisos``) das regras que ficaram fora do XML."""
-        if not sem_config:
+        if not (sem_config or negativos):
             self.avisos = False
             return
         linhas = []
+        for rule, valores in (negativos or {}).items():
+            linhas.append(
+                _(
+                    "Regra '%(regra)s' (%(code)s) com valor negativo em rubrica "
+                    "de provento (tpRubr 1): %(n)d linha(s), total %(total).2f, "
+                    "fora do S-1200 (vrRubr não tem sinal); ajuste o holerite."
+                )
+                % {
+                    "regra": rule.name,
+                    "code": rule.code,
+                    "n": len(valores),
+                    "total": sum(valores),
+                }
+            )
         for rule, valores in sem_config.items():
             faltando = []
             if not rule.l10n_br_esocial_cod_rubr:
