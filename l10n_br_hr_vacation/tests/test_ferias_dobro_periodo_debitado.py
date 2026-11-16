@@ -8,7 +8,7 @@ absorver as férias do período corrente nem gerar aviso de dobra. O concessivo
 segue como limite normal; o período vencido só é debitado quando nenhum
 concessivo cobre a ausência, e só com saldo real, em dias corridos.
 """
-from datetime import date
+from datetime import date, timedelta
 
 from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
@@ -48,7 +48,8 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         leave.action_validate()
         return leave
 
-    def _recibo_abono(self, emp, alloc, dias):
+    def _recibo_abono(self, emp, alloc, dias, inicio=None):
+        inicio = inicio or date(2025, 3, 3)
         contract = emp.contract_id or self._create_contract(
             emp, wage=3000.0, date_start=date(2024, 1, 2)
         )
@@ -58,8 +59,8 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
                 "employee_id": emp.id,
                 "contract_id": contract.id,
                 "struct_id": self.structure_ferias.id,
-                "date_from": date(2025, 3, 3),
-                "date_to": date(2025, 3, 22),
+                "date_from": inicio,
+                "date_to": inicio + timedelta(days=19),
                 "l10n_br_ferias_allocation_id": alloc.id,
                 "l10n_br_dias_periodo_gozado": 20,
                 "l10n_br_dias_abono": dias,
@@ -121,7 +122,7 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         self._aloca(emp, date(2017, 1, 2), date(2018, 1, 1))
         with self.assertRaises(ValidationError) as erro:
             self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))
-        self.assertIn("prescrita", str(erro.exception))
+        self.assertIn("prescritos", str(erro.exception))
 
     def test_dentro_do_horizonte_o_periodo_antigo_ainda_recebe_ausencia(self):
         """Concessivo terminado em 2026-01-01: até 2031-01-01 ainda recebe."""
@@ -200,7 +201,7 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         aquisitivo ainda está em curso)."""
         emp = self._create_employee()
         a, b, _c = self._tres_periodos(emp)
-        self._recibo_abono(emp, b, 10)
+        self._recibo_abono(emp, b, 10, inicio=date(2026, 2, 2))
         leave = self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 20))
         self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
         self.assertTrue(leave.l10n_br_aviso_dobro)
@@ -450,3 +451,74 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         aviso = leave.l10n_br_aviso_dobro
         self.assertIn("2024-01-02 a 2025-01-01", aviso)
         self.assertIn("fixa o débito", aviso)
+
+    # -- r6: recibo só em período completo e dentro do horizonte ----------------------
+
+    def test_recibo_de_periodo_em_curso_e_recusado(self):
+        """Recibo cujo período (C) ainda está em aquisição no início do gozo."""
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        c = self._aloca(emp, self.C_INI, self.C_FIM)
+        with self.assertRaises(ValidationError) as erro:
+            self._recibo_ferias(
+                emp, c, date(2026, 6, 1), date(2026, 6, 20), 20, calcular=False
+            )
+        self.assertIn("ainda não estava completo", str(erro.exception))
+
+    def test_recibo_de_periodo_prescrito_e_recusado(self):
+        emp = self._create_employee()
+        a = self._aloca(emp, date(2018, 1, 2), date(2019, 1, 1))  # horizonte 2025-01-01
+        with self.assertRaises(ValidationError) as erro:
+            self._recibo_ferias(
+                emp, a, date(2025, 6, 2), date(2025, 6, 21), 20, calcular=False
+            )
+        self.assertIn("prescrito", str(erro.exception))
+
+    def test_distribuir_so_honra_o_recibo_de_periodo_completo(self):
+        """Por segurança a análise ignora um recibo de período em curso, mesmo que
+        ele tenha sido gravado por outro caminho (SQL, importação)."""
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        c = self._aloca(emp, self.C_INI, self.C_FIM)
+        contract = self._create_contract(emp, wage=3000.0, date_start=A_INI)
+        slip = self.env["hr.payslip"].create(
+            {
+                "name": "Férias",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_ferias.id,
+                "date_from": date(2026, 6, 1),
+                "date_to": date(2026, 6, 20),
+                "l10n_br_ferias_allocation_id": a.id,
+                "l10n_br_dias_periodo_gozado": 20,
+                "company_id": self.env.company.id,
+            }
+        )
+        self.env.cr.execute(
+            "UPDATE hr_payslip SET l10n_br_ferias_allocation_id=%s WHERE id=%s",
+            (c.id, slip.id),
+        )
+        slip.invalidate_recordset()
+        leave = self._ausencia(emp, date(2026, 6, 1), date(2026, 6, 20))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)  # não C
+
+    def test_ausencia_que_cruza_o_horizonte_cita_o_horizonte(self):
+        emp = self._create_employee()
+        self._aloca(emp, date(2018, 1, 2), date(2019, 1, 1))  # horizonte 2025-01-01
+        with self.assertRaises(ValidationError) as erro:
+            self._ausencia(emp, date(2024, 12, 22), date(2025, 1, 10))
+        self.assertIn("horizonte", str(erro.exception))
+        self.assertIn("2025-01-01", str(erro.exception))
+
+    def test_frase_do_recibo_so_com_outro_periodo_completo_com_saldo(self):
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        self._aloca(emp, self.C_INI, self.C_FIM)  # em curso: não é alternativa
+        leave = self._ausencia(emp, date(2026, 6, 1), date(2026, 6, 20))
+        self.assertIn("dobro", leave.l10n_br_aviso_dobro)
+        self.assertNotIn("fixa o débito", leave.l10n_br_aviso_dobro)
+        outro = self._create_employee()
+        self._aloca(outro, A_INI, A_FIM)
+        self._aloca(outro, B_INI, B_FIM)  # completo e com saldo
+        leave2 = self._ausencia(outro, date(2026, 6, 1), date(2026, 6, 20))
+        self.assertIn("fixa o débito", leave2.l10n_br_aviso_dobro)

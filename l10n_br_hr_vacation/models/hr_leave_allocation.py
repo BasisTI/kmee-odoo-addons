@@ -255,16 +255,17 @@ class HrLeaveAllocation(models.Model):
         return {alloc: alloc.number_of_days - abono[alloc.id] for alloc in alocacoes}
 
     @api.model
-    def _l10n_br_destino(self, alocacoes, restante, data):
+    def _l10n_br_destino(self, alocacoes, restante, data, horizontes=None):
         """Período que uma ausência começando em ``data`` debita: o mais antigo,
         de aquisitivo já completo (CLT art. 134), com saldo real em dias
         corridos. Primeiro o vencido (concessivo expirado, em dobro, art. 137);
         sem vencido com saldo, o que ainda está no concessivo. Vazio se nenhum."""
+        horizontes = horizontes or {a: a._l10n_br_horizonte() for a in alocacoes}
         for alloc in alocacoes:
             if (
                 alloc.date_to < data
                 and restante[alloc] > 0
-                and alloc._l10n_br_horizonte() >= data
+                and horizontes[alloc] >= data
             ):
                 return alloc
         return alocacoes.browse()
@@ -285,11 +286,23 @@ class HrLeaveAllocation(models.Model):
             antes da ausência (``{id: dias}``).
         """
         restante = self._l10n_br_saldo_corridos(alocacoes)
+        horizontes = {
+            a: a._l10n_br_horizonte() for a in alocacoes
+        }  # uma vez por período
         destino, excesso, saldo_antes = {}, {}, {}
         for chave, inicio, fim, *do_recibo in ausencias:
             dias = (fim - inicio).days + 1
-            alloc = alocacoes.filtered(lambda a: do_recibo and a.id == do_recibo[0])
-            alloc = alloc or self._l10n_br_destino(alocacoes, restante, inicio)
+            # o recibo fixa o período só se ele está completo no início e dentro do
+            # horizonte (a mesma regra da ausência)
+            alloc = alocacoes.filtered(
+                lambda a: do_recibo
+                and a.id == do_recibo[0]
+                and a.date_to < inicio
+                and horizontes[a] >= inicio
+            )
+            alloc = alloc or self._l10n_br_destino(
+                alocacoes, restante, inicio, horizontes
+            )
             destino[chave] = alloc
             saldo_antes[chave] = restante[alloc] if alloc else 0
             usa = min(dias, max(restante[alloc], 0)) if alloc else 0
@@ -323,6 +336,20 @@ class HrLeaveAllocation(models.Model):
             alocacoes, ausencias
         )
         return {c: (destino[c], excesso[c], saldo[c]) for c in destino}
+
+    @api.model
+    def _l10n_br_outro_periodo_com_saldo(self, employee, alloc, data, excluir=()):
+        """Há outro período, completo em ``data`` e dentro do horizonte, com saldo?"""
+        alocacoes = self._l10n_br_alocacoes_ferias(employee)
+        ausencias = self._l10n_br_ausencias_ferias(employee, excluir=excluir)
+        restante = self._l10n_br_distribuir(alocacoes, ausencias)[0]
+        return any(
+            a != alloc
+            and a.date_to < data
+            and a._l10n_br_horizonte() >= data
+            and restante[a] > 0
+            for a in alocacoes
+        )
 
     @api.model
     def _l10n_br_periodo_com_saldo(self, employee, data):

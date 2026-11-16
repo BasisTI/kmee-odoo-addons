@@ -8,7 +8,7 @@ from dateutil.relativedelta import relativedelta
 from odoo import _, api, fields, models
 from odoo.exceptions import ValidationError
 
-ANOS_PRESCRICAO = 5  # CF art. 7º, XXIX; CLT art. 149 conta do fim do concessivo
+from .hr_leave_allocation import L10N_BR_ANOS_PRESCRICAO
 
 
 class HrLeave(models.Model):
@@ -27,7 +27,9 @@ class HrLeave(models.Model):
         compute="_compute_l10n_br_avisos",
         help="Período cujo concessivo terminou há mais de cinco anos: a pretensão "
         "do empregado às férias pode estar prescrita (CLT art. 149; CF art. 7º, "
-        "XXIX). Só avisa; não bloqueia.",
+        "XXIX). O sistema não lança férias de período prescrito (a ausência é "
+        "recusada, ver ``_check_validity``); este aviso só aparece para o que "
+        "ainda caiba no horizonte.",
     )
 
     l10n_br_aviso_notificado = fields.Text(
@@ -75,15 +77,21 @@ class HrLeave(models.Model):
         return analise.get(-1, vazio)
 
     def _l10n_br_recibo_pode_mudar_periodo(self, alloc):
-        """Há outro período de aquisitivo completo e nenhum recibo fixa o débito."""
+        """Nenhum recibo fixa o débito e outro período completo tem saldo."""
         self.ensure_one()
         Allocation = self.env["hr.leave.allocation"]
         if Allocation._l10n_br_periodo_do_recibo(
             self.employee_id, [self.request_date_from]
         ):
             return False
-        outros = Allocation._l10n_br_alocacoes_ferias(self.employee_id) - alloc
-        return bool(outros.filtered(lambda a: a.date_to < self.request_date_from))
+        return Allocation._l10n_br_outro_periodo_com_saldo(
+            self.employee_id,
+            alloc,
+            self.request_date_from,
+            excluir=[self._origin.id or self.id]
+            if (self._origin.id or self.id)
+            else [],
+        )
 
     def _l10n_br_periodo_da_ausencia(self):
         """Período aquisitivo que esta ausência debita, em dias corridos, ou um
@@ -149,7 +157,7 @@ class HrLeave(models.Model):
             prescrito = bool(
                 limite
                 and leave.request_date_from
-                > limite + relativedelta(years=ANOS_PRESCRICAO)
+                > limite + relativedelta(years=L10N_BR_ANOS_PRESCRICAO)
             )
             leave.l10n_br_aviso_prescricao = (
                 _(
@@ -158,7 +166,7 @@ class HrLeave(models.Model):
                     "prescrita (CLT art. 149; CF art. 7º, XXIX). Confirme com o "
                     "jurídico antes de pagar.",
                     limite=fields.Date.to_string(limite),
-                    anos=ANOS_PRESCRICAO,
+                    anos=L10N_BR_ANOS_PRESCRICAO,
                 )
                 if prescrito
                 else False
@@ -236,15 +244,31 @@ class HrLeave(models.Model):
                 a._l10n_br_horizonte() < leave.request_date_from for a in completos
             ):
                 raise ValidationError(self._l10n_br_msg_prescricao(leave))
+            if leave.state in ("confirm", "validate1", "validate"):
+                alloc = leave._l10n_br_periodo_da_ausencia()
+                if alloc and leave.request_date_to > alloc._l10n_br_horizonte():
+                    raise ValidationError(
+                        _(
+                            "A ausência passa do horizonte do período aquisitivo de "
+                            "%(inicio)s a %(fim)s (%(horizonte)s, cinco anos depois "
+                            "do concessivo, CLT art. 149): termine a ausência até "
+                            "essa data e lance o resto noutro período.",
+                            inicio=fields.Date.to_string(alloc.date_from),
+                            fim=fields.Date.to_string(alloc.date_to),
+                            horizonte=fields.Date.to_string(alloc._l10n_br_horizonte()),
+                        )
+                    )
         return super()._check_validity()
 
     def _l10n_br_msg_prescricao(self, leave):
         return _(
             "%(nome)s: o concessivo de todos os períodos aquisitivos completos "
-            "terminou há mais de cinco anos da data da ausência (%(data)s): a "
-            "pretensão às férias está prescrita (CLT art. 149; CF art. 7º, "
-            "XXIX) e a ausência não pode ser lançada.",
+            "terminou há mais de %(anos)s anos da data da ausência (%(data)s): os "
+            "períodos estão prescritos (CLT art. 149; CF art. 7º, XXIX) e o "
+            "sistema não lança férias desses períodos. Concessão por liberalidade "
+            "deve ser tratada com o jurídico.",
             nome=leave.employee_id.name,
+            anos=L10N_BR_ANOS_PRESCRICAO,
             data=fields.Date.to_string(leave.request_date_from),
         )
 

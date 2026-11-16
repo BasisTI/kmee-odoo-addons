@@ -328,7 +328,13 @@ debita um período cujo aquisitivo ainda não terminou. O aviso de dobra conta s
 os dias depois do concessivo do período debitado. Se o concessivo de todos os períodos
 completos terminou há mais de cinco anos da data da ausência, a pretensão às
 férias está prescrita (CLT art. 149; CF art. 7º, XXIX) e a ausência é recusada
-com mensagem clara.
+com mensagem clara: os períodos estão prescritos, o sistema não lança
+férias desse período e concessão por liberalidade deve ser tratada com o
+jurídico (a lei não proíbe o empregador de conceder férias de período
+prescrito; a recusa é regra do sistema). O recibo de férias segue a mesma regra:
+o período dele só é aceito se o aquisitivo estiver completo no início do gozo e
+dentro do horizonte de cinco anos depois do concessivo. A ausência que cruza o
+horizonte do período é recusada com a data do horizonte.
 
 Uma ausência debita um único período, sem transbordo. A decisão é uma só (a
 análise de ``hr.leave.allocation``): o aviso de dobra, a nota, os dias em dobro
@@ -347,10 +353,13 @@ com o período seguinte intacto: confira o aviso. O aviso nomeia o período
 debitado (datas do aquisitivo) e avisa que um recibo de férias de outro
 período, com início no mesmo dia, fixa o débito.
 
-O consumo do ``hr_holidays`` (``leaves_taken`` por período) segue a ordem de
-expiração, a mesma dos períodos, e bate com o débito acima. Onde um recibo
-fixa um período mais novo com um vencido ainda aberto, o ``hr_holidays`` pode
-divergir do débito do módulo (que obedece o recibo); vale o débito do módulo. A ausência nova que passa do saldo do período é recusada com
+A ORDEM do consumo do ``hr_holidays`` (``leaves_taken`` por período) segue a
+expiração, a mesma dos períodos; a QUANTIDADE por período no ``hr_holidays`` é
+em dias úteis e pode divergir do débito em dias corridos (a sobra em dias úteis
+de um período esgotado em dias corridos pode absorver a ausência seguinte), e
+onde um recibo fixa um período mais novo com um vencido ainda aberto o
+``hr_holidays`` também diverge. É só exibição: vale o débito do módulo. A
+ausência nova que passa do saldo do período é recusada com
 mensagem que diz o saldo; lance outra ausência para o resto. A
 restrição olha só o período debitado pela ausência criada ou alterada: dado
 anterior acima do direito em outro período não bloqueia. Limite: férias

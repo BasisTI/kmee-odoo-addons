@@ -761,6 +761,39 @@ class HrPayslip(models.Model):
         "caminho novo, com alocação, e o legado, sem alocação).",
     )
 
+    @api.constrains("l10n_br_ferias_allocation_id", "date_from", "struct_id")
+    def _check_l10n_br_periodo_do_recibo(self):
+        """O período do recibo de férias segue a regra da ausência (TG-139): o
+        aquisitivo completo no início do gozo (CLT art. 134) e dentro do horizonte
+        de cinco anos depois do concessivo (prescrição, CLT art. 149)."""
+        for rec in self.filtered(lambda s: s.struct_id.code == "FERIAS"):
+            alloc = rec.l10n_br_ferias_allocation_id
+            if not alloc or not alloc.date_to or not rec.date_from:
+                continue
+            if alloc.date_to >= rec.date_from:
+                raise ValidationError(
+                    _(
+                        "O período aquisitivo de %(inicio)s a %(fim)s ainda não "
+                        "estava completo no início do gozo (%(gozo)s): férias só "
+                        "se gozam depois de completo o período aquisitivo (CLT art. "
+                        "134). Escolha um período já completo.",
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                        gozo=fields.Date.to_string(rec.date_from),
+                    )
+                )
+            if alloc._l10n_br_horizonte() < rec.date_from:
+                raise ValidationError(
+                    _(
+                        "O período aquisitivo %(inicio)s a %(fim)s está prescrito "
+                        "(CLT art. 149): o sistema não lança férias desse período. "
+                        "Concessão por liberalidade deve ser tratada com o "
+                        "jurídico.",
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                    )
+                )
+
     @api.constrains(
         "l10n_br_ferias_allocation_id",
         "l10n_br_dias_periodo_gozado",
