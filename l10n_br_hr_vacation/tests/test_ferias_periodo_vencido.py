@@ -144,10 +144,11 @@ class TestFeriasPeriodoVencido(VacationCommon):
     def test_tres_fracoes_de_tras_para_frente(self):
         emp = self._create_employee()
         self._aloca(emp, EC_INI, EC_FIM)
-        self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 21))  # 15
-        self._ausencia(emp, date(2026, 7, 1), date(2026, 7, 21))  # 15
+        # frações em dias corridos (o direito é de 30 dias corridos, art. 130)
+        self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 15))  # 15
+        self._ausencia(emp, date(2026, 7, 1), date(2026, 7, 15))  # 15
         with self.assertRaises(ValidationError):
-            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 20))  # +15 = 45/30
+            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 16))  # +15 = 45/30
 
     def test_duas_alocacoes_fora_de_ordem(self):
         emp = self._create_employee()
@@ -243,13 +244,16 @@ class TestFeriasPeriodoVencido(VacationCommon):
         self.assertIn(self.leave_type_ferias, tipos)
 
     def test_seletor_da_tela_sem_saldo_nao_lista_ferias(self):
+        """Sem dias corridos de direito, o período não é válido para o seletor
+        (``has_valid_allocation``); o saldo em dias úteis do ``hr_holidays`` não
+        conta, e a ausência seria recusada de qualquer forma."""
         emp = self._create_employee()
         self._aloca(emp)
-        self._ausencia(emp, date(2026, 3, 2), date(2026, 4, 10))  # esgota os 30
+        self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))  # esgota os 30
         tipos = (
             self.env["hr.leave.type"]
             .with_context(**self._contexto_tela(emp))
-            .search(self._dominio_seletor())
+            .search([("has_valid_allocation", "=", True)])
         )
         self.assertNotIn(self.leave_type_ferias, tipos)
 

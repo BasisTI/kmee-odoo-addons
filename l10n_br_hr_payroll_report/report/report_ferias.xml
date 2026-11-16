@@ -128,6 +128,12 @@
                                         t-esc="f['fracao']"
                                     /> de <t t-esc="f['fracoes']" />
                                     </t>
+                                    <t t-if="f['dias_dobro']">
+                                        <br /><strong
+                                    >Dias em dobro (CLT art. 137):</strong>&#160;<t
+                                        t-esc="f['dias_dobro']"
+                                    /> (depois do período concessivo)
+                                    </t>
                                 </td>
                                 <td>
                                     <strong>Retorno ao trabalho:</strong>

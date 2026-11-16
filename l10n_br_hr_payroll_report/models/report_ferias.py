@@ -180,6 +180,7 @@ class ReportReciboFerias(models.AbstractModel):
             "pagar_ate": inicio - timedelta(days=DIAS_ANTECEDENCIA_PAGAMENTO)
             if inicio
             else False,
+            "dias_dobro": slip.l10n_br_dias_ferias_dobro,
             "dias_abono": slip.l10n_br_dias_ferias_vendidas,
             "valor_abono": linhas.get("ABONO_PECUNIARIO", 0.0),
             "terco_abono": linhas.get("ADICIONAL_ABONO", 0.0),

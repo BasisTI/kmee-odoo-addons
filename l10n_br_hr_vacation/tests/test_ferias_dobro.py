@@ -115,14 +115,54 @@ class TestFeriasDobro(VacationCommon):
             ),
         )
 
-    def test_abono_nao_dobra(self):
-        """Vende 10 dias, goza 20 depois do concessivo: o abono segue simples."""
-        emp, contract, alloc = self._caso(None, None)
+    def test_abono_com_gozo_depois_do_concessivo_dobra_com_o_terco(self):
+        """Vende 10 dias, goza 20 depois do concessivo (TG-139#P1): o abono paga
+        de novo os 10 dias, mais o terço; natureza 1024, eSocial1955."""
+        emp, contract, alloc = self._caso()
         slip = self._recibo(emp, contract, alloc, date(2027, 2, 1), 20, abono=10)
         self.assertEqual(slip.l10n_br_dias_ferias_dobro, 20)
+        self.assertEqual(slip.l10n_br_dias_abono_dobro, 10)
         self.assertAlmostEqualMoney(self._get_line_total(slip, "FERIAS_DOBRO"), 2400)
         self.assertAlmostEqualMoney(
             self._get_line_total(slip, "ABONO_PECUNIARIO"), 1200
+        )
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "ABONO_DOBRO"), 1200)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "ADICIONAL_ABONO_DOBRO"), 400
+        )
+
+    def test_abono_com_gozo_dentro_do_concessivo_nao_dobra(self):
+        emp, contract, alloc = self._caso()
+        slip = self._recibo(emp, contract, alloc, date(2026, 11, 16), 20, abono=10)
+        self.assertEqual(slip.l10n_br_dias_abono_dobro, 0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "ABONO_PECUNIARIO"), 1200
+        )
+        self.assertEqual(self._get_line_total(slip, "ABONO_DOBRO"), 0)
+        self.assertEqual(self._get_line_total(slip, "ADICIONAL_ABONO_DOBRO"), 0)
+
+    def test_abono_com_gozo_que_atravessa_o_concessivo_nao_dobra(self):
+        """Regra escolhida: o abono dobra só se o gozo COMEÇA depois do concessivo
+        (a data da concessão); os dias do gozo depois dele dobram, o abono não."""
+        emp, contract, alloc = self._caso()
+        slip = self._recibo(emp, contract, alloc, date(2026, 12, 23), 20, abono=10)
+        self.assertEqual(slip.l10n_br_dias_ferias_dobro, 20 - 10)  # 2 a 11 de janeiro
+        self.assertEqual(slip.l10n_br_dias_abono_dobro, 0)
+        self.assertEqual(self._get_line_total(slip, "ABONO_DOBRO"), 0)
+
+    def test_abono_dobro_fora_do_gross_e_do_inss_e_com_terco_no_irrf(self):
+        emp, contract, alloc = self._caso()
+        sem = self._recibo(emp, contract, alloc, date(2026, 11, 16), 20, abono=10)
+        emp, contract, alloc = self._caso()
+        com = self._recibo(emp, contract, alloc, date(2027, 2, 1), 20, abono=10)
+        for codigo in ("GROSS", "INSS", "FGTS", "PENSAO_ALIMENTICIA"):
+            self.assertAlmostEqualMoney(
+                self._get_line_total(com, codigo), self._get_line_total(sem, codigo)
+            )
+        # IRRF: a dobra de férias (2400 + 800 de terço) e o terço do abono dobrado
+        self.assertAlmostEqualMoney(
+            self._get_line_total(com, "BASE_IRRF"),
+            self._get_line_total(sem, "BASE_IRRF") + 2400 + 800 + 400,
         )
 
     def test_estrutura_de_ferias_tem_as_duas_regras(self):

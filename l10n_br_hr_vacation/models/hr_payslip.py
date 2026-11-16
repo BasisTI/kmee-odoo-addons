@@ -181,7 +181,15 @@ class HrPayslip(models.Model):
         "concessivo do período aquisitivo vinculado (CLT art. 134): pagos em "
         "dobro, com o terço (CLT art. 137). Só os dias depois do concessivo "
         "dobram, quando o gozo o atravessa (Súmula 81 do TST). O abono "
-        "pecuniário não dobra.",
+        "pecuniário tem a regra própria de ``l10n_br_dias_abono_dobro``.",
+    )
+    l10n_br_dias_abono_dobro = fields.Integer(
+        string="Dias de Abono em Dobro",
+        compute="_compute_dias_ferias_dobro",
+        help="Dias de abono pecuniário pagos em dobro, com o terço (TG-139#P1): "
+        "todos os dias de abono do recibo quando o gozo começa depois do fim do "
+        "concessivo (a data em que as férias foram concedidas); zero se o gozo "
+        "começa dentro dele, ainda que o atravesse.",
     )
     l10n_br_avos_13 = fields.Integer(
         string="Avos de 13º",
@@ -683,6 +691,7 @@ class HrPayslip(models.Model):
         "l10n_br_ferias_allocation_id",
         "l10n_br_ferias_allocation_id.date_to",
         "l10n_br_dias_ferias_gozadas",
+        "l10n_br_dias_abono",
         "date_from",
     )
     def _compute_dias_ferias_dobro(self):
@@ -690,6 +699,15 @@ class HrPayslip(models.Model):
             alloc = rec.l10n_br_ferias_allocation_id
             dias = rec.l10n_br_dias_ferias_gozadas
             rec.l10n_br_dias_ferias_dobro = 0
+            rec.l10n_br_dias_abono_dobro = 0
+            if (
+                alloc
+                and alloc.date_to
+                and rec.date_from
+                and rec.struct_id.code == "FERIAS"
+                and rec.date_from > alloc._l10n_br_fim_concessivo()
+            ):
+                rec.l10n_br_dias_abono_dobro = rec.l10n_br_dias_abono
             if not alloc or not alloc.date_to or not rec.date_from or dias <= 0:
                 continue
             if rec.struct_id.code != "FERIAS":

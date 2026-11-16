@@ -13,6 +13,8 @@
                 ref('hr_rule_adicional_abono'),
                 ref('hr_rule_ferias_dobro'),
                 ref('hr_rule_adicional_ferias_dobro'),
+                ref('hr_rule_abono_dobro'),
+                ref('hr_rule_adicional_abono_dobro'),
                 ref('hr_rule_gross_ferias'),
                 ref('hr_rule_inss_ferias'),
                 ref('hr_rule_pensao_ferias'),

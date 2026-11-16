@@ -210,6 +210,49 @@ result = tools.br.round_money(FERIAS_DOBRO / 3)
         </field>
     </record>
 
+    <!-- Abono pecuniário em dobro (TG-139#P1, decisão do responsável: os dias
+         vendidos de um período vencido entram na dobra do art. 137, com o terço).
+         Regra: o abono dobra quando o gozo começa DEPOIS do fim do concessivo
+         (a data em que as férias foram concedidas); se começa dentro dele e
+         atravessa, o abono é simples. Paga-se de novo os dias do abono.
+         eSocial, Tabela 03: rubrica padrão eSocial1955 "Abono pecuniário de
+         férias - O dobro na vigência do contrato": natureza 1024, codIncCP 00,
+         codIncFGTS 00, codIncIRRF 75 (abono pecuniário, como o abono simples
+         eSocial1930): indenizatório, fora do GROSS e do IRRF. O terço da dobra do
+         abono não tem rubrica padrão própria: segue o terço do abono simples
+         (eSocial1940, codIncIRRF 13): tributável pelo IRRF, sem INSS e FGTS. -->
+    <record id="hr_rule_abono_dobro" model="hr.salary.rule">
+        <field name="name">Abono Pecuniário em Dobro</field>
+        <field name="sequence" eval="7" />
+        <field name="code">ABONO_DOBRO</field>
+        <field name="category_id" ref="hr_salary_rule_category_prov_indeniz" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = payslip.l10n_br_dias_abono_dobro &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
+result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * payslip.l10n_br_dias_abono_dobro)
+        </field>
+    </record>
+
+    <!-- 1/3 sobre o abono em dobro: tributável pelo IRRF (como o terço do abono simples) -->
+    <record id="hr_rule_adicional_abono_dobro" model="hr.salary.rule">
+        <field name="name">Adicional sobre Abono em Dobro (1/3)</field>
+        <field name="sequence" eval="8" />
+        <field name="code">ADICIONAL_ABONO_DOBRO</field>
+        <field name="category_id" ref="hr_salary_rule_category_prov_trib_irrf" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = payslip.l10n_br_dias_abono_dobro &gt; 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.round_money(ABONO_DOBRO / 3)
+        </field>
+    </record>
+
     <!-- GROSS para férias (apenas verbas TRIBUTÁVEIS: férias gozadas + 1/3) -->
     <record id="hr_rule_gross_ferias" model="hr.salary.rule">
         <field name="name">Remuneração Bruta (Férias)</field>

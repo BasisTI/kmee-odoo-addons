@@ -303,12 +303,35 @@ depois do último dia do concessivo (doze meses após o fim do aquisitivo); gozo
 que atravessa o fim do concessivo dobra só os dias depois dele (Súmula 81 do
 TST). A remuneração de cada dia é a das férias (salário, média e adicionais
 fixos): ``FERIAS`` paga todos os dias uma vez e as rubricas ``FERIAS_DOBRO`` e
-``ADICIONAL_FERIAS_DOBRO`` (1/3) pagam de novo os dias em dobro. O abono
-pecuniário não dobra. Incidências: sem INSS e sem FGTS, com IRRF (eSocial,
-Tabela 03: natureza 1024, rubrica padrão eSocial1950, ``codIncCP`` 00,
-``codIncFGTS`` 00, ``codIncIRRF`` 13; a natureza já inclui o terço). Um período
-aquisitivo com recibo de férias confirmado não aceita mudar as datas: volte o
-recibo para rascunho; o recibo em rascunho recalcula ao ser calculado de novo.
+``ADICIONAL_FERIAS_DOBRO`` (1/3) pagam de novo os dias em dobro. Incidências
+da dobra das férias: sem INSS e sem FGTS, com IRRF (eSocial, Tabela 03: natureza 1024, rubrica padrão eSocial1950, ``codIncCP`` 00,
+``codIncFGTS`` 00, ``codIncIRRF`` 13; a natureza já inclui o terço).
+
+O abono pecuniário também dobra, com o terço, mas só quando o gozo do recibo
+começa depois do fim do concessivo (a data em que as férias foram concedidas);
+gozo que começa dentro dele e o atravessa tem abono simples. As rubricas
+``ABONO_DOBRO`` e ``ADICIONAL_ABONO_DOBRO`` pagam de novo os dias de abono
+(campo ``Dias de Abono em Dobro``). Incidências do abono em dobro: natureza
+1024, rubrica padrão eSocial1955 (``codIncCP`` 00, ``codIncFGTS`` 00,
+``codIncIRRF`` 75, como o abono simples): indenizatório, fora do GROSS (INSS,
+FGTS e pensão percentual) e do IRRF; o terço da dobra do abono não tem rubrica
+padrão própria e segue o terço do abono simples (eSocial1940, ``codIncIRRF``
+13): tributável pelo IRRF, sem INSS e FGTS.
+
+O período que a ausência debita é decidido em dias corridos, não nos dias úteis
+do ``hr_holidays`` (30 dias corridos gastam cerca de 22 e o abono não vira
+ausência: a sobra em dias úteis não é saldo de férias). A ausência debita o
+período em cujo concessivo ela começa; se nenhum concessivo a cobre, o período
+vencido mais antigo com saldo real (direito menos as ausências e o abono já
+lançados). A ausência não passa dos dias de direito do período, em dias
+corridos. O aviso de dobra conta só os dias depois do concessivo do período
+debitado. Se o concessivo do período terminou há mais de cinco anos, há também
+o aviso de prescrição (CLT art. 149; CF art. 7º, XXIX), que não bloqueia.
+
+Um período aquisitivo com recibo de férias confirmado não aceita mudar as datas
+nem as faltas (que mudam os dias de direito): volte o recibo para rascunho; o
+recibo em rascunho recalcula ao ser calculado de novo. O recibo impresso mostra
+os dias em dobro no cabeçalho.
 
 Bug Tracker
 ===========

@@ -14,6 +14,14 @@
                     class="text-warning fw-bold"
                     invisible="not l10n_br_aviso_dobro"
                 />
+                <field
+                    name="l10n_br_aviso_prescricao"
+                    readonly="1"
+                    nolabel="1"
+                    colspan="2"
+                    class="text-danger fw-bold"
+                    invisible="not l10n_br_aviso_prescricao"
+                />
             </xpath>
         </field>
     </record>
