@@ -271,9 +271,10 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         sem = self._holerite(
             emp, contract, self.structure_13, date(2026, 12, 1), date(2026, 12, 20)
         )
+        outro, contrato_outro = self._contrato("FGTS 13_SALARIO com adiantamento")
         com = self._holerite(
-            emp,
-            contract,
+            outro,
+            contrato_outro,
             self.structure_13,
             date(2026, 12, 1),
             date(2026, 12, 20),
