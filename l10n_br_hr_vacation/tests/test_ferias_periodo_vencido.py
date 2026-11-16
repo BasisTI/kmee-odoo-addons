@@ -79,11 +79,13 @@ class TestFeriasPeriodoVencido(VacationCommon):
         with self.assertRaises(ValidationError):
             self._ausencia(emp, date(2026, 11, 16), date(2026, 11, 25))
 
-    def test_periodo_em_curso_continua_aceito(self):
+    def test_periodo_em_curso_e_recusado(self):
+        """CLT art. 134: nunca debita período cujo aquisitivo ainda não terminou
+        (TG-139 r3; a TG-95 aceitava)."""
         emp = self._create_employee()
         self._aloca(emp)
-        leave = self._ausencia(emp, date(2025, 11, 17), date(2025, 11, 21))
-        self.assertEqual(leave.state, "validate")
+        with self.assertRaises(ValidationError):
+            self._ausencia(emp, date(2025, 11, 17), date(2025, 11, 21))
 
     def test_saldo_do_periodo_vencido_nao_e_excedido(self):
         """O concessivo estende a validade, não o saldo: 30 dias de direito."""
@@ -98,7 +100,7 @@ class TestFeriasPeriodoVencido(VacationCommon):
         self._aloca(emp)
         self._aloca(emp, date(2026, 1, 2), date(2027, 1, 1))
         a = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))
-        b = self._ausencia(emp, date(2026, 11, 2), date(2026, 11, 30))
+        b = self._ausencia(emp, date(2027, 2, 1), date(2027, 3, 1))
         self.assertEqual((a.state, b.state), ("validate", "validate"))
 
     def test_recibo_usa_a_alocacao_do_periodo_vencido(self):
@@ -130,9 +132,9 @@ class TestFeriasPeriodoVencido(VacationCommon):
     def test_fora_de_ordem_periodo_em_curso_estoura_o_saldo(self):
         emp = self._create_employee()
         self._aloca(emp, EC_INI, EC_FIM)
-        self._ausencia(emp, date(2026, 11, 2), date(2026, 11, 30))  # 21 dias
+        self._ausencia(emp, date(2027, 11, 2), date(2027, 11, 30))  # 29 dias
         with self.assertRaises(ValidationError):
-            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))  # +22 = 43/30
+            self._ausencia(emp, date(2027, 3, 2), date(2027, 3, 31))  # +30 = 59/30
 
     def test_fora_de_ordem_periodo_vencido_estoura_o_saldo(self):
         emp = self._create_employee()
@@ -145,10 +147,10 @@ class TestFeriasPeriodoVencido(VacationCommon):
         emp = self._create_employee()
         self._aloca(emp, EC_INI, EC_FIM)
         # frações em dias corridos (o direito é de 30 dias corridos, art. 130)
-        self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 15))  # 15
-        self._ausencia(emp, date(2026, 7, 1), date(2026, 7, 15))  # 15
+        self._ausencia(emp, date(2027, 12, 1), date(2027, 12, 15))  # 15
+        self._ausencia(emp, date(2027, 7, 1), date(2027, 7, 15))  # 15
         with self.assertRaises(ValidationError):
-            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 16))  # +15 = 45/30
+            self._ausencia(emp, date(2027, 3, 2), date(2027, 3, 16))  # +15 = 45/30
 
     def test_duas_alocacoes_fora_de_ordem(self):
         emp = self._create_employee()

@@ -48,6 +48,25 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         leave.action_validate()
         return leave
 
+    def _recibo_abono(self, emp, alloc, dias):
+        contract = emp.contract_id or self._create_contract(
+            emp, wage=3000.0, date_start=date(2024, 1, 2)
+        )
+        return self.env["hr.payslip"].create(
+            {
+                "name": "Abono",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_ferias.id,
+                "date_from": date(2025, 3, 3),
+                "date_to": date(2025, 3, 22),
+                "l10n_br_ferias_allocation_id": alloc.id,
+                "l10n_br_dias_periodo_gozado": 20,
+                "l10n_br_dias_abono": dias,
+                "company_id": self.env.company.id,
+            }
+        )
+
     def test_periodo_anterior_todo_gozado_nao_gera_aviso_falso(self):
         """A gozado por inteiro no concessivo; a ausência de B no concessivo de B."""
         emp = self._create_employee()
@@ -62,8 +81,9 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         """A: 20 dias gozados e 10 de abono (sem ausência); B: ausências depois do
         concessivo de A, dentro do de B. B não passa dos 30 dias corridos."""
         emp = self._create_employee()
-        self._aloca(emp, A_INI, A_FIM)
+        a = self._aloca(emp, A_INI, A_FIM)
         self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))  # 20 dias de A
+        self._recibo_abono(emp, a, 10)  # os 10 dias vendidos, em recibo
         self._aloca(emp, B_INI, B_FIM)
         leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 11))  # 10 dias
         self.assertFalse(leave.l10n_br_aviso_dobro)
@@ -147,3 +167,97 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         alloc = self._aloca(emp, A_INI, A_FIM)
         alloc.write({"l10n_br_faltas_periodo_aquisitivo": 10})
         self.assertEqual(alloc.number_of_days, 24)
+
+    # -- r3: ordem de débito, sem transbordo, dado legado --------------------------
+
+    C_INI, C_FIM = date(2026, 1, 2), date(2027, 1, 1)  # concessivo até 2028-01-01
+
+    def _tres_periodos(self, emp):
+        return (
+            self._aloca(emp, A_INI, A_FIM),
+            self._aloca(emp, B_INI, B_FIM),
+            self._aloca(emp, self.C_INI, self.C_FIM),
+        )
+
+    def test_vencido_intacto_e_debitado_antes_do_periodo_seguinte(self):
+        """Três períodos validados, A vencido e intacto: a ausência depois do
+        concessivo de A debita A, com aviso de dobra (e não B)."""
+        emp = self._create_employee()
+        a, b, _c = self._tres_periodos(emp)
+        leave = self._ausencia(emp, date(2026, 6, 1), date(2026, 6, 30))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        self.assertIn("30 dia(s)", leave.l10n_br_aviso_dobro)
+        self.assertIn("2026-01-01", leave.l10n_br_aviso_dobro)
+
+    def test_b_com_pouco_saldo_e_a_intacto_debita_a_e_nao_c(self):
+        """Três períodos, A intacto: em dez/2026 a ausência debita A (o vencido
+        mais antigo com saldo), nem B (abono de 10 dias lançado) nem C (cujo
+        aquisitivo ainda está em curso)."""
+        emp = self._create_employee()
+        a, b, _c = self._tres_periodos(emp)
+        self._recibo_abono(emp, b, 10)
+        leave = self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 20))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        self.assertTrue(leave.l10n_br_aviso_dobro)
+
+    def test_sem_c_aceita_debitando_a(self):
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 20))
+        self.assertEqual(leave.state, "validate")
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        self.assertTrue(leave.l10n_br_aviso_dobro)
+
+    def test_a_esgotado_o_proximo_vencido_com_saldo_e_debitado(self):
+        """A esgotado em 2025: a ausência de dez/2026 debita B (o vencido mais
+        antigo com saldo), com dobra, e não C."""
+        emp = self._create_employee()
+        a, b, _c = self._tres_periodos(emp)
+        self._ausencia(emp, date(2025, 3, 3), date(2025, 4, 1))  # 30 dias de A
+        leave = self._ausencia(emp, date(2027, 2, 1), date(2027, 2, 10))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), b)
+        self.assertTrue(leave.l10n_br_aviso_dobro)
+
+    def test_sem_vencido_com_saldo_debita_o_periodo_do_concessivo(self):
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        self._ausencia(emp, date(2025, 3, 3), date(2025, 4, 1))  # A esgotado
+        b = self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 11))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), b)
+        self.assertFalse(leave.l10n_br_aviso_dobro)
+
+    def test_ausencia_nao_transborda_para_o_periodo_seguinte(self):
+        """20 dias com 10 de saldo no período: recusada, com o saldo na mensagem."""
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        self._ausencia(emp, date(2025, 3, 3), date(2025, 3, 22))  # 20 dias; sobram 10
+        self._aloca(emp, B_INI, B_FIM)
+        with self.assertRaises(ValidationError) as erro:
+            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 21))  # 20 dias
+        self.assertIn("tem 10 dia(s) de saldo", str(erro.exception))
+        # o resto vai noutra ausência: 10 dias de A cabem
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 11))
+        self.assertEqual(leave.state, "validate")
+
+    def test_nunca_debita_periodo_cujo_aquisitivo_nao_terminou(self):
+        """CLT art. 134: ausência antes do fim do aquisitivo é recusada."""
+        emp = self._create_employee()
+        self._aloca(emp, B_INI, B_FIM)
+        with self.assertRaises(ValidationError):
+            self._ausencia(emp, date(2025, 11, 17), date(2025, 11, 21))
+
+    def test_dado_legado_acima_do_direito_nao_bloqueia_outro_periodo(self):
+        """A foi gozado por inteiro (30 dias) e depois perde direito por faltas
+        (24 dias): o dado de A fica acima do direito. Isso não barra uma ausência
+        que debita B."""
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        self._ausencia(emp, date(2025, 3, 3), date(2025, 4, 1))  # 30 dias de A
+        a.write({"l10n_br_faltas_periodo_aquisitivo": 10})  # direito de 24
+        self.assertEqual(a.number_of_days, 24)
+        self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 11))
+        self.assertEqual(leave.state, "validate")
+        self.assertNotEqual(leave._l10n_br_periodo_da_ausencia(), a)

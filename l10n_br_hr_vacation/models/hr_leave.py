@@ -127,10 +127,15 @@ class HrLeave(models.Model):
         "state",
     )
     def _check_l10n_br_dias_corridos(self):
-        """Férias não passam dos dias de direito, contados em dias corridos.
+        """A ausência cabe no saldo do período que debita, em dias corridos.
 
         O ``hr_holidays`` conta dias úteis no tipo Férias; o direito (CLT art.
-        130) e o abono são em dias corridos.
+        130) e o abono são em dias corridos. Uma ausência debita um único
+        período, de aquisitivo completo (CLT art. 134): o que passa do saldo
+        dele é recusado, sem transbordar. Só vale para o período debitado pelas
+        ausências criadas ou alteradas: o dado legado acima do direito em outro
+        período não barra a ausência. Férias coletivas (CLT art. 140) ficam
+        fora deste limite.
         """
         Allocation = self.env["hr.leave.allocation"]
         ativas = self.filtered(
@@ -139,19 +144,48 @@ class HrLeave(models.Model):
         )
         for employee in ativas.employee_id:
             alocacoes = Allocation._l10n_br_alocacoes_ferias(employee)
-            if not alocacoes:
-                continue
             ausencias = Allocation._l10n_br_ausencias_ferias(employee)
-            excesso = Allocation._l10n_br_distribuir(alocacoes, ausencias)[2]
-            if any(excesso.values()):
-                raise ValidationError(
-                    _(
-                        "%(nome)s não tem dias de férias para cobrir essa ausência: "
-                        "o período aquisitivo cobre o direito (CLT art. 130), "
-                        "descontado o abono pecuniário, em dias corridos.",
-                        nome=employee.name,
+            _restante, destino, excesso, saldo = Allocation._l10n_br_distribuir(
+                alocacoes, ausencias
+            )
+            minhas = ativas.filtered(lambda lv: lv.employee_id == employee)
+            periodos = {destino[lv.id] for lv in minhas if destino.get(lv.id)}
+            for lv in minhas:
+                if excesso.get(lv.id):
+                    self._l10n_br_recusar_excesso(
+                        lv, destino[lv.id], saldo[lv.id], excesso[lv.id]
                     )
+            # ausência já lançada, empurrada para fora do saldo por esta (fora de
+            # ordem): recusa quem a empurrou
+            for chave, alloc in destino.items():
+                if alloc in periodos and excesso.get(chave):
+                    self._l10n_br_recusar_excesso(
+                        self.browse(chave), alloc, saldo[chave], excesso[chave]
+                    )
+
+    def _l10n_br_recusar_excesso(self, leave, alloc, saldo, excesso):
+        if alloc:
+            raise ValidationError(
+                _(
+                    "O período aquisitivo de %(inicio)s a %(fim)s tem %(saldo)s "
+                    "dia(s) de saldo de férias e a ausência passa %(excesso)s dia(s) "
+                    "disso. Uma ausência debita um só período: reduza-a ao saldo e "
+                    "lance outra ausência para o resto.",
+                    inicio=fields.Date.to_string(alloc.date_from),
+                    fim=fields.Date.to_string(alloc.date_to),
+                    saldo=int(saldo),
+                    excesso=int(excesso),
                 )
+            )
+        raise ValidationError(
+            _(
+                "%(nome)s não tem período aquisitivo completo com saldo de férias "
+                "para essa ausência (CLT art. 134): férias só se gozam depois de "
+                "completo o período aquisitivo, e o direito (CLT art. 130) é em "
+                "dias corridos, descontado o abono pecuniário.",
+                nome=leave.employee_id.name,
+            )
+        )
 
     @api.model_create_multi
     def create(self, vals_list):

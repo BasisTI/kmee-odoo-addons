@@ -106,8 +106,8 @@ class HrLeaveAllocation(models.Model):
     # O tipo Férias conta dias úteis no ``hr_holidays``: 30 dias corridos gastam
     # ~22 e o abono nem vira ausência, então a sobra do saldo em dias úteis não é
     # saldo de férias. Por isso o período que uma ausência debita é decidido aqui,
-    # em dias corridos: o período em cujo concessivo a ausência começa, ou, se
-    # nenhum a cobre, o vencido mais antigo com saldo real (férias em dobro).
+    # em dias corridos: o período de aquisitivo completo mais antigo com saldo
+    # real, o vencido primeiro (férias em dobro) e depois o do concessivo.
 
     @api.model
     def _l10n_br_alocacoes_ferias(self, employee):
@@ -184,63 +184,55 @@ class HrLeaveAllocation(models.Model):
         return {alloc: alloc.number_of_days - abono[alloc.id] for alloc in alocacoes}
 
     @api.model
-    def _l10n_br_candidatas(self, alocacoes, restante, data):
-        """Períodos que podem receber uma ausência que começa em ``data``."""
-        cobrem = alocacoes.filtered(
-            lambda alloc: alloc.date_from <= data <= alloc._l10n_br_fim_concessivo()
-        )
-        if cobrem:
-            return cobrem
-        return alocacoes.filtered(
-            lambda alloc: alloc.date_from <= data and restante[alloc] > 0
-        )
-
-    @api.model
-    def _l10n_br_primeiro_com_saldo(self, candidatas, restante):
-        for alloc in candidatas:
-            if restante[alloc] > 0:
+    def _l10n_br_destino(self, alocacoes, restante, data):
+        """Período que uma ausência começando em ``data`` debita: o mais antigo,
+        de aquisitivo já completo (CLT art. 134), com saldo real em dias
+        corridos. Primeiro o vencido (concessivo expirado, em dobro, art. 137);
+        sem vencido com saldo, o que ainda está no concessivo. Vazio se nenhum."""
+        for alloc in alocacoes:
+            if alloc.date_to < data and restante[alloc] > 0:
                 return alloc
-        return candidatas[:1]
+        return alocacoes.browse()
 
     @api.model
     def _l10n_br_distribuir(self, alocacoes, ausencias):
-        """Debita, em ordem e em dias corridos, cada ausência nos períodos.
+        """Debita, em ordem e em dias corridos, cada ausência num ÚNICO período.
+
+        Sem transbordo: o que passa do saldo do período fica como excesso (a
+        ausência é recusada; o resto vai em outra ausência). Cada período só
+        debita o que tem; o dado legado acima do direito não vai abaixo de zero.
+        Férias coletivas (CLT art. 140) ficam fora desse limite.
 
         Returns:
-            tuple: ``(restante, destino, excesso)``: dias que sobram por período;
-            período em que cada ausência começa a debitar (``{id: alocação}``);
-            dias sem período para cobri-los (``{id: dias}``).
+            tuple: ``(restante, destino, excesso, saldo_antes)``: dias que sobram
+            por período; período de cada ausência (``{id: alocação}``, vazio se
+            nenhum tem saldo); dias sem saldo (``{id: dias}``); saldo do período
+            antes da ausência (``{id: dias}``).
         """
         restante = self._l10n_br_saldo_corridos(alocacoes)
-        destino, excesso = {}, {}
+        destino, excesso, saldo_antes = {}, {}, {}
         for chave, inicio, fim in ausencias:
             dias = (fim - inicio).days + 1
-            candidatas = self._l10n_br_candidatas(alocacoes, restante, inicio)
-            destino[chave] = self._l10n_br_primeiro_com_saldo(candidatas, restante)
-            for alloc in candidatas:
-                usa = min(dias, max(restante[alloc], 0))
+            alloc = self._l10n_br_destino(alocacoes, restante, inicio)
+            destino[chave] = alloc
+            saldo_antes[chave] = restante[alloc] if alloc else 0
+            usa = min(dias, max(restante[alloc], 0)) if alloc else 0
+            if alloc:
                 restante[alloc] -= usa
-                dias -= usa
-                if dias <= 0:
-                    break
-            excesso[chave] = max(dias, 0)
-        return restante, destino, excesso
+            excesso[chave] = dias - usa
+        return restante, destino, excesso, saldo_antes
 
     @api.model
-    def _l10n_br_periodo_debitado(self, employee, data, antes=None, com_saldo=False):
+    def _l10n_br_periodo_debitado(self, employee, data, antes=None):
         """Período que uma ausência de férias começando em ``data`` debita
-        (vazio se nenhum), contando só as ausências anteriores a ``antes``.
-        ``com_saldo`` esvazia o resultado se o período não tem mais dias."""
+        (vazio se nenhum com saldo), contando só as ausências anteriores a
+        ``antes``."""
         alocacoes = self._l10n_br_alocacoes_ferias(employee)
         if not alocacoes:
             return alocacoes
         ausencias = self._l10n_br_ausencias_ferias(employee, antes=antes or (data, 0))
         restante = self._l10n_br_distribuir(alocacoes, ausencias)[0]
-        candidatas = self._l10n_br_candidatas(alocacoes, restante, data)
-        alloc = self._l10n_br_primeiro_com_saldo(candidatas, restante)
-        if com_saldo and alloc and restante[alloc] <= 0:
-            return self.browse()
-        return alloc
+        return self._l10n_br_destino(alocacoes, restante, data)
 
     @api.model
     def _l10n_br_estender_concessivo(self, employees, target_date=None):

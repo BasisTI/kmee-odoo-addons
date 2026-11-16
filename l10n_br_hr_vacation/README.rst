@@ -321,12 +321,35 @@ padrão própria e segue o terço do abono simples (eSocial1940, ``codIncIRRF``
 O período que a ausência debita é decidido em dias corridos, não nos dias úteis
 do ``hr_holidays`` (30 dias corridos gastam cerca de 22 e o abono não vira
 ausência: a sobra em dias úteis não é saldo de férias). A ausência debita o
-período em cujo concessivo ela começa; se nenhum concessivo a cobre, o período
-vencido mais antigo com saldo real (direito menos as ausências e o abono já
-lançados). A ausência não passa dos dias de direito do período, em dias
-corridos. O aviso de dobra conta só os dias depois do concessivo do período
-debitado. Se o concessivo do período terminou há mais de cinco anos, há também
-o aviso de prescrição (CLT art. 149; CF art. 7º, XXIX), que não bloqueia.
+período de aquisitivo já completo (CLT art. 134) mais antigo com saldo real
+(direito menos as ausências e o abono já lançados): primeiro o vencido, com a
+dobra, e só sem vencido com saldo o período ainda dentro do concessivo. Nunca
+debita um período cujo aquisitivo ainda não terminou. O aviso de dobra conta só
+os dias depois do concessivo do período debitado. Se o concessivo do período
+terminou há mais de cinco anos, há também o aviso de prescrição (CLT art. 149;
+CF art. 7º, XXIX), que não bloqueia.
+
+Uma ausência debita um único período, sem transbordo: se passa do saldo dele, é
+recusada com mensagem que diz o saldo; lance outra ausência para o resto. A
+restrição olha só o período debitado pela ausência criada ou alterada: dado
+anterior acima do direito em outro período não bloqueia. Limite: férias
+coletivas (CLT art. 140), que atravessam vários períodos de uma vez, ficam fora
+desta regra.
+
+O saldo exibido pelo ``hr_holidays`` (formulário da ausência e painel de
+saldos) continua em dias úteis e só enxerga o concessivo: ele não reflete o
+saldo real em dias corridos nem mostra o período vencido. A regra que vale para
+aceitar ou recusar a ausência é a de dias corridos acima; o seletor do tipo
+Férias a respeita.
+
+O terço sobre o abono pecuniário pago na vigência do contrato é tributável pelo
+IRRF: Solução de Consulta COSIT nº 209, de 16/12/2021 (DOU de 29/12/2021), cuja
+ementa diz que o abono do art. 143 da CLT tem a tributação afastada pela
+jurisprudência do STJ reconhecida pelo Ato Declaratório PGFN nº 6/2006, e que o
+adicional constitucional incidente sobre o abono, pago no curso do contrato, é
+tributado. O ADI RFB nº 28/2009 não consta dessa consulta. A página oficial
+(normas.receita.fazenda.gov.br) não abriu na verificação; o texto da ementa foi
+conferido numa republicação do ato.
 
 Um período aquisitivo com recibo de férias confirmado não aceita mudar as datas
 nem as faltas (que mudam os dias de direito): volte o recibo para rascunho; o
