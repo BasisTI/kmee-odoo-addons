@@ -307,8 +307,12 @@ class HrPayslip(models.Model):
         "o extrato oficial (FGTS Digital), posicionado ANTES do mês da "
         "rescisão: a regra soma o depósito do mês da rescisão e o do mês "
         "anterior (vence no dia 20 do mês da rescisão), os recibos de férias "
-        "do mês e o FGTS do 13º pago no mês anterior ou no da rescisão; o que "
-        "já venceu antes está no extrato e não soma de novo. Não aceita valor "
+        "cuja competência do FGTS (o mês em que o gozo começa) é a do mês "
+        "anterior ou a da rescisão e o FGTS do 13º pago em um desses dois meses "
+        "(em janeiro, o de dezembro do ano anterior); o que já venceu antes "
+        "está no extrato e não soma de novo. Extrato posicionado depois do dia "
+        "20 do mês da rescisão já traz o mês anterior: a base o soma de novo. "
+        "Não aceita valor "
         "negativo. Zero e em branco são a mesma coisa: a "
         "regra usa o FALLBACK 8% x salário x meses trabalhados - uma "
         "ESTIMATIVA sem juros/correção monetária, que subestima o saldo "
@@ -538,6 +542,25 @@ class HrPayslip(models.Model):
                         dominio
                         + [("struct_id", "in", self._l10n_br_estruturas_mensais().ids)]
                     )
+        # Quem entra na base da multa de uma rescisão (TG-138 r2): o MESMO
+        # predicado da soma, não um filtro paralelo.
+        candidatas = {}
+        for tipo, conjunto in periodos.items():
+            for contrato, de, ate in conjunto:
+                if contrato not in candidatas:
+                    candidatas[contrato] = self.search(
+                        [
+                            ("contract_id", "=", contrato),
+                            ("state", "!=", "cancel"),
+                            ("l10n_br_fora_de_vigor", "=", False),
+                            ("struct_id.code", "=", "RESCISAO"),
+                        ]
+                    )
+                rescisoes |= candidatas[contrato].filtered(
+                    lambda r, t=tipo, d=de, a=ate: r._l10n_br_entra_na_base_multa(
+                        t, d, a
+                    )
+                )
         dependentes = (mensais | rescisoes) - self
         fechados = dependentes.filtered(lambda r: r.state not in ("draft", "verify"))
         if fechados:
@@ -647,7 +670,7 @@ class HrPayslip(models.Model):
             for c, r in regras.items()
         }
         avisos = []
-        if re.search(r"\bMULTA_FGTS\b", codigo.get("NET", "")):
+        if re.search(r"\b(MULTA_FGTS|categories\.COMP)\b", codigo.get("NET", "")):
             avisos.append(
                 _(
                     "A regra NET (Líquido da Rescisão) está personalizada e soma "
@@ -690,7 +713,7 @@ class HrPayslip(models.Model):
 
     def compute_sheet(self):
         confirmados = self.filtered(lambda slip: slip.state == "done")
-        if confirmados and not self.env.context.get("l10n_br_recalcular_confirmado"):
+        if confirmados:
             raise UserError(
                 _(
                     "Não é possível recalcular holerite confirmado: %(nomes)s. "
@@ -1246,40 +1269,109 @@ class HrPayslip(models.Model):
         fim = self.date_to.replace(day=1) - timedelta(days=1)
         return fim.replace(day=1), fim
 
-    def _l10n_br_fgts_depositado_mensal(self, contract):
-        """FGTS dos holerites MENSAIS e dos RECIBOS DE FÉRIAS que entram na base da multa.
+    def _l10n_br_janela_base_multa(self):
+        """Janelas de competência da base da multa do FGTS desta rescisão (R).
 
-        Base da multa (Lei 8.036/90 art. 18 §1º; Decreto 99.684/90 art. 9º,
-        § 1º): o depósito do mês da rescisão (R) entra mesmo quando foi feito
-        pelo mensal e a rescisão o compensou no saldo de salário (mesmo conjunto
-        de holerites de ``_l10n_br_salario_pago_mensal``), e o recibo de férias
-        do mês também (TG-138). Com o saldo informado, que é o extrato
-        posicionado ANTES de R e ainda não traz o depósito do mês anterior (R-1,
-        vence no dia 20 de R), o de R-1 também entra. Sem mensal ou recibo
-        sobreposto, devolve 0.
+        Com o saldo informado (extrato posicionado ANTES de R, que só traz o que
+        venceu até o dia 20 de R: competências até R-2), a base soma as
+        competências R-1 e R. Sem saldo (estimativa 8% x salário), só o mês de R
+        e o 13º do ano. Devolve ``(inicio, fim, inicio_13, fim_13)``.
         """
         self.ensure_one()
-        if not self.date_from or not self.date_to:
-            return 0.0
-        estruturas = self._l10n_br_estruturas_mensais() | self.env[
-            "hr.payroll.structure"
-        ].search([("code", "=", "FERIAS")])
-        periodos = [(self.date_from, self.date_to)]
+        fim = (self.date_to.replace(day=28) + timedelta(days=4)).replace(
+            day=1
+        ) - timedelta(days=1)
         if self.l10n_br_fgts_saldo_conta:
-            periodos.append(self._l10n_br_competencia_anterior())
+            inicio = self._l10n_br_competencia_anterior()[0]
+            return inicio, fim, inicio, fim
+        ano = self.date_to.year
+        return self.date_from, fim, date(ano, 1, 1), date(ano, 12, 31)
+
+    def _l10n_br_entra_na_base_multa(self, tipo, de, ate):
+        """Um holerite de ``tipo`` (mensal, ferias, decimo1) de ``de`` a ``ate`` entra na base?
+
+        ÚNICA decisão de quais holerites compõem a base da multa (TG-138 r2):
+        a soma do FGTS (``_l10n_br_holerites_da_base_multa``) e o gancho de
+        integridade (quem depende de um holerite alterado) usam este predicado.
+
+        * ``mensal``: o período se sobrepõe à janela.
+        * ``ferias``: pela competência do FGTS do recibo, o mês em que o gozo
+          começa (a mesma do S-1200 e do INSS de férias do mensal), dentro da
+          janela. O recibo de 20/10 a 18/11 é de outubro, mesmo com R em dezembro.
+        * ``decimo1`` (1ª, 2ª parcela e 13º integral): a data de fim (competência
+          do pagamento, vence no dia 20 do mês seguinte) dentro da janela, sem
+          filtro por ano de R: a rescisão de janeiro soma o 13º de dezembro.
+
+        Limite: o extrato posicionado depois do dia 20 de R já traz R-1, e a
+        base o soma de novo.
+        """
+        self.ensure_one()
+        if not self.date_to or not de or not ate:
+            return False
+        inicio, fim, inicio_13, fim_13 = self._l10n_br_janela_base_multa()
+        if tipo == "mensal":
+            return de <= fim and ate >= inicio
+        if tipo == "ferias":
+            return inicio <= de <= fim
+        if tipo == "decimo1":
+            return inicio_13 <= ate <= fim_13
+        return False
+
+    def _l10n_br_tipo_integridade(self):
+        """``mensal``, ``ferias``, ``decimo1`` ou None: o tipo na participação."""
+        self.ensure_one()
+        if self._l10n_br_eh_mensal():
+            return "mensal"
+        codigo = self.struct_id.code
+        if codigo == "FERIAS":
+            return "ferias"
+        if codigo == "13_1PARCELA" or codigo in self._L10N_BR_ESTRUTURAS_13_COMPLETO:
+            return "decimo1"
+        return None
+
+    def _l10n_br_holerites_da_base_multa(self, contract):
+        """Holerites cujo FGTS entra na base da multa desta rescisão (TG-138 r2).
+
+        Lei 8.036/90 art. 18 §1º; Decreto 99.684/90 art. 9º §1º. Do mesmo
+        contrato, em vigor e não cancelados: mensais, recibos de férias e 13º
+        CONFIRMADO (rascunho não pagou nada, TG-97) que
+        ``_l10n_br_entra_na_base_multa`` aceita.
+        """
+        self.ensure_one()
         slips = self.env["hr.payslip"]
-        for de, ate in periodos:
-            slips |= self.env["hr.payslip"].search(
-                [
-                    ("contract_id", "=", contract.id),
-                    ("id", "!=", self.id),
-                    ("state", "!=", "cancel"),
-                    ("l10n_br_fora_de_vigor", "=", False),
-                    ("struct_id", "in", estruturas.ids),
-                    ("date_from", "<=", ate),
-                    ("date_to", ">=", de),
-                ]
+        if not self.date_from or not self.date_to or not contract:
+            return slips
+        inicio, fim, inicio_13, fim_13 = self._l10n_br_janela_base_multa()
+        candidatos = slips.search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("date_to", ">=", min(inicio, inicio_13)),
+                ("date_from", "<=", max(fim, fim_13)),
+            ]
+        )
+        return candidatos.filtered(
+            lambda slip: slip._l10n_br_tipo_integridade()
+            and (slip.state == "done" or slip._l10n_br_tipo_integridade() != "decimo1")
+            and self._l10n_br_entra_na_base_multa(
+                slip._l10n_br_tipo_integridade(), slip.date_from, slip.date_to
             )
+        )
+
+    def _l10n_br_fgts_depositado_mensal(self, contract):
+        """FGTS dos holerites MENSAIS e RECIBOS DE FÉRIAS da base da multa.
+
+        Subconjunto de ``_l10n_br_holerites_da_base_multa`` (o depósito de R
+        entra mesmo quando o mensal foi quem o fez e a rescisão o compensou no
+        saldo de salário; com o saldo informado, o de R-1 também). Sem
+        holerite na janela, devolve 0.
+        """
+        self.ensure_one()
+        slips = self._l10n_br_holerites_da_base_multa(contract).filtered(
+            lambda slip: slip._l10n_br_tipo_integridade() in ("mensal", "ferias")
+        )
         return sum(
             slips.mapped("line_ids")
             .filtered(lambda ln: ln.code == "FGTS")
@@ -1308,20 +1400,17 @@ class HrPayslip(models.Model):
     def _l10n_br_fgts_13_na_base_multa(self, contract):
         """FGTS das parcelas do 13º que a base da multa ainda deve somar (TG-138).
 
-        Com o saldo informado (extrato posicionado ANTES do mês da rescisão R),
-        só entra o FGTS de parcela paga em R-1 ou R: o da paga antes já venceu
-        (dia 20 do mês seguinte) e está no saldo. Sem saldo informado (estimativa
-        8% x salário, que não inclui o 13º), soma todo o FGTS recolhido do 13º.
+        Subconjunto de ``_l10n_br_holerites_da_base_multa``: com o saldo
+        informado, só a parcela paga em R-1 ou R (a anterior já venceu e está no
+        extrato), inclusive dezembro do ano anterior numa rescisão de janeiro;
+        sem saldo (estimativa que não inclui o 13º), todo o FGTS do 13º do ano.
         """
         self.ensure_one()
-        if not self.l10n_br_fgts_saldo_conta:
-            return self._l10n_br_fgts_13_primeira_depositado(contract)
-        inicio = self._l10n_br_competencia_anterior()[0]
-        pagos = self._l10n_br_holerites_13_pagos(contract).filtered(
-            lambda slip: slip.date_to >= inicio
+        slips = self._l10n_br_holerites_da_base_multa(contract).filtered(
+            lambda slip: slip._l10n_br_tipo_integridade() == "decimo1"
         )
         return sum(
-            pagos.mapped("line_ids")
+            slips.mapped("line_ids")
             .filtered(lambda ln: ln.code == "FGTS")
             .mapped("total")
         )
@@ -1778,6 +1867,20 @@ class HrPayslipLine(models.Model):
         res = super().write(vals)
         slips._l10n_br_reconciliar_participacao(antes, slips._l10n_br_participacao())
         return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        slips = self.env["hr.payslip"].browse(
+            {vals["slip_id"] for vals in vals_list if vals.get("slip_id")}
+        )
+        if not slips or self.env.context.get("l10n_br_em_compute"):
+            return super().create(vals_list)
+        # TG-138 r2: linha criada direto num holerite existente passa pelo mesmo
+        # ponto de integridade (compute_sheet já confere no fim).
+        antes = slips._l10n_br_participacao()
+        lines = super().create(vals_list)
+        slips._l10n_br_reconciliar_participacao(antes, slips._l10n_br_participacao())
+        return lines
 
     def unlink(self):
         slips = self.mapped("slip_id").filtered(

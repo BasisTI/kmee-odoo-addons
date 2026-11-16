@@ -286,3 +286,165 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         self.assertAlmostEqualMoney(
             self._get_line_total(com, "NET"), self._get_line_total(sem, "NET") - 500.00
         )
+
+    # --- r2: uma fonte só para os holerites da base da multa -----------------
+
+    def _recibo(self, emp, contract, de, ate, dias):
+        alloc = self.env["hr.leave.allocation"].create(
+            {
+                "employee_id": emp.id,
+                "holiday_status_id": self.leave_type_ferias.id,
+                "date_from": date(2025, 1, 2),
+                "date_to": date(2026, 1, 1),
+            }
+        )
+        alloc.action_validate()
+        return self._holerite(
+            emp,
+            contract,
+            self.structure_ferias,
+            de,
+            ate,
+            l10n_br_ferias_allocation_id=alloc.id,
+            l10n_br_dias_periodo_gozado=dias,
+        )
+
+    def _segunda_parcela(self, emp, contract, ano, mes, confirmar=True):
+        slip = self._holerite(
+            emp,
+            contract,
+            self.structure_13_segunda,
+            date(ano, mes, 1),
+            date(ano, mes, 20),
+        )
+        if confirmar:
+            slip.action_payslip_done()
+        return slip
+
+    def _linha_fgts(self, slip):
+        return slip.line_ids.filtered(lambda ln: ln.code == "FGTS")
+
+    def test_janeiro_soma_o_13o_pago_em_dezembro(self):
+        """R = jan/2027: R-1 é dez/2026; a janela é por competência, não por ano."""
+        emp, contract = self._contrato()
+        dezembro = self._mensal(emp, contract, 12, ano=2026, confirmar=True)
+        segunda = self._segunda_parcela(emp, contract, 2026, 12)
+        fgts_13 = self._get_line_total(segunda, "FGTS")
+        self.assertGreater(fgts_13, 0)
+        resc = self._rescisao(emp, contract, date(2027, 1, 10))
+        self.assertAlmostEqualMoney(
+            self._multa(resc),
+            self._esperada(resc, self._get_line_total(dezembro, "FGTS"), fgts_13),
+        )
+
+    def test_janeiro_13o_de_novembro_ja_esta_no_extrato(self):
+        emp, contract = self._contrato()
+        self._parcela(emp, contract, 11)
+        resc = self._rescisao(emp, contract, date(2027, 1, 10))
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc))
+
+    def test_mensal_de_r1_calculado_depois_recalcula_a_rescisao_aberta(self):
+        emp, contract = self._contrato()
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        novembro = self._mensal(emp, contract, 11)
+        fgts = self._get_line_total(novembro, "FGTS")
+        self.assertGreater(fgts, 0)
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, fgts))
+
+    def test_mensal_de_r1_alterado_com_rescisao_confirmada_recusa(self):
+        emp, contract = self._contrato()
+        novembro = self._mensal(emp, contract, 11)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        resc.action_payslip_done()
+        linha = self._linha_fgts(novembro)
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            linha.write({"amount": linha.amount + 50.0})
+
+    def test_line_create_direto_no_mensal_de_r1_passa_pela_integridade(self):
+        emp, contract = self._contrato()
+        novembro = self._mensal(emp, contract, 11)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        antes = self._multa(resc)
+        novembro.line_ids.filtered(lambda ln: ln.code == "FGTS").copy({"amount": 50.0})
+        self.assertGreater(self._multa(resc), antes)
+        resc.action_payslip_done()
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            self._linha_fgts(novembro)[:1].copy({"amount": 10.0})
+
+    def test_13o_de_r1_confirmado_depois_recalcula_a_rescisao_aberta(self):
+        """Ordem inversa: a rescisão aberta vem primeiro, o 13º de R-1 depois."""
+        emp, contract = self._contrato()
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        parcela = self._parcela(emp, contract, 11, confirmar=False)
+        parcela.action_payslip_done()
+        fgts = self._get_line_total(parcela, "FGTS")
+        self.assertGreater(fgts, 0)
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, fgts))
+        # Voltar o 13º para rascunho tira o FGTS da base da rescisão aberta.
+        parcela.write({"state": "draft"})
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc))
+
+    def test_13o_de_r1_alterado_com_rescisao_confirmada_recusa(self):
+        emp, contract = self._contrato()
+        parcela = self._parcela(emp, contract, 11)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        resc.action_payslip_done()
+        linha = self._linha_fgts(parcela)
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            linha.write({"amount": linha.amount + 5.0})
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            parcela.write({"state": "draft"})
+
+    def test_13o_de_dezembro_alterado_com_rescisao_de_janeiro_confirmada_recusa(self):
+        emp, contract = self._contrato()
+        segunda = self._segunda_parcela(emp, contract, 2026, 12)
+        resc = self._rescisao(emp, contract, date(2027, 1, 10))
+        resc.action_payslip_done()
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            segunda.write({"state": "draft"})
+
+    def test_lote_mensal_de_r1_e_rescisao_em_qualquer_ordem(self):
+        emp, contract = self._contrato()
+        novembro = self._mensal(emp, contract, 11)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        (resc | novembro).write({"state": "done"})
+        self.assertEqual((resc | novembro).mapped("state"), ["done", "done"])
+        self.assertAlmostEqualMoney(
+            self._multa(resc),
+            self._esperada(resc, self._get_line_total(novembro, "FGTS")),
+        )
+
+    def test_recibo_de_r1_calculado_depois_recalcula_e_alterado_recusa(self):
+        emp, contract = self._contrato()
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        recibo = self._recibo(emp, contract, date(2026, 11, 20), date(2026, 12, 18), 29)
+        fgts = self._get_line_total(recibo, "FGTS")
+        self.assertGreater(fgts, 0)
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, fgts))
+        resc.action_payslip_done()
+        linha = self._linha_fgts(recibo)
+        with self.assertRaises(UserError), self.env.cr.savepoint():
+            linha.write({"amount": linha.amount + 5.0})
+
+    def test_recibo_pela_competencia_do_fgts_inicio_do_gozo(self):
+        """Gozo de 20/10 a 18/11 é competência de outubro: já está no extrato."""
+        emp, contract = self._contrato()
+        self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc))
+
+    def test_recibo_que_cruza_dezembro_e_janeiro_entra_na_rescisao_de_janeiro(self):
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 12, 20), date(2027, 1, 18), 30)
+        fgts = self._get_line_total(recibo, "FGTS")
+        self.assertGreater(fgts, 0)
+        resc = self._rescisao(emp, contract, date(2027, 1, 25))
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, fgts))
+
+    def test_net_por_categoria_comp_avisa_o_gestor(self):
+        emp, contract = self._contrato()
+        self._regra(
+            "NET"
+        ).amount_python_compute += "\nresult = result + categories.COMP\n"
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        self.assertIn("NET", resc.l10n_br_aviso_regras)
