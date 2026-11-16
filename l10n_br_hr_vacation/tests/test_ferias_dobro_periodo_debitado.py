@@ -370,3 +370,16 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         self.assertEqual(l3.state, "validate")  # a ausência já lançada fica
         self.assertIn("5 dia(s) do saldo", l3.l10n_br_aviso_dobro)
         self.assertGreater(len(l3.message_ids), notas)
+
+    def test_recibo_posterior_corrige_a_nota_de_dobra_falsa(self):
+        """A ausência nasce antes do recibo e a nota de dobra sai (debita A, o mais
+        antigo); o recibo de B fixa o período e a nota é retratada."""
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        b = self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 11, 1), date(2026, 11, 20))
+        self.assertTrue(leave.l10n_br_aviso_notificado)  # dobra de A
+        self._recibo_ferias(emp, b, date(2026, 11, 1), date(2026, 11, 20), 20, abono=10)
+        self.assertFalse(leave.l10n_br_aviso_notificado)
+        corpos = leave.message_ids.mapped("body")
+        self.assertTrue(any("não vale mais" in (c or "") for c in corpos))

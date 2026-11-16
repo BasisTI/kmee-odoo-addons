@@ -248,6 +248,14 @@ class HrLeave(models.Model):
                     continue
                 if texto:
                     leave.message_post(body=texto, subtype_xmlid="mail.mt_note")
+                else:
+                    leave.message_post(
+                        body=_(
+                            "O aviso anterior desta ausência não vale mais: o "
+                            "período debitado mudou."
+                        ),
+                        subtype_xmlid="mail.mt_note",
+                    )
                 leave.l10n_br_aviso_notificado = texto
 
     def write(self, vals):

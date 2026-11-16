@@ -549,7 +549,16 @@ class HrPayslip(models.Model):
             {i: self._L10N_BR_PARTICIPACAO_NULA for i in slips.ids},
             slips._l10n_br_participacao(),
         )
+        slips._l10n_br_atualizar_notas_ausencias()
         return slips
+
+    def _l10n_br_atualizar_notas_ausencias(self):
+        """O recibo de férias fixa o período que a ausência debita: ao lançar,
+        alterar ou cancelar o recibo, os avisos e notas das ausências do empregado
+        são reconferidos (TG-139)."""
+        ferias = self.filtered(lambda slip: slip.struct_id.code == "FERIAS")
+        if ferias:
+            self.env["hr.leave"]._l10n_br_atualizar_notas(ferias.employee_id)
 
     def write(self, vals):
         if (
@@ -557,10 +566,18 @@ class HrPayslip(models.Model):
             or self.env.context.get("l10n_br_em_compute")
             or not set(vals) & set(self._L10N_BR_CAMPOS_PARTICIPACAO)
         ):
-            return super().write(vals)
-        antes = self._l10n_br_participacao()
-        res = super().write(vals)
-        self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
+            res = super().write(vals)
+        else:
+            antes = self._l10n_br_participacao()
+            res = super().write(vals)
+            self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
+        if {
+            "state",
+            "l10n_br_ferias_allocation_id",
+            "date_from",
+            "struct_id",
+        } & set(vals):
+            self._l10n_br_atualizar_notas_ausencias()
         return res
 
     def unlink(self):
