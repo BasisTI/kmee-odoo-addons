@@ -4,7 +4,7 @@
 {
     "name": "Férias e 13º Salário Brasileiros",
     "summary": "Férias CLT (art. 130), abono pecuniário e 13º salário",
-    "version": "18.0.1.12.0",
+    "version": "18.0.1.13.0",
     "license": "AGPL-3",
     "author": "KMEE,Odoo Community Association (OCA)",
     "website": "https://github.com/KMEE/kmee-odoo-addons",
@@ -19,6 +19,7 @@
         "data/hr_salary_rule_13_data.xml",
         "data/hr_salary_rule_rescisao_data.xml",
         "data/hr_payroll_structure_data.xml",
+        "views/hr_leave_views.xml",
         "views/hr_payslip_views.xml",
         "views/hr_payslip_data_aviso_views.xml",
     ],

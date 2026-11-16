@@ -174,6 +174,23 @@ class HrPayslip(models.Model):
         string="Dias de Férias Gozadas",
         compute="_compute_dias_ferias_gozadas",
     )
+    l10n_br_dias_ferias_dobro = fields.Integer(
+        string="Dias de Férias em Dobro",
+        compute="_compute_dias_ferias_dobro",
+        help="Dias corridos do gozo deste recibo depois do fim do período "
+        "concessivo do período aquisitivo vinculado (CLT art. 134): pagos em "
+        "dobro, com o terço (CLT art. 137). Só os dias depois do concessivo "
+        "dobram, quando o gozo o atravessa (Súmula 81 do TST). O abono "
+        "pecuniário tem a regra própria de ``l10n_br_dias_abono_dobro``.",
+    )
+    l10n_br_dias_abono_dobro = fields.Integer(
+        string="Dias de Abono em Dobro",
+        compute="_compute_dias_ferias_dobro",
+        help="Dias de abono pecuniário pagos em dobro, com o terço (TG-139#P1): "
+        "todos os dias de abono do recibo quando o gozo começa depois do fim do "
+        "concessivo (a data em que as férias foram concedidas); zero se o gozo "
+        "começa dentro dele, ainda que o atravesse.",
+    )
     l10n_br_avos_13 = fields.Integer(
         string="Avos de 13º",
         compute="_compute_avos_13",
@@ -532,7 +549,16 @@ class HrPayslip(models.Model):
             {i: self._L10N_BR_PARTICIPACAO_NULA for i in slips.ids},
             slips._l10n_br_participacao(),
         )
+        slips._l10n_br_atualizar_notas_ausencias()
         return slips
+
+    def _l10n_br_atualizar_notas_ausencias(self):
+        """O recibo de férias fixa o período que a ausência debita: ao lançar,
+        alterar ou cancelar o recibo, os avisos e notas das ausências do empregado
+        são reconferidos (TG-139)."""
+        ferias = self.filtered(lambda slip: slip.struct_id.code == "FERIAS")
+        if ferias:
+            self.env["hr.leave"]._l10n_br_atualizar_notas(ferias.employee_id)
 
     def write(self, vals):
         if (
@@ -540,16 +566,28 @@ class HrPayslip(models.Model):
             or self.env.context.get("l10n_br_em_compute")
             or not set(vals) & set(self._L10N_BR_CAMPOS_PARTICIPACAO)
         ):
-            return super().write(vals)
-        antes = self._l10n_br_participacao()
-        res = super().write(vals)
-        self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
+            res = super().write(vals)
+        else:
+            antes = self._l10n_br_participacao()
+            res = super().write(vals)
+            self._l10n_br_reconciliar_participacao(antes, self._l10n_br_participacao())
+        if {
+            "state",
+            "l10n_br_ferias_allocation_id",
+            "date_from",
+            "struct_id",
+        } & set(vals):
+            self._l10n_br_atualizar_notas_ausencias()
         return res
 
     def unlink(self):
         antes = self._l10n_br_participacao()
+        employees = self.filtered(
+            lambda slip: slip.struct_id.code == "FERIAS"
+        ).employee_id
         res = super().unlink()
         self.browse()._l10n_br_reconciliar_participacao(antes, {})
+        self.env["hr.leave"]._l10n_br_atualizar_notas(employees)
         return res
 
     def compute_sheet(self):
@@ -672,6 +710,37 @@ class HrPayslip(models.Model):
 
     @api.depends(
         "l10n_br_ferias_allocation_id",
+        "l10n_br_ferias_allocation_id.date_to",
+        "l10n_br_dias_ferias_gozadas",
+        "l10n_br_dias_abono",
+        "date_from",
+    )
+    def _compute_dias_ferias_dobro(self):
+        for rec in self:
+            alloc = rec.l10n_br_ferias_allocation_id
+            dias = rec.l10n_br_dias_ferias_gozadas
+            rec.l10n_br_dias_ferias_dobro = 0
+            rec.l10n_br_dias_abono_dobro = 0
+            if (
+                alloc
+                and alloc.date_to
+                and rec.date_from
+                and rec.struct_id.code == "FERIAS"
+                and rec.date_from > alloc._l10n_br_fim_concessivo()
+            ):
+                rec.l10n_br_dias_abono_dobro = rec.l10n_br_dias_abono
+            if not alloc or not alloc.date_to or not rec.date_from or dias <= 0:
+                continue
+            if rec.struct_id.code != "FERIAS":
+                continue
+            fim_gozo = rec.date_from + timedelta(days=dias - 1)
+            depois = max(
+                rec.date_from, alloc._l10n_br_fim_concessivo() + timedelta(days=1)
+            )
+            rec.l10n_br_dias_ferias_dobro = max((fim_gozo - depois).days + 1, 0)
+
+    @api.depends(
+        "l10n_br_ferias_allocation_id",
         "l10n_br_dias_abono",
         "l10n_br_abono_pecuniario",
         "l10n_br_dias_ferias_gozadas",
@@ -691,6 +760,39 @@ class HrPayslip(models.Model):
         help="Dias vendidos como abono pecuniário neste holerite (soma o "
         "caminho novo, com alocação, e o legado, sem alocação).",
     )
+
+    @api.constrains("l10n_br_ferias_allocation_id", "date_from", "struct_id")
+    def _check_l10n_br_periodo_do_recibo(self):
+        """O período do recibo de férias segue a regra da ausência (TG-139): o
+        aquisitivo completo no início do gozo (CLT art. 134) e dentro do horizonte
+        de cinco anos depois do concessivo (prescrição, CLT art. 149)."""
+        for rec in self.filtered(lambda s: s.struct_id.code == "FERIAS"):
+            alloc = rec.l10n_br_ferias_allocation_id
+            if not alloc or not alloc.date_to or not rec.date_from:
+                continue
+            if alloc.date_to >= rec.date_from:
+                raise ValidationError(
+                    _(
+                        "O período aquisitivo de %(inicio)s a %(fim)s ainda não "
+                        "estava completo no início do gozo (%(gozo)s): férias só "
+                        "se gozam depois de completo o período aquisitivo (CLT art. "
+                        "134). Escolha um período já completo.",
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                        gozo=fields.Date.to_string(rec.date_from),
+                    )
+                )
+            if alloc._l10n_br_horizonte() < rec.date_from:
+                raise ValidationError(
+                    _(
+                        "O período aquisitivo %(inicio)s a %(fim)s está prescrito "
+                        "(CLT art. 149): o sistema não lança férias desse período. "
+                        "Concessão por liberalidade deve ser tratada com o "
+                        "jurídico.",
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                    )
+                )
 
     @api.constrains(
         "l10n_br_ferias_allocation_id",
@@ -1428,7 +1530,7 @@ class HrPayslip(models.Model):
             )
             restante = alloc.number_of_days - dias_pagos
             if restante > 0:
-                periodo_concessivo_fim = alloc.date_to + relativedelta(years=1)
+                periodo_concessivo_fim = alloc._l10n_br_fim_concessivo()
                 dobro = self.date_to > periodo_concessivo_fim
                 resultado.append(
                     {

@@ -256,3 +256,100 @@ salarial (as naturezas 6001 e 6002 e o campo 70 da rescisória já existem no m�
 ``DECIMO_RESCISAO`` e o líquido, e liga a rubrica nova à estrutura, só se estiverem
 como na 1.10.0; regra personalizada fica como está, com aviso no log. Holerites já
 calculados não mudam.
+
+**Férias concedidas depois do período concessivo (em dobro)**
+
+O concessivo (CLT art. 134) deixou de limitar o lançamento: férias de período
+aquisitivo vencido podem ser lançadas depois dele. A ausência é aceita e o RH é
+avisado, no formulário e numa nota na ausência, com os dias que ficam depois do
+fim do concessivo. Esses dias são pagos em dobro, com o terço (CLT art. 137).
+
+No recibo de férias, o campo ``Dias de Férias em Dobro`` conta os dias do gozo
+depois do último dia do concessivo (doze meses após o fim do aquisitivo); gozo
+que atravessa o fim do concessivo dobra só os dias depois dele (Súmula 81 do
+TST). A remuneração de cada dia é a das férias (salário, média e adicionais
+fixos): ``FERIAS`` paga todos os dias uma vez e as rubricas ``FERIAS_DOBRO`` e
+``ADICIONAL_FERIAS_DOBRO`` (1/3) pagam de novo os dias em dobro. Incidências
+da dobra das férias: sem INSS e sem FGTS, com IRRF (eSocial, Tabela 03: natureza 1024, rubrica padrão eSocial1950, ``codIncCP`` 00,
+``codIncFGTS`` 00, ``codIncIRRF`` 13; a natureza já inclui o terço).
+
+O abono pecuniário também dobra, com o terço, mas só quando o gozo do recibo
+começa depois do fim do concessivo (a data em que as férias foram concedidas);
+gozo que começa dentro dele e o atravessa tem abono simples. As rubricas
+``ABONO_DOBRO`` e ``ADICIONAL_ABONO_DOBRO`` pagam de novo os dias de abono
+(campo ``Dias de Abono em Dobro``). Incidências do abono em dobro: natureza
+1024, rubrica padrão eSocial1955 (``codIncCP`` 00, ``codIncFGTS`` 00,
+``codIncIRRF`` 75, como o abono simples): indenizatório, fora do GROSS (INSS,
+FGTS e pensão percentual) e do IRRF; o terço da dobra do abono não tem rubrica
+padrão própria e segue o terço do abono simples (eSocial1940, ``codIncIRRF``
+13): tributável pelo IRRF, sem INSS e FGTS.
+
+O período que a ausência debita é decidido em dias corridos, não nos dias úteis
+do ``hr_holidays`` (30 dias corridos gastam cerca de 22 e o abono não vira
+ausência: a sobra em dias úteis não é saldo de férias). A ausência debita o
+período de aquisitivo já completo (CLT art. 134) mais antigo com saldo real
+(direito menos as ausências e o abono já lançados): primeiro o vencido, com a
+dobra, e só sem vencido com saldo o período ainda dentro do concessivo. Nunca
+debita um período cujo aquisitivo ainda não terminou. O aviso de dobra conta só
+os dias depois do concessivo do período debitado. Se o concessivo de todos os períodos
+completos terminou há mais de cinco anos da data da ausência, a pretensão às
+férias está prescrita (CLT art. 149; CF art. 7º, XXIX) e a ausência é recusada
+com mensagem clara: os períodos estão prescritos, o sistema não lança
+férias desse período e concessão por liberalidade deve ser tratada com o
+jurídico (a lei não proíbe o empregador de conceder férias de período
+prescrito; a recusa é regra do sistema). O recibo de férias segue a mesma regra:
+o período dele só é aceito se o aquisitivo estiver completo no início do gozo e
+dentro do horizonte de cinco anos depois do concessivo. A ausência que cruza o
+horizonte do período é recusada com a data do horizonte.
+
+Uma ausência debita um único período, sem transbordo. A decisão é uma só (a
+análise de ``hr.leave.allocation``): o aviso de dobra, a nota, os dias em dobro
+do recibo e a restrição de saldo leem dela, e o recibo de férias que começa no
+mesmo dia (rascunho ou confirmado) fixa o período. Para o ``hr_holidays`` todo
+período de Férias vale até o fim do concessivo mais cinco anos (o mesmo
+deslocamento para todos: a ordem de expiração do ``hr_holidays`` fica igual à
+dos períodos e o cálculo de calendário continua curto); quem aceita ou recusa é
+a restrição em dias corridos, e o período em aquisição é recusado. Ao recusar, cancelar ou alterar uma ausência, o débito
+das seguintes é recalculado: o aviso e uma nota nova refletem o novo período,
+e a ausência já lançada que ficar acima do saldo continua lançada, com o
+excesso no aviso. Criar, validar, recusar ou excluir uma alocação de Férias e
+excluir um recibo em rascunho também reconferem os avisos. A redistribuição pode
+levar uma ausência posterior para o período vencido com excesso e dobra, mesmo
+com o período seguinte intacto: confira o aviso. O aviso nomeia o período
+debitado (datas do aquisitivo) e avisa que um recibo de férias de outro
+período, com início no mesmo dia, fixa o débito.
+
+A ORDEM do consumo do ``hr_holidays`` (``leaves_taken`` por período) segue a
+expiração, a mesma dos períodos; a QUANTIDADE por período no ``hr_holidays`` é
+em dias úteis e pode divergir do débito em dias corridos (a sobra em dias úteis
+de um período esgotado em dias corridos pode absorver a ausência seguinte), e
+onde um recibo fixa um período mais novo com um vencido ainda aberto o
+``hr_holidays`` também diverge. É só exibição: vale o débito do módulo. A
+ausência nova que passa do saldo do período é recusada com
+mensagem que diz o saldo; lance outra ausência para o resto. A
+restrição olha só o período debitado pela ausência criada ou alterada: dado
+anterior acima do direito em outro período não bloqueia. Limite: férias
+coletivas (CLT art. 140), que atravessam vários períodos de uma vez, ficam fora
+desta regra, e a antecipação da Lei 14.437/2022 também. Férias antecipadas
+individuais (gozo antes de completo o período aquisitivo) passam a ser recusadas
+(CLT art. 134).
+
+O saldo exibido pelo ``hr_holidays`` (formulário da ausência e painel de
+saldos) continua em dias úteis e só enxerga o concessivo: ele não reflete o
+saldo real em dias corridos nem mostra o período vencido. A regra que vale para
+aceitar ou recusar a ausência é a de dias corridos acima; o seletor do tipo
+Férias a respeita.
+
+O terço sobre o abono pecuniário pago na vigência do contrato é tributável pelo
+IRRF: Solução de Consulta COSIT nº 209, de 16/12/2021 (DOU de 29/12/2021), cuja
+ementa diz que o abono do art. 143 da CLT tem a tributação afastada pela
+jurisprudência do STJ reconhecida pelo Ato Declaratório PGFN nº 6/2006, e que o
+adicional constitucional incidente sobre o abono, pago no curso do contrato, é
+tributado. O ADI RFB nº 28/2009 não consta dessa consulta. A página oficial
+(normas.receita.fazenda.gov.br) não abriu na verificação; o texto da ementa foi
+conferido numa republicação do ato.
+
+Um período aquisitivo com recibo de férias confirmado não aceita mudar as datas
+nem as faltas (que mudam os dias de direito): volte o recibo para rascunho; o
+recibo em rascunho recalcula ao ser calculado de novo. O recibo impresso mostra
+os dias em dobro no cabeçalho.
