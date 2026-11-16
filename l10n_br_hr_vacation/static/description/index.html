@@ -650,19 +650,30 @@ período de aquisitivo já completo (CLT art. 134) mais antigo com saldo real
 (direito menos as ausências e o abono já lançados): primeiro o vencido, com a
 dobra, e só sem vencido com saldo o período ainda dentro do concessivo. Nunca
 debita um período cujo aquisitivo ainda não terminou. O aviso de dobra conta só
-os dias depois do concessivo do período debitado. Se o concessivo do período
-terminou há mais de cinco anos, há também o aviso de prescrição (CLT art. 149;
-CF art. 7º, XXIX), que não bloqueia.</p>
+os dias depois do concessivo do período debitado. Se o concessivo de todos os períodos
+completos terminou há mais de cinco anos da data da ausência, a pretensão às
+férias está prescrita (CLT art. 149; CF art. 7º, XXIX) e a ausência é recusada
+com mensagem clara.</p>
 <p>Uma ausência debita um único período, sem transbordo. A decisão é uma só (a
 análise de <tt class="docutils literal">hr.leave.allocation</tt>): o aviso de dobra, a nota, os dias em dobro
 do recibo e a restrição de saldo leem dela, e o recibo de férias que começa no
 mesmo dia (rascunho ou confirmado) fixa o período. Para o <tt class="docutils literal">hr_holidays</tt> todo
-período de aquisitivo completo fica sem teto de validade (quem aceita ou recusa
-é a restrição em dias corridos); o período em aquisição continua só no
-concessivo e é recusado. Ao recusar, cancelar ou alterar uma ausência, o débito
+período de Férias vale até o fim do concessivo mais cinco anos (o mesmo
+deslocamento para todos: a ordem de expiração do <tt class="docutils literal">hr_holidays</tt> fica igual à
+dos períodos e o cálculo de calendário continua curto); quem aceita ou recusa é
+a restrição em dias corridos, e o período em aquisição é recusado. Ao recusar, cancelar ou alterar uma ausência, o débito
 das seguintes é recalculado: o aviso e uma nota nova refletem o novo período,
 e a ausência já lançada que ficar acima do saldo continua lançada, com o
-excesso no aviso. A ausência nova que passa do saldo do período é recusada com
+excesso no aviso. Criar, validar, recusar ou excluir uma alocação de Férias e
+excluir um recibo em rascunho também reconferem os avisos. A redistribuição pode
+levar uma ausência posterior para o período vencido com excesso e dobra, mesmo
+com o período seguinte intacto: confira o aviso. O aviso nomeia o período
+debitado (datas do aquisitivo) e avisa que um recibo de férias de outro
+período, com início no mesmo dia, fixa o débito.</p>
+<p>O consumo do <tt class="docutils literal">hr_holidays</tt> (<tt class="docutils literal">leaves_taken</tt> por período) segue a ordem de
+expiração, a mesma dos períodos, e bate com o débito acima. Onde um recibo
+fixa um período mais novo com um vencido ainda aberto, o <tt class="docutils literal">hr_holidays</tt> pode
+divergir do débito do módulo (que obedece o recibo); vale o débito do módulo. A ausência nova que passa do saldo do período é recusada com
 mensagem que diz o saldo; lance outra ausência para o resto. A
 restrição olha só o período debitado pela ausência criada ou alterada: dado
 anterior acima do direito em outro período não bloqueia. Limite: férias

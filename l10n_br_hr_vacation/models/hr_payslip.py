@@ -582,8 +582,12 @@ class HrPayslip(models.Model):
 
     def unlink(self):
         antes = self._l10n_br_participacao()
+        employees = self.filtered(
+            lambda slip: slip.struct_id.code == "FERIAS"
+        ).employee_id
         res = super().unlink()
         self.browse()._l10n_br_reconciliar_participacao(antes, {})
+        self.env["hr.leave"]._l10n_br_atualizar_notas(employees)
         return res
 
     def compute_sheet(self):

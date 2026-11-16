@@ -114,17 +114,22 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         leave = self._ausencia(emp, date(2026, 12, 28), date(2027, 1, 10))
         self.assertIn("9 dia(s)", leave.l10n_br_aviso_dobro)
 
-    def test_prescricao_do_art_149_avisa_e_nao_bloqueia(self):
-        """Período de 2017 lançado em 2026: aceito, com os dois avisos."""
+    def test_depois_do_horizonte_de_prescricao_e_recusada_com_mensagem_clara(self):
+        """Período de 2017 (concessivo até 2019) lançado em 2026: passou o horizonte
+        de cinco anos (CLT art. 149), a ausência é recusada (TG-139 r5)."""
         emp = self._create_employee()
         self._aloca(emp, date(2017, 1, 2), date(2018, 1, 1))
-        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))
+        with self.assertRaises(ValidationError) as erro:
+            self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))
+        self.assertIn("prescrita", str(erro.exception))
+
+    def test_dentro_do_horizonte_o_periodo_antigo_ainda_recebe_ausencia(self):
+        """Concessivo terminado em 2026-01-01: até 2031-01-01 ainda recebe."""
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        leave = self._ausencia(emp, date(2030, 12, 2), date(2030, 12, 6))
         self.assertEqual(leave.state, "validate")
         self.assertIn("dobro", leave.l10n_br_aviso_dobro)
-        self.assertIn("prescrita", leave.l10n_br_aviso_prescricao)
-        self.assertTrue(
-            leave.message_ids.filtered(lambda m: "prescrita" in m.body),
-        )
 
     def test_dobra_recente_nao_avisa_prescricao(self):
         emp = self._create_employee()
@@ -293,7 +298,7 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
 
     # -- r4: uma fonte só decide o período (validade, aviso, redistribuição) ---------
 
-    def _recibo_ferias(self, emp, alloc, inicio, fim, dias, abono=0):
+    def _recibo_ferias(self, emp, alloc, inicio, fim, dias, abono=0, calcular=True):
         contract = emp.contract_id or self._create_contract(
             emp, wage=3000.0, date_start=A_INI
         )
@@ -311,7 +316,8 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
                 "company_id": self.env.company.id,
             }
         )
-        slip.compute_sheet()
+        if calcular:
+            slip.compute_sheet()
         return slip
 
     def test_vencido_em_dobro_e_depois_o_periodo_seguinte_sem_o_posterior(self):
@@ -383,3 +389,64 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         self.assertFalse(leave.l10n_br_aviso_notificado)
         corpos = leave.message_ids.mapped("body")
         self.assertTrue(any("não vale mais" in (c or "") for c in corpos))
+
+    # -- r5: validade uniforme, alocação e recibo reconferem as notas -----------------
+
+    def test_consumo_do_hr_holidays_bate_com_o_debito_da_analise(self):
+        """A ausência debitada de 2024 aparece como tomada em 2024 (e não em 2026,
+        o período em curso), porque todo período tem a mesma extensão."""
+        emp = self._create_employee()
+        a, b, c = self._tres_periodos(emp)
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 21))  # 20 de A
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        allocs = a | b | c
+        allocs.invalidate_recordset(["leaves_taken"])
+        # o hr_holidays calcula com a validade estendida durante get_allocation_data
+        self.leave_type_ferias.get_allocation_data(emp, date(2026, 3, 2))
+        tomados = {x.date_from.year: x.leaves_taken for x in allocs}
+        self.assertGreater(tomados[2024], 0, tomados)
+        self.assertEqual(tomados[2025], 0, tomados)
+        self.assertEqual(tomados[2026], 0, tomados)
+
+    def test_recusar_a_alocacao_reconfere_a_nota_da_ausencia(self):
+        emp = self._create_employee()
+        a, _b, _c = self._tres_periodos(emp)
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 21))  # 20 de A
+        self.assertIn("dobro", leave.l10n_br_aviso_notificado)
+        a.action_refuse()
+        # sem A, a ausência passa para B (ainda no concessivo): sem dobra
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia().date_from, B_INI)
+        self.assertFalse(leave.l10n_br_aviso_notificado)
+        self.assertTrue(
+            any("não vale mais" in (m or "") for m in leave.message_ids.mapped("body"))
+        )
+
+    def test_criar_a_alocacao_reconfere_a_nota_da_ausencia(self):
+        emp = self._create_employee()
+        self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 21))  # 20 de B
+        self.assertFalse(leave.l10n_br_aviso_notificado)
+        self._aloca(emp, A_INI, A_FIM)  # o período mais antigo chega depois
+        self.assertIn("dobro", leave.l10n_br_aviso_notificado)
+
+    def test_excluir_o_recibo_em_rascunho_reconfere_a_nota(self):
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        b = self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 11, 1), date(2026, 11, 20))
+        self.assertIn("dobro", leave.l10n_br_aviso_notificado)  # debita A
+        recibo = self._recibo_ferias(
+            emp, b, date(2026, 11, 1), date(2026, 11, 20), 20, abono=10, calcular=False
+        )  # rascunho (só o rascunho se exclui)
+        self.assertFalse(leave.l10n_br_aviso_notificado)  # o recibo fixa B
+        recibo.unlink()
+        self.assertIn("dobro", leave.l10n_br_aviso_notificado)  # volta a A
+
+    def test_aviso_nomeia_o_periodo_e_o_recibo_que_fixa_o_debito(self):
+        emp = self._create_employee()
+        self._aloca(emp, A_INI, A_FIM)
+        self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 11, 1), date(2026, 11, 20))
+        aviso = leave.l10n_br_aviso_dobro
+        self.assertIn("2024-01-02 a 2025-01-01", aviso)
+        self.assertIn("fixa o débito", aviso)

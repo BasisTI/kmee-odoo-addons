@@ -74,6 +74,17 @@ class HrLeave(models.Model):
         )
         return analise.get(-1, vazio)
 
+    def _l10n_br_recibo_pode_mudar_periodo(self, alloc):
+        """Há outro período de aquisitivo completo e nenhum recibo fixa o débito."""
+        self.ensure_one()
+        Allocation = self.env["hr.leave.allocation"]
+        if Allocation._l10n_br_periodo_do_recibo(
+            self.employee_id, [self.request_date_from]
+        ):
+            return False
+        outros = Allocation._l10n_br_alocacoes_ferias(self.employee_id) - alloc
+        return bool(outros.filtered(lambda a: a.date_to < self.request_date_from))
+
     def _l10n_br_periodo_da_ausencia(self):
         """Período aquisitivo que esta ausência debita, em dias corridos, ou um
         recordset vazio."""
@@ -105,12 +116,23 @@ class HrLeave(models.Model):
                 partes.append(
                     _(
                         "Atenção RH: %(dias)s dia(s) depois do fim do período "
-                        "concessivo (%(limite)s). Esses dias são pagos em dobro, "
+                        "concessivo (%(limite)s) do período aquisitivo de "
+                        "%(inicio)s a %(fim)s. Esses dias são pagos em dobro, "
                         "com o terço (CLT art. 137).",
                         dias=dias,
                         limite=fields.Date.to_string(limite),
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
                     )
                 )
+                if leave._l10n_br_recibo_pode_mudar_periodo(alloc):
+                    partes.append(
+                        _(
+                            "Um recibo de férias de outro período, com início no "
+                            "mesmo dia, fixa o débito nesse período e muda este "
+                            "aviso."
+                        )
+                    )
             if alloc and excesso:
                 partes.append(
                     _(
@@ -201,6 +223,31 @@ class HrLeave(models.Model):
                         self.browse(chave), alloc, saldo[chave], excesso[chave]
                     )
 
+    def _check_validity(self):
+        """Ausência de férias depois do horizonte (concessivo mais 5 anos, a
+        prescrição do art. 149) é recusada com mensagem clara, antes da do
+        ``hr_holidays``."""
+        Allocation = self.env["hr.leave.allocation"]
+        for leave in self.filtered(lambda lv: lv._l10n_br_ferias_ativa()):
+            completos = Allocation._l10n_br_alocacoes_ferias(
+                leave.employee_id
+            ).filtered(lambda a: a.date_to < leave.request_date_from)
+            if completos and all(
+                a._l10n_br_horizonte() < leave.request_date_from for a in completos
+            ):
+                raise ValidationError(self._l10n_br_msg_prescricao(leave))
+        return super()._check_validity()
+
+    def _l10n_br_msg_prescricao(self, leave):
+        return _(
+            "%(nome)s: o concessivo de todos os períodos aquisitivos completos "
+            "terminou há mais de cinco anos da data da ausência (%(data)s): a "
+            "pretensão às férias está prescrita (CLT art. 149; CF art. 7º, "
+            "XXIX) e a ausência não pode ser lançada.",
+            nome=leave.employee_id.name,
+            data=fields.Date.to_string(leave.request_date_from),
+        )
+
     def _l10n_br_recusar_excesso(self, leave, alloc, saldo, excesso):
         if alloc:
             raise ValidationError(
@@ -215,6 +262,15 @@ class HrLeave(models.Model):
                     excesso=int(excesso),
                 )
             )
+        completos = (
+            self.env["hr.leave.allocation"]
+            ._l10n_br_alocacoes_ferias(leave.employee_id)
+            .filtered(lambda a: a.date_to < leave.request_date_from)
+        )
+        if completos and all(
+            a._l10n_br_horizonte() < leave.request_date_from for a in completos
+        ):
+            raise ValidationError(self._l10n_br_msg_prescricao(leave))
         raise ValidationError(
             _(
                 "%(nome)s não tem período aquisitivo completo com saldo de férias "

@@ -10,9 +10,14 @@ from odoo.exceptions import UserError
 
 from odoo.addons.l10n_br_hr_payroll.models.salary_rules_br import calc_ferias_dias
 
-# Validade vista pelo hr_holidays, enquanto dura o cálculo do saldo, no período
-# debitado pela ausência (ver ``_l10n_br_estender_concessivo``): sem fim prático.
-L10N_BR_SEM_LIMITE = relativedelta(years=100)
+# Horizonte de uma ausência de férias: o fim do concessivo mais cinco anos, o
+# prazo de prescrição (CLT art. 149; CF art. 7º, XXIX). Depois dele o período não
+# recebe mais ausência.
+L10N_BR_ANOS_PRESCRICAO = 5
+# Validade vista pelo hr_holidays enquanto dura o cálculo do saldo: o concessivo
+# (12 meses) e o horizonte, o mesmo deslocamento para todo período, para a ordem
+# de expiração ficar igual à dos períodos (``_l10n_br_estender_concessivo``).
+L10N_BR_VALIDADE = relativedelta(years=1 + L10N_BR_ANOS_PRESCRICAO)
 
 
 class HrLeaveAllocation(models.Model):
@@ -52,6 +57,7 @@ class HrLeaveAllocation(models.Model):
             )
             if a_recomputar:
                 a_recomputar._compute_number_of_days()
+        records._l10n_br_reconferir_notas()
         return records
 
     @api.depends("l10n_br_faltas_periodo_aquisitivo")
@@ -77,6 +83,33 @@ class HrLeaveAllocation(models.Model):
         self.ensure_one()
         return self.date_to and self.date_to + relativedelta(years=1)
 
+    def _l10n_br_horizonte(self):
+        """Último dia em que o período recebe ausência: o fim do concessivo mais
+        cinco anos (prescrição, CLT art. 149)."""
+        self.ensure_one()
+        return self._l10n_br_fim_concessivo() + relativedelta(
+            years=L10N_BR_ANOS_PRESCRICAO
+        )
+
+    def _l10n_br_reconferir_notas(self):
+        """Alocação de Férias criada, validada, recusada, alterada ou excluída
+        muda o débito das ausências do empregado: reconfere os avisos e notas."""
+        vacation_type = self.env.ref(
+            "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
+        )
+        ferias = self.filtered(lambda alloc: alloc.holiday_status_id == vacation_type)
+        if ferias:
+            self.env["hr.leave"]._l10n_br_atualizar_notas(ferias.employee_id)
+
+    def unlink(self):
+        employees = self.filtered(
+            lambda alloc: alloc.holiday_status_id
+            == self.env.ref("l10n_br_hr_vacation.leave_type_ferias", False)
+        ).employee_id
+        res = super().unlink()
+        self.env["hr.leave"]._l10n_br_atualizar_notas(employees)
+        return res
+
     def write(self, vals):
         if {"date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(vals):
             confirmados = (
@@ -99,7 +132,12 @@ class HrLeaveAllocation(models.Model):
                         "de alterá-las."
                     )
                 )
-        return super().write(vals)
+        res = super().write(vals)
+        if {"state", "date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(
+            vals
+        ):
+            self._l10n_br_reconferir_notas()
+        return res
 
     # -- período debitado pela ausência de férias (CLT arts. 134 e 137) ---------
     #
@@ -223,7 +261,11 @@ class HrLeaveAllocation(models.Model):
         corridos. Primeiro o vencido (concessivo expirado, em dobro, art. 137);
         sem vencido com saldo, o que ainda está no concessivo. Vazio se nenhum."""
         for alloc in alocacoes:
-            if alloc.date_to < data and restante[alloc] > 0:
+            if (
+                alloc.date_to < data
+                and restante[alloc] > 0
+                and alloc._l10n_br_horizonte() >= data
+            ):
                 return alloc
         return alocacoes.browse()
 
@@ -291,22 +333,23 @@ class HrLeaveAllocation(models.Model):
 
     @api.model
     def _l10n_br_estender_concessivo(self, employees, target_date=None):
-        """Faz o ``hr_holidays`` ver as alocações de férias válidas sem teto
-        quando o aquisitivo está completo, sem gravar nada.
+        """Faz o ``hr_holidays`` ver as alocações de férias válidas até o fim do
+        concessivo mais cinco anos, sem gravar nada.
 
         ``date_to`` é o fim do período aquisitivo e continua sendo (dobra,
         férias vencidas e recibo o leem). O ``hr_holidays`` o usa como fim da
         validade do saldo, em vários pontos (consumo, saldo exibido, seletor
         do tipo de folga). Enquanto dura o cálculo do saldo, o valor em cache
-        de ``date_to`` fica 100 anos à frente para todo período de aquisitivo
-        completo na data da ausência (``target_date``, ou hoje); o período
-        ainda em aquisição fica no concessivo, 12 meses à frente (a ausência
-        nele é recusada, CLT art. 134). Quem aceita ou recusa a ausência é a
-        restrição em dias corridos (``_l10n_br_distribuir``), uma fonte só: o
-        ``hr_holidays`` só confere que existe validade. Com isso o ``hr_holidays``
-        mostra o saldo (em dias úteis) de todos os períodos completos, inclusive
-        os vencidos. ``_l10n_br_restaurar_concessivo`` devolve o original.
-        Reentrante: só a chamada mais externa troca.
+        de ``date_to`` fica 6 anos à frente (12 meses de concessivo, CLT art.
+        134, e 5 de horizonte, o prazo de prescrição do art. 149) em TODO período
+        de Férias, o mesmo deslocamento para todos: a ordem de expiração do
+        ``hr_holidays`` (e, com ela, a do consumo) fica igual à dos períodos, e
+        o horizonte é curto (sem o custo de calendário de uma validade de
+        décadas). Quem aceita ou recusa a ausência é a restrição em dias
+        corridos (``_l10n_br_distribuir``), uma fonte só: período em curso é
+        recusado (art. 134) e período depois do horizonte também.
+        ``_l10n_br_restaurar_concessivo`` devolve o original. Reentrante: só a
+        chamada mais externa troca.
 
         Returns:
             dict | None: ``{alocação: date_to original}`` a restaurar, ou
@@ -332,13 +375,10 @@ class HrLeaveAllocation(models.Model):
                 ]
             )
         )
-        data = fields.Date.to_date(target_date) if target_date else fields.Date.today()
         originais = {alloc: alloc.date_to for alloc in alocacoes}
         field = self._fields["date_to"]
         for alloc, date_to in originais.items():
-            # aquisitivo completo: sem teto; em curso: só o concessivo (art. 134)
-            ate = L10N_BR_SEM_LIMITE if date_to < data else relativedelta(years=1)
-            self.env.cache.set(alloc, field, date_to + ate)
+            self.env.cache.set(alloc, field, date_to + L10N_BR_VALIDADE)
         cache_cr["l10n_br_concessivo"] = originais
         return originais
 
