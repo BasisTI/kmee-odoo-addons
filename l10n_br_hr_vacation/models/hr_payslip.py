@@ -307,7 +307,8 @@ class HrPayslip(models.Model):
         "o extrato oficial (FGTS Digital), posicionado ANTES do mês da "
         "rescisão: a regra soma o depósito do mês da rescisão e o do mês "
         "anterior (vence no dia 20 do mês da rescisão), os recibos de férias "
-        "cuja competência do FGTS (o mês em que o gozo começa) é a do mês "
+        "cuja competência, a que este sistema declara no S-1200 (o recibo inteiro "
+        "no mês em que o gozo começa), é a do mês "
         "anterior ou a da rescisão e o FGTS do 13º pago em um desses dois meses "
         "(em janeiro, o de dezembro do ano anterior); o que já venceu antes "
         "está no extrato e não soma de novo. Extrato posicionado depois do dia "
@@ -437,6 +438,13 @@ class HrPayslip(models.Model):
     _L10N_BR_PARTICIPACAO_NULA = (0, False, False, 0.0, None)
     # Estruturas que pagam o 13º inteiro do ano (a 2ª parcela já abate a 1ª).
     _L10N_BR_ESTRUTURAS_13_COMPLETO = ("13_2PARCELA", "13_SALARIO")
+    # NET que soma a multa: direto (MULTA_FGTS) ou pela categoria COMP, em
+    # qualquer grafia: categories.COMP, categories["COMP"], categories.get("COMP").
+    _L10N_BR_NET_SOMA_MULTA = re.compile(
+        r"\bMULTA_FGTS\b"
+        r"|\bcategories\s*(?:\.\s*COMP\b|\[\s*[\"']COMP[\"']\s*\]"
+        r"|\.\s*get\(\s*[\"']COMP[\"'])"
+    )
 
     def _l10n_br_participacao(self):
         """{id: (contrato, de, até, valor, tipo)}; valor 0 fora da integridade."""
@@ -670,7 +678,7 @@ class HrPayslip(models.Model):
             for c, r in regras.items()
         }
         avisos = []
-        if re.search(r"\b(MULTA_FGTS|categories\.COMP)\b", codigo.get("NET", "")):
+        if re.search(self._L10N_BR_NET_SOMA_MULTA, codigo.get("NET", "")):
             avisos.append(
                 _(
                     "A regra NET (Líquido da Rescisão) está personalizada e soma "
@@ -1295,9 +1303,12 @@ class HrPayslip(models.Model):
         integridade (quem depende de um holerite alterado) usam este predicado.
 
         * ``mensal``: o período se sobrepõe à janela.
-        * ``ferias``: pela competência do FGTS do recibo, o mês em que o gozo
-          começa (a mesma do S-1200 e do INSS de férias do mensal), dentro da
-          janela. O recibo de 20/10 a 18/11 é de outubro, mesmo com R em dezembro.
+        * ``ferias``: com saldo informado, pela competência que este sistema
+          declara no S-1200 (``l10n_br_esocial``: recibo inteiro no mês de
+          ``date_from``), dentro da janela; o recibo de 20/10 a 18/11 é de
+          outubro, mesmo com R em dezembro. Sem saldo informado, como já era: o
+          recibo que se sobrepõe ao período da rescisão. (O MOS 23.1 (c) rateia
+          por dias de gozo em cada mês; essa divergência é tratada fora da TG-138.)
         * ``decimo1`` (1ª, 2ª parcela e 13º integral): a data de fim (competência
           do pagamento, vence no dia 20 do mês seguinte) dentro da janela, sem
           filtro por ano de R: a rescisão de janeiro soma o 13º de dezembro.
@@ -1312,7 +1323,9 @@ class HrPayslip(models.Model):
         if tipo == "mensal":
             return de <= fim and ate >= inicio
         if tipo == "ferias":
-            return inicio <= de <= fim
+            if self.l10n_br_fgts_saldo_conta:
+                return inicio <= de <= fim
+            return de <= fim and ate >= inicio
         if tipo == "decimo1":
             return inicio_13 <= ate <= fim_13
         return False

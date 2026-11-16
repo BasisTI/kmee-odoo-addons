@@ -448,3 +448,26 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         ).amount_python_compute += "\nresult = result + categories.COMP\n"
         resc = self._rescisao(emp, contract, date(2026, 12, 10))
         self.assertIn("NET", resc.l10n_br_aviso_regras)
+
+    def test_sem_saldo_recibo_que_comeca_em_r1_entra_na_base(self):
+        """Sem saldo, o recibo que se sobrepõe à rescisão entra (como já era)."""
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 11, 20), date(2026, 12, 18), 29)
+        fgts = self._get_line_total(recibo, "FGTS")
+        self.assertGreater(fgts, 0)
+        resc = self._rescisao(
+            emp, contract, date(2026, 12, 20), l10n_br_fgts_saldo_conta=0
+        )
+        self.assertIn(recibo, resc._l10n_br_holerites_da_base_multa(contract))
+        self.assertAlmostEqual(
+            resc._l10n_br_fgts_depositado_mensal(contract), fgts, places=2
+        )
+
+    def test_net_por_categoria_comp_em_outras_grafias_avisa_o_gestor(self):
+        emp, contract = self._contrato()
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        regra = self._regra("NET")
+        original = regra.amount_python_compute
+        for grafia in ('categories["COMP"]', "categories.get('COMP')"):
+            regra.amount_python_compute = original + "\nresult = result + %s\n" % grafia
+            self.assertTrue(resc._l10n_br_avisos_regras(), grafia)
