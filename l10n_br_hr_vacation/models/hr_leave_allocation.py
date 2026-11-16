@@ -135,8 +135,11 @@ class HrLeaveAllocation(models.Model):
         """Ausências de férias ativas do empregado em dias corridos.
 
         Returns:
-            list[tuple]: ``(id, início, fim)`` por data de início.
-            ``antes=(data, id)`` fica só com as que começam antes desse ponto.
+            list[tuple]: ``(id, início, fim, período do recibo)`` por data de
+            início; o último é o id da alocação do recibo de férias que começa no
+            mesmo dia (a ausência já paga debita o período do recibo, que é a
+            escolha explícita) ou 0. ``antes=(data, id)`` fica só com as que
+            começam antes desse ponto.
         """
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
@@ -157,9 +160,32 @@ class HrLeaveAllocation(models.Model):
                 ]
             )
         )
-        itens = sorted(
-            (lv.id, lv.request_date_from, lv.request_date_to) for lv in leaves
+        recibos = (
+            self.env["hr.payslip"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", employee.id),
+                    ("struct_id.code", "=", "FERIAS"),
+                    ("state", "!=", "cancel"),
+                    ("l10n_br_ferias_allocation_id", "!=", False),
+                    ("date_from", "in", leaves.mapped("request_date_from")),
+                ],
+                order="id",
+            )
         )
+        do_recibo = {
+            rec.date_from: rec.l10n_br_ferias_allocation_id.id for rec in recibos
+        }
+        itens = [
+            (
+                lv.id,
+                lv.request_date_from,
+                lv.request_date_to,
+                do_recibo.get(lv.request_date_from, 0),
+            )
+            for lv in leaves
+        ]
         itens.sort(key=lambda t: (t[1], t[0]))
         if antes:
             itens = [t for t in itens if (t[1], t[0]) < antes]
@@ -211,9 +237,10 @@ class HrLeaveAllocation(models.Model):
         """
         restante = self._l10n_br_saldo_corridos(alocacoes)
         destino, excesso, saldo_antes = {}, {}, {}
-        for chave, inicio, fim in ausencias:
+        for chave, inicio, fim, *do_recibo in ausencias:
             dias = (fim - inicio).days + 1
-            alloc = self._l10n_br_destino(alocacoes, restante, inicio)
+            alloc = alocacoes.filtered(lambda a: do_recibo and a.id == do_recibo[0])
+            alloc = alloc or self._l10n_br_destino(alocacoes, restante, inicio)
             destino[chave] = alloc
             saldo_antes[chave] = restante[alloc] if alloc else 0
             usa = min(dias, max(restante[alloc], 0)) if alloc else 0

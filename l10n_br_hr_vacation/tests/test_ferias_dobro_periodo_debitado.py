@@ -261,3 +261,32 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         leave = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 11))
         self.assertEqual(leave.state, "validate")
         self.assertNotEqual(leave._l10n_br_periodo_da_ausencia(), a)
+
+    def test_ausencia_ja_paga_debita_o_periodo_do_recibo(self):
+        """A ausência com recibo de férias debita o período do recibo (escolha
+        explícita), não o mais antigo: a seguinte pode debitar o antigo."""
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        b = self._aloca(emp, B_INI, B_FIM)
+        contract = self._create_contract(emp, wage=3000.0, date_start=date(2024, 1, 2))
+        self._ausencia(emp, date(2026, 11, 1), date(2026, 11, 20))  # sem recibo: A
+        antes = self.env["hr.leave"].search([("employee_id", "=", emp.id)])
+        self.assertEqual(antes._l10n_br_periodo_da_ausencia(), a)
+        self.env["hr.payslip"].create(
+            {
+                "name": "Férias",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_ferias.id,
+                "date_from": date(2026, 11, 1),
+                "date_to": date(2026, 11, 20),
+                "l10n_br_ferias_allocation_id": b.id,
+                "l10n_br_dias_periodo_gozado": 20,
+                "l10n_br_dias_abono": 10,
+                "company_id": self.env.company.id,
+            }
+        )
+        # com o recibo de B, a ausência passa a debitar B (20 + 10 de abono = 30)
+        leave = self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 20))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        self.assertEqual(leave.state, "validate")
