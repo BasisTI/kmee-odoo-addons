@@ -388,6 +388,24 @@ nem as faltas (que mudam os dias de direito): volte o recibo para rascunho; o
 recibo em rascunho recalcula ao ser calculado de novo. O recibo impresso mostra
 os dias em dobro no cabeçalho.
 
+Multa do FGTS na rescisão: o saldo informado é o extrato do FGTS Digital
+posicionado antes do mês da rescisão. A base soma a ele o depósito do mês da
+rescisão e o do mês anterior (Lei 8.036/90, art. 18, § 1º; Decreto 99.684/90,
+art. 9º, § 1º), os recibos de férias cuja competência, a que este sistema
+declara no S-1200 (``l10n_br_esocial``: o recibo inteiro no mês em que o gozo
+começa), é a do mês anterior ou a da rescisão e o FGTS do 13º pago em um desses
+dois meses (em janeiro, o de dezembro do ano anterior): o que já venceu antes
+está no extrato. O MOS 23.1 (c) rateia o FGTS de férias por dias de gozo em cada
+mês; essa divergência é tratada fora desta funcionalidade. Sem saldo informado,
+entra o recibo que se sobrepõe ao período da rescisão. Extrato posicionado depois do dia 20 do mês
+da rescisão já traz o mês anterior e a base o soma de novo. Holerite de qualquer
+um desses meses calculado ou alterado depois recalcula a rescisão aberta e é
+recusado se a rescisão estiver confirmada. Holerite confirmado não
+recalcula (``compute_sheet`` recusa) e a edição direta de uma linha de holerite
+que outro confirmado usa é recusada como a do formulário. Se a regra ``NET`` ou
+``MULTA_FGTS`` da rescisão foi personalizada e ficou defasada, o holerite mostra
+um aviso no topo e registra uma nota no histórico.
+
 Bug Tracker
 ===========
 

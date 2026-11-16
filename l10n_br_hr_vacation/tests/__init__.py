@@ -18,6 +18,8 @@ from . import test_dsr_ferias
 from . import test_adicionais_fixos_integridade
 from . import test_avos_13_aviso_projetado
 from . import test_fgts_13_primeira_parcela_rescisao
+from . import test_fgts_rescisao_lacunas
+from . import test_migracao_fgts_138
 from . import test_abono_medias
 from . import test_ferias_periodo_vencido
 from . import test_tipos_rescisao

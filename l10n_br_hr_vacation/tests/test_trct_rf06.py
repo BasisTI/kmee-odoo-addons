@@ -228,11 +228,24 @@ class TestTRCTSemJustaCausa(VacationCommon):
 
     def test_09_multa_usa_saldo_informado_e_soma_os_depositos_da_rescisao(self):
         """Com saldo real informado, o fallback não é usado; a base soma o FGTS
-        do saldo de salário, do 13º e do aviso indenizado (TG-92)."""
+        do saldo de salário, do 13º e do aviso indenizado (TG-92) e o do mensal
+        do mês anterior, que o extrato anterior à rescisão ainda não traz
+        (TG-138)."""
         self.rescisao.l10n_br_fgts_saldo_conta = 10000.00
         self.rescisao.compute_sheet()
         depositos = self._depositos_rescisao()
         self.assertGreater(depositos, 0)
+        anterior = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", self.contract.id),
+                ("struct_id", "=", self.structure_clt.id),
+                ("date_from", "=", date(2026, 7, 1)),
+            ]
+        )
+        self.assertEqual(len(anterior), 1)
+        fgts_anterior = self._get_line_total(anterior, "FGTS")
+        self.assertGreater(fgts_anterior, 0)
+        depositos += fgts_anterior
         self.assertAlmostEqualMoney(
             self._get_line_total(self.rescisao, "MULTA_FGTS"),
             round_money((10000.00 + depositos) * 0.40),
