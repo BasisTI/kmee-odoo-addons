@@ -49,5 +49,8 @@ class TestMigracaoFgts138(VacationCommon):
     def test_regra_personalizada_e_mantida(self):
         multa = self.env.ref("l10n_br_hr_vacation.hr_rule_multa_fgts")
         multa.amount_python_compute = "result = 1.0"
-        self._migrar()
+        # O aviso é o comportamento testado: capturado, não vai ao checklog do CI.
+        with self.assertLogs("mig_138", "WARNING") as logs:
+            self._migrar()
+        self.assertIn("personalizada", logs.output[0])
         self.assertEqual(multa.amount_python_compute, "result = 1.0")
