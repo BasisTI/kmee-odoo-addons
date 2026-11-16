@@ -5,6 +5,15 @@
         <field name="model">hr.payslip</field>
         <field name="inherit_id" ref="l10n_br_hr_payroll.view_payslip_form_br" />
         <field name="arch" type="xml">
+            <xpath expr="//header" position="after">
+                <div
+                    class="alert alert-warning mb-0"
+                    role="alert"
+                    invisible="not l10n_br_aviso_regras"
+                >
+                    <field name="l10n_br_aviso_regras" nolabel="1" />
+                </div>
+            </xpath>
             <xpath
                 expr="//field[@name='l10n_br_faltas_injustificadas']"
                 position="after"

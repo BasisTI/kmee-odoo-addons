@@ -353,3 +353,13 @@ Um período aquisitivo com recibo de férias confirmado não aceita mudar as dat
 nem as faltas (que mudam os dias de direito): volte o recibo para rascunho; o
 recibo em rascunho recalcula ao ser calculado de novo. O recibo impresso mostra
 os dias em dobro no cabeçalho.
+
+Multa do FGTS na rescisão: o saldo informado é o extrato do FGTS Digital
+posicionado antes do mês da rescisão. A base soma a ele o depósito do mês da
+rescisão e o do mês anterior (Lei 8.036/90, art. 18, § 1º; Decreto 99.684/90,
+art. 9º, § 1º), os recibos de férias do mês e o FGTS do 13º pago no mês anterior
+ou no da rescisão: o que já venceu antes está no extrato. Holerite confirmado não
+recalcula (``compute_sheet`` recusa) e a edição direta de uma linha de holerite
+que outro confirmado usa é recusada como a do formulário. Se a regra ``NET`` ou
+``MULTA_FGTS`` da rescisão foi personalizada e ficou defasada, o holerite mostra
+um aviso no topo e registra uma nota no histórico.

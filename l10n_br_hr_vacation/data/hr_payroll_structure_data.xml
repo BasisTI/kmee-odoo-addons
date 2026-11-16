@@ -74,6 +74,7 @@
                 ref('hr_rule_base_irrf_13'),
                 ref('hr_rule_irrf_13'),
                 ref('hr_rule_fgts_13'),
+                ref('hr_rule_desconto_adiantamento_13'),
                 ref('hr_rule_net_13'),
             ])]"
         />

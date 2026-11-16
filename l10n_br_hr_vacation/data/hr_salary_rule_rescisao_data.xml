@@ -919,10 +919,7 @@ result = tools.br.round_money(max(SALDO_SALARIO, 0) * 0.08)
             name="category_id"
             ref="l10n_br_hr_payroll.hr_salary_rule_category_comp"
         />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = employee.l10n_br_tipo_contrato != 'aprendiz'
-        </field>
+        <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 # O FGTS das 1ªs parcelas do 13º do ano já foi recolhido na competência delas
@@ -933,7 +930,7 @@ result = employee.l10n_br_tipo_contrato != 'aprendiz'
 # o soma por _l10n_br_fgts_13_primeira_depositado).
 ja_recolhido = payslip._l10n_br_fgts_13_primeira_depositado(contract)
 result = max(
-    tools.br.round_money(DECIMO_DEVIDO * 0.08) - ja_recolhido, 0.0
+    tools.br.round_money(DECIMO_DEVIDO * (0.02 if employee.l10n_br_tipo_contrato == 'aprendiz' else 0.08)) - ja_recolhido, 0.0
 )
         </field>
     </record>
@@ -946,7 +943,7 @@ result = max(
          (informado, ou a estimativa 8% x salário x meses completos, sem
          juros/correção) + depósito do mês da rescisão (o do mensal da mesma
          competência e o FGTS do saldo de salário desta rescisão) + FGTS do
-         13º (o da rescisão mais o das 1ªs parcelas do ano, TG-93) + FGTS do aviso indenizado (Decreto 99.684/90, art. 9º, §1º).
+         13º (o da rescisão mais o das parcelas do ano ainda fora do saldo, TG-93 e TG-138) + FGTS do aviso indenizado (Decreto 99.684/90, art. 9º, §1º).
          INDENIZATÓRIA: sem INSS (Lei 8.212/91 art. 28 §9º "e", 1, c/c ADCT
          art. 10, I) nem IRRF (Lei 7.713/88 art. 6º V; Lei 8.036/90 art.
          28). -->
@@ -975,7 +972,7 @@ depositos = (
     payslip._l10n_br_fgts_depositado_mensal(contract)
     + FGTS
     + FGTS_13
-    + payslip._l10n_br_fgts_13_primeira_depositado(contract)
+    + payslip._l10n_br_fgts_13_na_base_multa(contract)
     + FGTS_AVISO
 )
 percentual = payslip._l10n_br_percentual_multa_fgts()
