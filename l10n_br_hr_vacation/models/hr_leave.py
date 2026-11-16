@@ -30,6 +30,14 @@ class HrLeave(models.Model):
         "XXIX). Só avisa; não bloqueia.",
     )
 
+    l10n_br_aviso_notificado = fields.Text(
+        string="Último Aviso Registrado",
+        copy=False,
+        readonly=True,
+        help="Texto do último aviso de dobra, excesso ou prescrição já registrado "
+        "como nota: uma nota nova só sai quando o aviso muda.",
+    )
+
     def _l10n_br_ferias_ativa(self):
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
@@ -42,17 +50,34 @@ class HrLeave(models.Model):
             and self.request_date_to
         )
 
+    def _l10n_br_analise_ausencia(self):
+        """``(período debitado, dias em excesso, saldo antes)`` desta ausência,
+        da mesma análise que a restrição de saldo usa (período fixado pelo
+        recibo incluído)."""
+        self.ensure_one()
+        vazio = (self.env["hr.leave.allocation"], 0, 0)
+        if not self._l10n_br_ferias_ativa():
+            return vazio
+        Allocation = self.env["hr.leave.allocation"]
+        origem = self._origin.id or self.id
+        if origem and self.state in ("confirm", "validate1", "validate"):
+            analise = Allocation._l10n_br_analise(
+                self.employee_id,
+                extra=[(origem, self.request_date_from, self.request_date_to)],
+                excluir=[origem],
+            )
+            return analise.get(origem, vazio)
+        analise = Allocation._l10n_br_analise(
+            self.employee_id,
+            extra=[(-1, self.request_date_from, self.request_date_to)],
+            excluir=[origem] if origem else [],
+        )
+        return analise.get(-1, vazio)
+
     def _l10n_br_periodo_da_ausencia(self):
         """Período aquisitivo que esta ausência debita, em dias corridos, ou um
         recordset vazio."""
-        self.ensure_one()
-        if not self._l10n_br_ferias_ativa():
-            return self.env["hr.leave.allocation"]
-        return self.env["hr.leave.allocation"]._l10n_br_periodo_debitado(
-            self.employee_id,
-            self.request_date_from,
-            antes=(self.request_date_from, self.id or 0),
-        )
+        return self._l10n_br_analise_ausencia()[0]
 
     def _l10n_br_dias_dobro(self):
         """Dias corridos da ausência depois do concessivo do período debitado.
@@ -73,18 +98,32 @@ class HrLeave(models.Model):
     )
     def _compute_l10n_br_avisos(self):
         for leave in self:
+            alloc, excesso, _saldo = leave._l10n_br_analise_ausencia()
             dias, limite = leave._l10n_br_dias_dobro()
-            leave.l10n_br_aviso_dobro = (
-                _(
-                    "Atenção RH: %(dias)s dia(s) depois do fim do período concessivo "
-                    "(%(limite)s). Esses dias são pagos em dobro, com o terço "
-                    "(CLT art. 137).",
-                    dias=dias,
-                    limite=fields.Date.to_string(limite),
+            partes = []
+            if dias:
+                partes.append(
+                    _(
+                        "Atenção RH: %(dias)s dia(s) depois do fim do período "
+                        "concessivo (%(limite)s). Esses dias são pagos em dobro, "
+                        "com o terço (CLT art. 137).",
+                        dias=dias,
+                        limite=fields.Date.to_string(limite),
+                    )
                 )
-                if dias
-                else False
-            )
+            if alloc and excesso:
+                partes.append(
+                    _(
+                        "Atenção RH: a ausência passa %(excesso)s dia(s) do saldo "
+                        "do período aquisitivo de %(inicio)s a %(fim)s. Ela já "
+                        "está lançada; confira o débito e ajuste ou lance o "
+                        "resto noutra ausência.",
+                        excesso=int(excesso),
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                    )
+                )
+            leave.l10n_br_aviso_dobro = " ".join(partes) or False
             prescrito = bool(
                 limite
                 and leave.request_date_from
@@ -143,11 +182,10 @@ class HrLeave(models.Model):
             and lv._l10n_br_ferias_ativa()
         )
         for employee in ativas.employee_id:
-            alocacoes = Allocation._l10n_br_alocacoes_ferias(employee)
-            ausencias = Allocation._l10n_br_ausencias_ferias(employee)
-            _restante, destino, excesso, saldo = Allocation._l10n_br_distribuir(
-                alocacoes, ausencias
-            )
+            analise = Allocation._l10n_br_analise(employee)
+            destino = {c: v[0] for c, v in analise.items()}
+            excesso = {c: v[1] for c, v in analise.items()}
+            saldo = {c: v[2] for c, v in analise.items()}
             minhas = ativas.filtered(lambda lv: lv.employee_id == employee)
             periodos = {destino[lv.id] for lv in minhas if destino.get(lv.id)}
             for lv in minhas:
@@ -187,11 +225,51 @@ class HrLeave(models.Model):
             )
         )
 
+    def _l10n_br_avisos_texto(self):
+        self.ensure_one()
+        return " ".join(
+            m for m in (self.l10n_br_aviso_dobro, self.l10n_br_aviso_prescricao) if m
+        )
+
+    def _l10n_br_atualizar_notas(self, employees):
+        """Reconfere os avisos das ausências de férias ativas dos empregados e
+        registra uma nota nova quando o aviso mudou (por exemplo, ao recusar ou
+        cancelar uma ausência anterior, que redistribui o débito das seguintes)."""
+        Allocation = self.env["hr.leave.allocation"]
+        for employee in employees:
+            ids = [t[0] for t in Allocation._l10n_br_ausencias_ferias(employee)]
+            leaves = self.sudo().browse(ids)
+            leaves.invalidate_recordset(
+                ["l10n_br_aviso_dobro", "l10n_br_aviso_prescricao"]
+            )
+            for leave in leaves:
+                texto = leave._l10n_br_avisos_texto()
+                if texto == (leave.l10n_br_aviso_notificado or ""):
+                    continue
+                if texto:
+                    leave.message_post(body=texto, subtype_xmlid="mail.mt_note")
+                leave.l10n_br_aviso_notificado = texto
+
+    def write(self, vals):
+        res = super().write(vals)
+        if {
+            "state",
+            "request_date_from",
+            "request_date_to",
+            "holiday_status_id",
+            "employee_id",
+        } & set(vals):
+            self._l10n_br_atualizar_notas(self.employee_id)
+        return res
+
+    def unlink(self):
+        employees = self.employee_id
+        res = super().unlink()
+        self.browse()._l10n_br_atualizar_notas(employees)
+        return res
+
     @api.model_create_multi
     def create(self, vals_list):
         leaves = super().create(vals_list)
-        for leave in leaves:
-            for aviso in (leave.l10n_br_aviso_dobro, leave.l10n_br_aviso_prescricao):
-                if aviso:
-                    leave.message_post(body=aviso, subtype_xmlid="mail.mt_note")
+        leaves._l10n_br_atualizar_notas(leaves.employee_id)
         return leaves

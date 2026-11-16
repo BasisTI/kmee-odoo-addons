@@ -295,12 +295,23 @@ os dias depois do concessivo do período debitado. Se o concessivo do período
 terminou há mais de cinco anos, há também o aviso de prescrição (CLT art. 149;
 CF art. 7º, XXIX), que não bloqueia.
 
-Uma ausência debita um único período, sem transbordo: se passa do saldo dele, é
-recusada com mensagem que diz o saldo; lance outra ausência para o resto. A
+Uma ausência debita um único período, sem transbordo. A decisão é uma só (a
+análise de ``hr.leave.allocation``): o aviso de dobra, a nota, os dias em dobro
+do recibo e a restrição de saldo leem dela, e o recibo de férias que começa no
+mesmo dia (rascunho ou confirmado) fixa o período. Para o ``hr_holidays`` todo
+período de aquisitivo completo fica sem teto de validade (quem aceita ou recusa
+é a restrição em dias corridos); o período em aquisição continua só no
+concessivo e é recusado. Ao recusar, cancelar ou alterar uma ausência, o débito
+das seguintes é recalculado: o aviso e uma nota nova refletem o novo período,
+e a ausência já lançada que ficar acima do saldo continua lançada, com o
+excesso no aviso. A ausência nova que passa do saldo do período é recusada com
+mensagem que diz o saldo; lance outra ausência para o resto. A
 restrição olha só o período debitado pela ausência criada ou alterada: dado
 anterior acima do direito em outro período não bloqueia. Limite: férias
 coletivas (CLT art. 140), que atravessam vários períodos de uma vez, ficam fora
-desta regra.
+desta regra, e a antecipação da Lei 14.437/2022 também. Férias antecipadas
+individuais (gozo antes de completo o período aquisitivo) passam a ser recusadas
+(CLT art. 134).
 
 O saldo exibido pelo ``hr_holidays`` (formulário da ausência e painel de
 saldos) continua em dias úteis e só enxerga o concessivo: ele não reflete o

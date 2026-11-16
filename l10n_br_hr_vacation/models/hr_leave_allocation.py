@@ -131,6 +131,27 @@ class HrLeaveAllocation(models.Model):
         )
 
     @api.model
+    def _l10n_br_periodo_do_recibo(self, employee, datas):
+        """``{início: id da alocação}`` dos recibos de férias (rascunho ou
+        confirmado, não cancelado) do empregado que começam nessas datas: o
+        recibo fixa o período que a ausência debita (escolha explícita)."""
+        recibos = (
+            self.env["hr.payslip"]
+            .sudo()
+            .search(
+                [
+                    ("employee_id", "=", employee.id),
+                    ("struct_id.code", "=", "FERIAS"),
+                    ("state", "!=", "cancel"),
+                    ("l10n_br_ferias_allocation_id", "!=", False),
+                    ("date_from", "in", list(datas)),
+                ],
+                order="id",
+            )
+        )
+        return {rec.date_from: rec.l10n_br_ferias_allocation_id.id for rec in recibos}
+
+    @api.model
     def _l10n_br_ausencias_ferias(self, employee, antes=None, excluir=()):
         """Ausências de férias ativas do empregado em dias corridos.
 
@@ -160,23 +181,9 @@ class HrLeaveAllocation(models.Model):
                 ]
             )
         )
-        recibos = (
-            self.env["hr.payslip"]
-            .sudo()
-            .search(
-                [
-                    ("employee_id", "=", employee.id),
-                    ("struct_id.code", "=", "FERIAS"),
-                    ("state", "!=", "cancel"),
-                    ("l10n_br_ferias_allocation_id", "!=", False),
-                    ("date_from", "in", leaves.mapped("request_date_from")),
-                ],
-                order="id",
-            )
+        do_recibo = self._l10n_br_periodo_do_recibo(
+            employee, leaves.mapped("request_date_from")
         )
-        do_recibo = {
-            rec.date_from: rec.l10n_br_ferias_allocation_id.id for rec in recibos
-        }
         itens = [
             (
                 lv.id,
@@ -250,34 +257,56 @@ class HrLeaveAllocation(models.Model):
         return restante, destino, excesso, saldo_antes
 
     @api.model
-    def _l10n_br_periodo_debitado(self, employee, data, antes=None):
-        """Período que uma ausência de férias começando em ``data`` debita
-        (vazio se nenhum com saldo), contando só as ausências anteriores a
-        ``antes``."""
+    def _l10n_br_analise(self, employee, extra=(), excluir=()):
+        """Fonte única do período debitado por cada ausência de férias.
+
+        O aviso de dobra, a nota, os dias em dobro, a restrição de saldo e o
+        seletor leem daqui. ``extra`` são ausências ainda não gravadas
+        (``(chave, início, fim)``), que entram na ordem das datas; o período do
+        recibo de férias que começa no mesmo dia fixa o débito.
+
+        Returns:
+            dict: ``{chave: (período debitado, dias em excesso, saldo antes)}``.
+        """
         alocacoes = self._l10n_br_alocacoes_ferias(employee)
-        if not alocacoes:
-            return alocacoes
-        ausencias = self._l10n_br_ausencias_ferias(employee, antes=antes or (data, 0))
-        restante = self._l10n_br_distribuir(alocacoes, ausencias)[0]
-        return self._l10n_br_destino(alocacoes, restante, data)
+        ausencias = self._l10n_br_ausencias_ferias(employee, excluir=excluir)
+        extras = list(extra)
+        if extras:
+            do_recibo = self._l10n_br_periodo_do_recibo(
+                employee, [t[1] for t in extras]
+            )
+            ausencias += [(c, i, f, do_recibo.get(i, 0)) for c, i, f in extras]
+            ausencias.sort(key=lambda t: (t[1], t[0]))
+        _restante, destino, excesso, saldo = self._l10n_br_distribuir(
+            alocacoes, ausencias
+        )
+        return {c: (destino[c], excesso[c], saldo[c]) for c in destino}
+
+    @api.model
+    def _l10n_br_periodo_com_saldo(self, employee, data):
+        """Período que uma ausência de um dia em ``data`` debitaria (vazio se
+        nenhum tem saldo): o seletor do tipo Férias."""
+        analise = self._l10n_br_analise(employee, extra=[(-1, data, data)])
+        return analise[-1][0] if analise.get(-1) else self.browse()
 
     @api.model
     def _l10n_br_estender_concessivo(self, employees, target_date=None):
-        """Faz o ``hr_holidays`` ver as alocações de férias válidas até o fim
-        do período concessivo (CLT art. 134), sem gravar nada, e o período
-        debitado pela ausência de ``target_date`` sem limite de validade.
+        """Faz o ``hr_holidays`` ver as alocações de férias válidas sem teto
+        quando o aquisitivo está completo, sem gravar nada.
 
         ``date_to`` é o fim do período aquisitivo e continua sendo (dobra,
         férias vencidas e recibo o leem). O ``hr_holidays`` o usa como fim da
         validade do saldo, em vários pontos (consumo, saldo exibido, seletor
         do tipo de folga). Enquanto dura o cálculo do saldo, o valor em cache
-        de ``date_to`` fica 12 meses à frente; só o período que a ausência
-        debita (``_l10n_br_periodo_debitado``) fica sem teto, para as férias
-        depois do concessivo serem aceitas e pagas em dobro (CLT art. 137). Os
-        demais períodos não absorvem a ausência com a sobra de dias úteis.
-        Sem ``target_date`` (saldo exibido), todos ficam no concessivo.
-        ``_l10n_br_restaurar_concessivo`` devolve o original. Reentrante: só a
-        chamada mais externa troca.
+        de ``date_to`` fica 100 anos à frente para todo período de aquisitivo
+        completo na data da ausência (``target_date``, ou hoje); o período
+        ainda em aquisição fica no concessivo, 12 meses à frente (a ausência
+        nele é recusada, CLT art. 134). Quem aceita ou recusa a ausência é a
+        restrição em dias corridos (``_l10n_br_distribuir``), uma fonte só: o
+        ``hr_holidays`` só confere que existe validade. Com isso o ``hr_holidays``
+        mostra o saldo (em dias úteis) de todos os períodos completos, inclusive
+        os vencidos. ``_l10n_br_restaurar_concessivo`` devolve o original.
+        Reentrante: só a chamada mais externa troca.
 
         Returns:
             dict | None: ``{alocação: date_to original}`` a restaurar, ou
@@ -303,15 +332,12 @@ class HrLeaveAllocation(models.Model):
                 ]
             )
         )
-        data = fields.Date.to_date(target_date) if target_date else None
-        debitados = self.browse()
-        if data:
-            for employee in employees:
-                debitados |= self._l10n_br_periodo_debitado(employee, data)
+        data = fields.Date.to_date(target_date) if target_date else fields.Date.today()
         originais = {alloc: alloc.date_to for alloc in alocacoes}
         field = self._fields["date_to"]
         for alloc, date_to in originais.items():
-            ate = L10N_BR_SEM_LIMITE if alloc in debitados else relativedelta(years=1)
+            # aquisitivo completo: sem teto; em curso: só o concessivo (art. 134)
+            ate = L10N_BR_SEM_LIMITE if date_to < data else relativedelta(years=1)
             self.env.cache.set(alloc, field, date_to + ate)
         cache_cr["l10n_br_concessivo"] = originais
         return originais

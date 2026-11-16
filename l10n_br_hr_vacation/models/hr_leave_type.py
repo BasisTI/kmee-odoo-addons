@@ -44,7 +44,7 @@ class HrLeaveType(models.Model):
             ):
                 continue
             leave_type.has_valid_allocation = bool(
-                self.env["hr.leave.allocation"]._l10n_br_periodo_debitado(
+                self.env["hr.leave.allocation"]._l10n_br_periodo_com_saldo(
                     employee, date_from
                 )
             )
@@ -70,7 +70,7 @@ class HrLeaveType(models.Model):
         )
         employee = self.env["hr.employee"].browse(employee_id)
         com_saldo = bool(
-            self.env["hr.leave.allocation"]._l10n_br_periodo_debitado(employee, data)
+            self.env["hr.leave.allocation"]._l10n_br_periodo_com_saldo(employee, data)
         )
         _campo, operador, ids = domain[0]
         ids = set(ids)

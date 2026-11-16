@@ -290,3 +290,83 @@ class TestFeriasDobroPeriodoDebitado(VacationCommon):
         leave = self._ausencia(emp, date(2026, 12, 1), date(2026, 12, 20))
         self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
         self.assertEqual(leave.state, "validate")
+
+    # -- r4: uma fonte só decide o período (validade, aviso, redistribuição) ---------
+
+    def _recibo_ferias(self, emp, alloc, inicio, fim, dias, abono=0):
+        contract = emp.contract_id or self._create_contract(
+            emp, wage=3000.0, date_start=A_INI
+        )
+        slip = self.env["hr.payslip"].create(
+            {
+                "name": "Férias",
+                "employee_id": emp.id,
+                "contract_id": contract.id,
+                "struct_id": self.structure_ferias.id,
+                "date_from": inicio,
+                "date_to": fim,
+                "l10n_br_ferias_allocation_id": alloc.id,
+                "l10n_br_dias_periodo_gozado": dias,
+                "l10n_br_dias_abono": abono,
+                "company_id": self.env.company.id,
+            }
+        )
+        slip.compute_sheet()
+        return slip
+
+    def test_vencido_em_dobro_e_depois_o_periodo_seguinte_sem_o_posterior(self):
+        """A e B validados: a ausência de A em dobro e depois a de B são aceitas
+        (o hr_holidays não barra o período seguinte)."""
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        b = self._aloca(emp, B_INI, B_FIM)
+        primeira = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 31))
+        self.assertEqual(primeira._l10n_br_periodo_da_ausencia(), a)
+        segunda = self._ausencia(emp, date(2026, 6, 1), date(2026, 6, 30))
+        self.assertEqual(segunda.state, "validate")
+        self.assertEqual(segunda._l10n_br_periodo_da_ausencia(), b)
+        self.assertFalse(segunda.l10n_br_aviso_dobro)
+
+    def test_tres_periodos_com_ausencias_em_2027(self):
+        """A, B e C completos (sem o hr_holidays barrar): cada ausência debita o
+        vencido mais antigo com saldo, num só período."""
+        emp = self._create_employee()
+        a, b, c = self._tres_periodos(emp)
+        casos = (
+            (date(2027, 3, 1), date(2027, 3, 25), a),  # 25 dias; A fica com 5
+            (date(2027, 4, 1), date(2027, 4, 5), a),  # 5 dias; A esgotado
+            (date(2027, 5, 3), date(2027, 5, 27), b),  # 25 dias; B fica com 5
+            (date(2027, 8, 2), date(2027, 8, 6), b),  # 5 dias; B esgotado
+            (date(2027, 10, 4), date(2027, 10, 28), c),  # 25 dias de C
+        )
+        for inicio, fim, periodo in casos:
+            leave = self._ausencia(emp, inicio, fim)
+            self.assertEqual(leave.state, "validate", inicio)
+            self.assertEqual(leave._l10n_br_periodo_da_ausencia(), periodo, inicio)
+
+    def test_ausencia_paga_em_recibo_de_b_tem_aviso_do_periodo_de_b(self):
+        """O aviso usa a mesma análise da restrição, com o período do recibo."""
+        emp = self._create_employee()
+        a = self._aloca(emp, A_INI, A_FIM)
+        b = self._aloca(emp, B_INI, B_FIM)
+        leave = self._ausencia(emp, date(2026, 11, 1), date(2026, 11, 20))
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), a)
+        self._recibo_ferias(emp, b, date(2026, 11, 1), date(2026, 11, 20), 20, abono=10)
+        leave.invalidate_recordset()
+        self.assertEqual(leave._l10n_br_periodo_da_ausencia(), b)
+        self.assertFalse(leave.l10n_br_aviso_dobro)  # B ainda está no concessivo
+
+    def test_recusar_uma_ausencia_redistribui_o_aviso_das_seguintes(self):
+        emp = self._create_employee()
+        a, b, _c = self._tres_periodos(emp)
+        l1 = self._ausencia(emp, date(2026, 3, 2), date(2026, 3, 21))  # 20 de A
+        self._ausencia(emp, date(2026, 6, 1), date(2026, 6, 10))  # 10 de A
+        l3 = self._ausencia(emp, date(2026, 9, 1), date(2026, 9, 25))  # 25 de B
+        self.assertEqual(l3._l10n_br_periodo_da_ausencia(), b)
+        notas = len(l3.message_ids)
+        l1.action_refuse()
+        # sem l1, A tem 20 de saldo e a de 25 dias vai para A, com 5 de excesso
+        self.assertEqual(l3._l10n_br_periodo_da_ausencia(), a)
+        self.assertEqual(l3.state, "validate")  # a ausência já lançada fica
+        self.assertIn("5 dia(s) do saldo", l3.l10n_br_aviso_dobro)
+        self.assertGreater(len(l3.message_ids), notas)
