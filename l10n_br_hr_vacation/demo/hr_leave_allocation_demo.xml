@@ -70,10 +70,7 @@
         />
         <field name="holiday_status_id" ref="leave_type_ferias" />
         <field name="employee_id" ref="l10n_br_hr.demo_employee_pedro" />
-        <field
-            name="date_from"
-            eval="'%d-01-02' % (int(time.strftime('%Y')) - 1)"
-        />
+        <field name="date_from" eval="'%d-01-02' % (int(time.strftime('%Y')) - 1)" />
         <field name="date_to" eval="time.strftime('%Y-01-01')" />
         <field name="number_of_days">30</field>
         <field name="l10n_br_faltas_periodo_aquisitivo">0</field>
