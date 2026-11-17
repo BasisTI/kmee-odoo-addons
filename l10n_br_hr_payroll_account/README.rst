@@ -45,6 +45,7 @@ Salário base                  Salários                        (contrapartida d
 INSS / IRRF do empregado      -                               INSS / IRRF a recolher
 Salário líquido               -                               Salários a pagar
 FGTS                          Encargos sociais                FGTS a recolher
+FGTS (férias, 13º, rescisão)  Encargos sociais                FGTS a recolher
 CPP (patronal 20%)            Encargos sociais                INSS a recolher
 RAT ajustado                  Encargos sociais                INSS a recolher
 Terceiros (FPAS)              Encargos sociais                Terceiros a recolher
@@ -53,6 +54,15 @@ Encargos sobre férias         Provisão de férias              Férias a pagar
 Provisão de 13º               Provisão de 13º                 13º salário a pagar
 Encargos sobre 13º            Provisão de 13º                 13º salário a pagar
 ============================  ==============================  ==========================
+
+O FGTS das estruturas do ``l10n_br_hr_vacation`` (férias, 13º 1ª e 2ª parcelas,
+13º e saldo de salário da rescisão, aviso prévio indenizado) tem o mesmo
+lançamento do FGTS mensal. O ``l10n_br_hr_vacation`` não é dependência: sem ele
+instalado o mapa ignora essas regras, e se ele for instalado depois as contas
+são vinculadas no carregamento das regras. Em banco que já tinha este módulo, a
+migração 18.0.1.1.0 preenche as contas das regras de FGTS. As demais rubricas
+dessas estruturas (proventos, descontos, multa do FGTS) continuam sem conta até
+a decisão contábil sobre elas.
 
 Como os encargos patronais e as provisões têm os dois lados, o custo do
 empregador passa a aparecer no resultado (e a variar conforme o regime

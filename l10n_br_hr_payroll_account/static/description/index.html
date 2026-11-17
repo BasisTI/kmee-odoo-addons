@@ -417,6 +417,10 @@ como antes.</p>
 <td>Encargos sociais</td>
 <td>FGTS a recolher</td>
 </tr>
+<tr><td>FGTS (férias, 13º, rescisão)</td>
+<td>Encargos sociais</td>
+<td>FGTS a recolher</td>
+</tr>
 <tr><td>CPP (patronal 20%)</td>
 <td>Encargos sociais</td>
 <td>INSS a recolher</td>
@@ -447,6 +451,14 @@ como antes.</p>
 </tr>
 </tbody>
 </table>
+<p>O FGTS das estruturas do <tt class="docutils literal">l10n_br_hr_vacation</tt> (férias, 13º 1ª e 2ª parcelas,
+13º e saldo de salário da rescisão, aviso prévio indenizado) tem o mesmo
+lançamento do FGTS mensal. O <tt class="docutils literal">l10n_br_hr_vacation</tt> não é dependência: sem ele
+instalado o mapa ignora essas regras, e se ele for instalado depois as contas
+são vinculadas no carregamento das regras. Em banco que já tinha este módulo, a
+migração 18.0.1.1.0 preenche as contas das regras de FGTS. As demais rubricas
+dessas estruturas (proventos, descontos, multa do FGTS) continuam sem conta até
+a decisão contábil sobre elas.</p>
 <p>Como os encargos patronais e as provisões têm os dois lados, o custo do
 empregador passa a aparecer no resultado (e a variar conforme o regime
 tributário da empresa), sem afetar o líquido do empregado.</p>

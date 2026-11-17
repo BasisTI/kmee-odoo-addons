@@ -96,9 +96,44 @@ _RULE_ACCOUNT_MAP = {
     "l10n_br_hr_payroll.hr_rule_net": {"credit": "liability_salarios"},
 }
 
+# FGTS das estruturas de férias, 13º e rescisão (l10n_br_hr_vacation, TG-148).
+# O FGTS é recolhido sobre essas verbas como sobre o mensal e tem o mesmo
+# lançamento do ``hr_rule_fgts`` (despesa de encargos x FGTS a recolher); sem
+# conta, o lançamento da folha ficava menor que a guia do FGTS Digital. O
+# l10n_br_hr_vacation não é dependência: xmlid ausente é ignorado, como no
+# mapa acima, e as regras são vinculadas quando o módulo chega depois deste
+# (ver ``_load_records``).
+_FGTS_VACATION = {"debit": "expense_encargos", "credit": "liability_fgts"}
+_RULE_ACCOUNT_MAP.update(
+    {
+        "l10n_br_hr_vacation.%s" % name: dict(_FGTS_VACATION)
+        for name in (
+            "hr_rule_fgts_ferias",
+            "hr_rule_fgts_13_primeira",
+            "hr_rule_fgts_13",
+            "hr_rule_fgts_13_rescisao",
+            "hr_rule_fgts_aviso",
+            "hr_rule_fgts_rescisao",
+        )
+    }
+)
+
 
 class HrSalaryRule(models.Model):
     _inherit = "hr.salary.rule"
+
+    def _load_records(self, data_list, *args, **kwargs):
+        """Vincula as contas às regras do mapa que chegam depois do módulo.
+
+        O ``post_init_hook`` só vê as regras que já existem na instalação deste
+        módulo. Se o ``l10n_br_hr_vacation`` for instalado depois, as regras de
+        FGTS dele nasceriam sem conta; a rotina é idempotente e só preenche
+        campo vazio, então roda sempre que o carregamento traz regra do mapa.
+        """
+        records = super()._load_records(data_list, *args, **kwargs)
+        if any(data.get("xml_id") in _RULE_ACCOUNT_MAP for data in data_list):
+            self._l10n_br_setup_payroll_accounts()
+        return records
 
     @api.model
     def _l10n_br_find_account(self, company, kind):
