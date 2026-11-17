@@ -9,6 +9,17 @@ salário do mês (mês comercial de 30 dias):
   ausência. A empresa paga os 15 primeiros dias e os seguintes, aprovados, saem do
   salário (são pagos pelo INSS).
 
+**Aprendiz: INSS pela tabela, FGTS de 2%**
+
+O aprendiz (``Tipo de Contrato`` = Aprendiz, categoria 103 do eSocial) tem o INSS
+descontado pela tabela progressiva comum, a mesma do empregado CLT, e o FGTS de 2%
+(Lei 8.036/90, art. 15, §7º). O 2% é só do FGTS: o INSS patronal, o RAT e os
+terceiros do aprendiz não mudam. A regra ``INSS Aprendiz`` (2% da base) foi
+desativada e a regra ``INSS`` vale para todos; em bancos instalados a migração
+da 18.0.1.13.0 troca as duas só se estiverem como a versão anterior. Regra de INSS
+personalizada fica como está, com aviso no log, e o aprendiz segue com ela (sem INSS
+em dobro). Holerites já calculados não mudam; o em rascunho recalcula.
+
 **Periculosidade e insalubridade nas bases**
 
 Os dois adicionais entram no bruto (``GROSS``) e, por ele, nas bases do INSS, do

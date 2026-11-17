@@ -111,14 +111,48 @@ class TestINSSRegimes(PayrollCommon):
         rpps = self._get_line_total(payslip, "CONTRIB_RPPS")
         self.assertGreater(rpps, 0.0)
 
-    def test_inss_aprendiz_aliquota_2_porcento(self):
-        """Aprendiz: alíquota de INSS é 2% sobre o salário bruto."""
+    def test_inss_aprendiz_pela_tabela_progressiva(self):
+        """TG-149: o INSS do aprendiz é o da tabela progressiva, não 2%.
+
+        O 2% do aprendiz é só do FGTS (Lei 8.036/90, art. 15 §7º); o segurado
+        aprendiz (categoria 103) contribui pela tabela comum do RGPS.
+        """
         emp = self._create_employee(tipo_contrato="aprendiz")
         contract = self._create_contract(emp, wage=1412.00)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        # 1412 * 2% = 28.24
-        self.assertAlmostEqualMoney(inss, 28.24)
+        clt = self._create_employee(name="CLT Mesma Base")
+        slip_clt = self._create_payslip(clt, self._create_contract(clt, wage=1412.00))
+        self.assertAlmostEqualMoney(inss, self._get_line_total(slip_clt, "INSS"))
+        self.assertAlmostEqualMoney(inss, 105.90)  # 1412 x 7,5% (1ª faixa)
+        # uma linha só de INSS, na regra comum (a do aprendiz está desativada)
+        linhas = payslip.line_ids.filtered(lambda line: line.code == "INSS")
+        self.assertEqual(len(linhas), 1)
+        self.assertEqual(
+            linhas.salary_rule_id, self.env.ref("l10n_br_hr_payroll.hr_rule_inss")
+        )
+
+    def test_inss_aprendiz_acima_da_primeira_faixa(self):
+        """Aprendiz com base de várias faixas: progressivo igual ao do CLT."""
+        emp = self._create_employee(tipo_contrato="aprendiz")
+        slip = self._create_payslip(emp, self._create_contract(emp, wage=4000.00))
+        clt = self._create_employee(name="CLT 4000")
+        slip_clt = self._create_payslip(clt, self._create_contract(clt, wage=4000.00))
+        inss = self._get_line_total(slip, "INSS")
+        self.assertAlmostEqualMoney(inss, self._get_line_total(slip_clt, "INSS"))
+        self.assertGreater(inss, 4000.00 * 0.02 * 2)
+
+    def test_inss_aprendiz_liquido_desconta_a_tabela(self):
+        """O líquido do aprendiz desconta o INSS da tabela e o FGTS não entra."""
+        emp = self._create_employee(tipo_contrato="aprendiz")
+        slip = self._create_payslip(emp, self._create_contract(emp, wage=1412.00))
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "FGTS"), 28.24)
+        bruto = self._get_line_total(slip, "GROSS")
+        inss = self._get_line_total(slip, "INSS")
+        irrf = self._get_line_total(slip, "IRRF")
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "NET"), bruto - inss - irrf
+        )
 
 
 class TestFGTS(PayrollCommon):
