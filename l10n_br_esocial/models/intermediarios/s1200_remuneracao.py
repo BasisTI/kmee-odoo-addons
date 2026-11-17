@@ -150,9 +150,51 @@ class ESocialS1200(models.Model):
                 if rule.l10n_br_esocial_tp_rubr == "1" and line.total < 0:
                     negativos.setdefault(rule, []).append(line.total)
                     continue
-                itens.append(self._item_remun(rule, abs(line.total)))
+                valor = self._valor_na_competencia(payslip, line)
+                if not valor:
+                    continue
+                if self.ind_apuracao == "1":
+                    # Nas competências do gozo após o pagamento, a verba de férias
+                    # tributável e o INSS vão com a rubrica "mês do gozo" (IRRF 09).
+                    rule = payslip._esocial_regra_da_linha(line, self.per_apur)
+                itens.append(self._item_remun(rule, abs(valor)))
+            itens += self._itens_adiantamento_ferias(payslip)
         self._registrar_avisos_sem_config(sem_config, negativos)
         return itens
+
+    def _valor_na_competencia(self, payslip, line):
+        """Parte da linha que cabe neste S-1200 (rateio por dias de gozo, TG-152).
+
+        Só o recibo de férias que atravessa o mês é rateado, pela função única
+        das competências (``_l10n_br_competencias_ferias``); os demais holerites
+        vão inteiros. A retenção do IR e as deduções do IR (exceto o INSS) não
+        rateiam: vão inteiras na competência do pagamento, a que o S-1210
+        referencia (``_esocial_competencia_ir``).
+        """
+        if self.ind_apuracao != "1":
+            return line.total
+        return payslip._esocial_valor_na_competencia(line, self.per_apur)
+
+    def _itens_adiantamento_ferias(self, payslip):
+        """Rubricas 1015, 9221 e provisão de CP do recibo de férias pago adiantado.
+
+        MOS S-1.3, item 23 (pp. 112-114), exemplos (a) e (c), opção 2, e S-1210,
+        item 4.1, exemplos 1 e 2 (pp. 186-188): na competência do pagamento, o
+        adiantamento **bruto** (natureza 1015, incidências 00/13/00) da parte
+        gozada nas competências seguintes e a provisão de CP dela (IRRF 43); em
+        cada competência seguinte, o desconto **líquido** do INSS da parte (natureza
+        9221, IRRF 09). A parte gozada no mês do pagamento não leva 1015 nem 9221
+        (opção 2 do exemplo (b)). O abono pecuniário vai em par próprio (TG-152#P2).
+        """
+        if self.ind_apuracao != "1":
+            return []
+        adiantamentos = payslip._esocial_adiantamentos_ferias(self.per_apur)
+        if any("abono" in xmlid for xmlid, _valor in adiantamentos):
+            self.env["hr.salary.rule"]._esocial_garantir_par_abono()
+        return [
+            self._item_remun(self.env.ref(xmlid), valor)
+            for xmlid, valor in adiantamentos
+        ]
 
     def _exige_ind_apur_ir(self):
         """``indApurIR`` é obrigatório a partir de 07/2021 (mensal) ou 2021 (13º)."""
@@ -161,7 +203,7 @@ class ESocialS1200(models.Model):
     def _item_remun(self, rule, valor):
         item = {
             "cod_rubr": rule.l10n_br_esocial_cod_rubr,
-            "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
+            "ide_tab_rubr": rule._esocial_ide_tab_rubr_da_regra(self.company_id),
             "vr_rubr": str(valor),
         }
         if self._exige_ind_apur_ir():

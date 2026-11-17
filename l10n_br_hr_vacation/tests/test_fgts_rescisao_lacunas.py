@@ -7,7 +7,9 @@ Saldo informado = extrato do FGTS Digital posicionado ANTES do mês da rescisão
 seguinte à competência), então a base da multa soma as competências R-1 e R
 (Lei 8.036/90 art. 18 §1º; Decreto 99.684/90 art. 9º §1º).
 """
-from datetime import date
+from datetime import date, timedelta
+
+from dateutil.relativedelta import relativedelta
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
@@ -19,6 +21,35 @@ from .common import VacationCommon
 
 @tagged("post_install", "-at_install")
 class TestFgtsRescisaoLacunas(VacationCommon):
+    # TG-147: o caso real da rescisão tem a alocação de Férias validada do
+    # último período aquisitivo; ``_alocacao_do_periodo`` a cria antes do cálculo.
+    exigir_alocacao_periodo = True
+
+    def _alocacao_do_periodo(self, emp, contract, ate):
+        anos = relativedelta(ate + timedelta(days=1), contract.date_start).years
+        if anos < 1:
+            return
+        inicio = contract.date_start + relativedelta(years=anos - 1)
+        fim = contract.date_start + relativedelta(years=anos) - timedelta(days=1)
+        existe = self.env["hr.leave.allocation"].search_count(
+            [
+                ("employee_id", "=", emp.id),
+                ("holiday_status_id", "=", self.leave_type_ferias.id),
+                ("state", "=", "validate"),
+                ("date_to", ">=", inicio),
+                ("date_to", "<=", ate),
+            ]
+        )
+        if not existe:
+            self.env["hr.leave.allocation"].create(
+                {
+                    "employee_id": emp.id,
+                    "holiday_status_id": self.leave_type_ferias.id,
+                    "date_from": inicio,
+                    "date_to": fim,
+                }
+            ).action_validate()
+
     def _contrato(self, nome="FGTS lacunas", wage=2500.00):
         emp = self._create_employee(nome)
         contract = self._create_contract(emp, wage=wage, date_start=date(2020, 1, 1))
@@ -37,6 +68,8 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         valores.update(extra)
         slip = self.env["hr.payslip"].create(valores)
         if calcular:
+            if struct == self.structure_rescisao:
+                self._alocacao_do_periodo(emp, contract, ate)
             slip.compute_sheet()
         return slip
 
@@ -426,11 +459,52 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         with self.assertRaises(UserError), self.env.cr.savepoint():
             linha.write({"amount": linha.amount + 5.0})
 
-    def test_recibo_pela_competencia_do_fgts_inicio_do_gozo(self):
-        """Gozo de 20/10 a 18/11 é competência de outubro: já está no extrato."""
+    def test_recibo_rateado_por_dias_de_gozo_so_a_parte_da_janela_entra(self):
+        """TG-152: gozo de 20/10 a 18/11 (30 dias): 12 em outubro (no extrato),
+        18 em novembro (R-1): só a parte de novembro entra na base."""
         emp, contract = self._contrato()
-        self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        recibo = self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        fgts = self._get_line_total(recibo, "FGTS")
+        self.assertGreater(fgts, 0)
         resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        parte_nov = recibo._l10n_br_ratear_valor(fgts, "2026-11")
+        parte_out = recibo._l10n_br_ratear_valor(fgts, "2026-10")
+        self.assertAlmostEqual(parte_out + parte_nov, fgts, places=2)
+        self.assertGreater(parte_nov, 0)
+        self.assertIn(recibo, resc._l10n_br_holerites_da_base_multa(contract))
+        self.assertAlmostEqual(
+            resc._l10n_br_fgts_depositado_mensal(contract), parte_nov, places=2
+        )
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, parte_nov))
+
+    def test_base_da_multa_com_abono_rateado_e_adiantamento_pelo_fgts_das_competencias(
+        self,
+    ):
+        """TG-152: o abono rateia e o adiantamento (1015, FGTS 00) não entra no FGTS.
+
+        A base soma o FGTS de cada competência do gozo (codIncFGTS 11 por parte),
+        igual ao rateio da linha ``FGTS`` do recibo, com ou sem data de pagamento
+        (que só cria o 1015/9221 no S-1200, sem FGTS).
+        """
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        fgts = self._get_line_total(recibo, "FGTS")
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        sem_data = resc._l10n_br_fgts_depositado_mensal(contract)
+        if "l10n_br_esocial_data_pagamento" in recibo._fields:
+            recibo.l10n_br_esocial_data_pagamento = date(2026, 10, 5)
+        com_data = resc._l10n_br_fgts_depositado_mensal(contract)
+        self.assertEqual(sem_data, com_data)
+        partes = [recibo._l10n_br_ratear_valor(fgts, c) for c in ("2026-10", "2026-11")]
+        self.assertAlmostEqual(sum(partes), fgts, places=2)
+        self.assertAlmostEqual(com_data, partes[1], places=2)
+
+    def test_recibo_so_com_a_competencia_fora_da_janela_nao_entra(self):
+        """Gozo todo em outubro, R em dezembro: já está no extrato."""
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 10, 1), date(2026, 10, 30), 30)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        self.assertNotIn(recibo, resc._l10n_br_holerites_da_base_multa(contract))
         self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc))
 
     def test_recibo_que_cruza_dezembro_e_janeiro_entra_na_rescisao_de_janeiro(self):
