@@ -111,6 +111,15 @@ class HrLeaveAllocation(models.Model):
         return res
 
     def write(self, vals):
+        sai_de_validada = "state" in vals and vals["state"] != "validate"
+        if ({"number_of_days"} & set(vals) or sai_de_validada) and not {
+            "date_from",
+            "date_to",
+            "l10n_br_faltas_periodo_aquisitivo",
+        } & set(vals):
+            self.filtered(
+                lambda a: a.state == "validate"
+            )._l10n_br_recusar_se_usada_em_rescisao(vals)
         if {"date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(vals):
             confirmados = (
                 self.env["hr.payslip"]
@@ -132,12 +141,56 @@ class HrLeaveAllocation(models.Model):
                         "de alterá-las."
                     )
                 )
+            self._l10n_br_recusar_se_usada_em_rescisao(vals)
         res = super().write(vals)
         if {"state", "date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(
             vals
         ):
             self._l10n_br_reconferir_notas()
         return res
+
+    def _l10n_br_recusar_se_usada_em_rescisao(self, vals):
+        """TG-147: o período que uma rescisão confirmada pagou (vencido ou o que
+        se completa na projeção do aviso, ``date_to`` <= data projetada) não muda
+        de datas, de faltas, de dias nem de estado (recusar, voltar a rascunho)
+        enquanto ela estiver confirmada; rescisão aberta apenas recalcula."""
+        vacation_type = self.env.ref(
+            "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
+        )
+        for alloc in self.filtered(lambda a: a.holiday_status_id == vacation_type):
+            datas = [alloc.date_to]
+            if vals.get("date_to"):
+                datas.append(fields.Date.to_date(vals["date_to"]))
+            rescisoes = (
+                self.env["hr.payslip"]
+                .sudo()
+                .search(
+                    [
+                        ("employee_id", "=", alloc.employee_id.id),
+                        ("struct_id.code", "=", "RESCISAO"),
+                        ("state", "=", "done"),
+                        ("l10n_br_fora_de_vigor", "=", False),
+                    ]
+                )
+            )
+            usadas = rescisoes.filtered(
+                lambda r: any(
+                    d and d <= r._l10n_br_data_projetada_rescisao() for d in datas
+                )
+            )
+            if usadas:
+                raise UserError(
+                    _(
+                        "O período aquisitivo foi pago pela rescisão confirmada "
+                        "%(rescisoes)s (férias vencidas ou do período que se "
+                        "completa no aviso prévio indenizado): as datas, as "
+                        "faltas, os dias e o estado definem o valor pago. Volte a rescisão "
+                        "para rascunho antes de alterá-las.",
+                        rescisoes=", ".join(
+                            usadas.mapped(lambda r: r.number or r.name)
+                        ),
+                    )
+                )
 
     # -- período debitado pela ausência de férias (CLT arts. 134 e 137) ---------
     #
