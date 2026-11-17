@@ -5,7 +5,9 @@
 Lei 8.036/90, art. 15, § 7º (FGTS de 2% no contrato de aprendizagem); o INSS do
 aprendiz segue a tabela comum, como no empregado comum.
 """
-from datetime import date
+from datetime import date, timedelta
+
+from dateutil.relativedelta import relativedelta
 
 from odoo.tests import tagged
 
@@ -16,6 +18,25 @@ from .common import VacationCommon
 
 @tagged("post_install", "-at_install")
 class TestAprendizFgtsInss(VacationCommon):
+    # TG-147: o caso real da rescisão tem a alocação de Férias validada do
+    # último período aquisitivo; ``_alocacao_do_periodo`` a cria antes do cálculo.
+    exigir_alocacao_periodo = True
+
+    def _alocacao_do_periodo(self, emp, contract, ate):
+        anos = relativedelta(ate + timedelta(days=1), contract.date_start).years
+        if anos < 1:
+            return
+        inicio = contract.date_start + relativedelta(years=anos - 1)
+        fim = contract.date_start + relativedelta(years=anos) - timedelta(days=1)
+        self.env["hr.leave.allocation"].create(
+            {
+                "employee_id": emp.id,
+                "holiday_status_id": self.leave_type_ferias.id,
+                "date_from": inicio,
+                "date_to": fim,
+            }
+        ).action_validate()
+
     def _contrato(self, nome, aprendiz=True, wage=2500.00):
         emp = self._create_employee(nome)
         if aprendiz:
@@ -35,6 +56,13 @@ class TestAprendizFgtsInss(VacationCommon):
         }
         valores.update(extra)
         slip = self.env["hr.payslip"].create(valores)
+        if struct == self.structure_rescisao:
+            # aviso indenizado projeta a saída: o período que se completa na
+            # projeção também exige a alocação (TG-147)
+            projetado = ate + timedelta(
+                days=60 if extra.get("l10n_br_aviso_previo") == "indenizado" else 0
+            )
+            self._alocacao_do_periodo(emp, contract, projetado)
         slip.compute_sheet()
         return slip
 
