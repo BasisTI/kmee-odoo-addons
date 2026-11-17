@@ -417,7 +417,7 @@ como antes.</p>
 <td>Encargos sociais</td>
 <td>FGTS a recolher</td>
 </tr>
-<tr><td>FGTS (férias, 13º, rescisão)</td>
+<tr><td>FGTS (saldo, aviso)</td>
 <td>Encargos sociais</td>
 <td>FGTS a recolher</td>
 </tr>
@@ -451,14 +451,20 @@ como antes.</p>
 </tr>
 </tbody>
 </table>
-<p>O FGTS das estruturas do <tt class="docutils literal">l10n_br_hr_vacation</tt> (férias, 13º 1ª e 2ª parcelas,
-13º e saldo de salário da rescisão, aviso prévio indenizado) tem o mesmo
-lançamento do FGTS mensal. O <tt class="docutils literal">l10n_br_hr_vacation</tt> não é dependência: sem ele
-instalado o mapa ignora essas regras, e se ele for instalado depois as contas
-são vinculadas no carregamento das regras. Em banco que já tinha este módulo, a
-migração 18.0.1.1.0 preenche as contas das regras de FGTS. As demais rubricas
-dessas estruturas (proventos, descontos, multa do FGTS) continuam sem conta até
-a decisão contábil sobre elas.</p>
+<p>O FGTS <strong>sem provisão</strong> das estruturas do <tt class="docutils literal">l10n_br_hr_vacation</tt> (o do saldo de
+salário e o do aviso prévio indenizado da rescisão) tem o mesmo lançamento do
+FGTS mensal e a mesma conta dele: se o contador configurou a conta do
+<tt class="docutils literal">hr_rule_fgts</tt>, as duas regras a herdam (só caem no slot se a do mensal
+estiver vazia). O <tt class="docutils literal">l10n_br_hr_vacation</tt> não é dependência: sem ele instalado o
+mapa ignora essas regras, e se ele for instalado depois as contas são vinculadas
+no carregamento das regras. Em banco que já tinha este módulo, a migração
+18.0.1.1.0 preenche as contas dessas duas regras.</p>
+<p>O FGTS de férias, do 13º (1ª e 2ª parcelas) e do 13º da rescisão <strong>não</strong> foi
+mapeado de propósito: as provisões <tt class="docutils literal">PROV_FERIAS_ENC</tt> e <tt class="docutils literal">PROV_13_ENC</tt> já
+contêm o FGTS (alíquota <tt class="docutils literal">total_com_fgts</tt>) e já foram à despesa; contabilizá-lo
+de novo duplicaria o custo. Essas regras continuam sem conta, no ajuste do
+diário, até a TG-157 (baixa das provisões, com o contador), que trata também
+das demais rubricas dessas estruturas (proventos, descontos, multa do FGTS).</p>
 <p>Como os encargos patronais e as provisões têm os dois lados, o custo do
 empregador passa a aparecer no resultado (e a variar conforme o regime
 tributário da empresa), sem afetar o líquido do empregado.</p>
