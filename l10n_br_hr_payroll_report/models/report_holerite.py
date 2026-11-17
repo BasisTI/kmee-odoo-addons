@@ -121,8 +121,9 @@ class ReportHolerite(models.AbstractModel):
             # O FGTS das parcelas do 13º já pagas foi recolhido na competência
             # delas: a base do mês abate essa parte, como o FGTS_13 da regra.
             ja_recolhido = slip._l10n_br_fgts_13_primeira_depositado(contrato)
+            # A alíquota é a do vínculo: o aprendiz recolhe 2%, não 8%.
             base_13 = max(decimo, 0) - round(
-                ja_recolhido / salary_rules_br.ALIQUOTA_FGTS, 2
+                ja_recolhido / salary_rules_br.aliquota_fgts(aprendiz), 2
             )
             base_fgts = v("SALDO_SALARIO", "AVISO_PREVIO_INDENIZADO") + max(base_13, 0)
             irrf = (max(v("SALDO_SALARIO"), 0), "BASE_IRRF")

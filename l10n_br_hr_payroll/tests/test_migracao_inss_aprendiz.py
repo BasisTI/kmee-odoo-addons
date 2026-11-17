@@ -97,3 +97,36 @@ class TestMigracaoInssAprendiz(PayrollCommon):
         self.assertEqual(self.comum.amount_python_compute, "result = 77.0")
         self.assertTrue(self.aprendiz.active)
         self.assertAlmostEqualMoney(self._inss(1412.0, "aprendiz"), 28.24)
+
+    def test_estrutura_clt_perde_a_regra_inativa(self):
+        """TG-149 (resíduo): a regra inativa sai da structure_clt migrada."""
+        self._banco_1_11()
+        self.assertIn(self.aprendiz, self.structure_clt.rule_ids)
+        self._migrar()
+        self.assertNotIn(self.aprendiz, self.structure_clt.rule_ids)
+        self.assertIn(self.comum, self.structure_clt.rule_ids)
+
+    def test_banco_ja_migrado_com_residuo_na_estrutura(self):
+        """Banco que rodou a migração antes da limpeza: o -u seguinte limpa."""
+        self._banco_1_11()
+        self._migrar()
+        self.structure_clt.write({"rule_ids": [(4, self.aprendiz.id)]})
+        self._migrar()
+        self.assertNotIn(self.aprendiz, self.structure_clt.rule_ids)
+
+    def test_estrutura_personalizada_so_com_a_regra_do_aprendiz(self):
+        """Sem a hr_rule_inss na estrutura o aprendiz ficaria sem INSS: inclui
+        a regra comum e avisa."""
+        self._banco_1_11()
+        propria = self.env["hr.payroll.structure"].create(
+            {
+                "name": "Própria",
+                "code": "PROPRIA149",
+                "rule_ids": [(6, 0, [self.aprendiz.id])],
+            }
+        )
+        with self.assertLogs("mig_inss_149", "WARNING") as logs:
+            self._migrar()
+        self.assertTrue(any("Própria" in linha for linha in logs.output))
+        self.assertIn(self.comum, propria.rule_ids)
+        self.assertNotIn(self.aprendiz, propria.rule_ids)

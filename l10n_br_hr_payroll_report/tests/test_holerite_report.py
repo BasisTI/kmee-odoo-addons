@@ -275,8 +275,12 @@ class TestHoleriteReport(PayrollCommon):
             bases["Base IRRF"], self._get_line_total(payslip, "BASE_IRRF")
         )
 
-    def _rescisao_com_primeira_parcela(self):
-        emp = self._create_employee()
+    def _rescisao_com_primeira_parcela(self, tipo_contrato=None):
+        emp = (
+            self._create_employee(tipo_contrato=tipo_contrato)
+            if tipo_contrato
+            else self._create_employee()
+        )
         contract = self._create_contract(emp, wage=5000.00)
         vals = {
             "employee_id": emp.id,
@@ -321,6 +325,16 @@ class TestHoleriteReport(PayrollCommon):
             self._get_line_total(resc, "FGTS") + self._get_line_total(resc, "FGTS_13"),
         )
         self.assertAlmostEqual(bases["Base FGTS"] * 0.08, fgts, delta=0.02)
+
+    def test_rescisao_aprendiz_base_fgts_abate_a_primeira_parcela_a_2pc(self):
+        """TG-149: o aprendiz recolheu 2% na 1ª parcela; a base abate pela
+        alíquota dele, não por 8%, e Base × 2% fecha com o FGTS do mês."""
+        resc = self._rescisao_com_primeira_parcela(tipo_contrato="aprendiz")
+        self.assertGreater(self._get_line_total(resc, "FGTS_13"), 0)
+        bases = dict(self._contracheque(resc)["bases"])
+        self.assertAlmostEqual(
+            bases["Base FGTS"] * 0.02, bases["FGTS do mês"], delta=0.02
+        )
 
     def test_base_zerada_nao_vira_coluna(self):
         """Nenhum quadro de bases traz coluna com R$ 0,00."""
