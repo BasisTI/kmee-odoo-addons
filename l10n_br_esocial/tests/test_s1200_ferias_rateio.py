@@ -525,3 +525,18 @@ class TestS1200FeriasRateio(TransactionCase):
         ).write({"l10n_br_esocial_cod_inc_irrf": False})
         with self.assertRaisesRegex(UserError, "ABONO_PECUNIARIO"):
             self._s1200(slip, "2026-11")._build_itens_remun()
+
+    def test_lote_de_s1010_nao_e_recusado_pelo_par_do_abono_sem_irrf(self):
+        """O par do abono sem IRRF fica fora do lote; com IRRF, entra."""
+        Regra = self.env["hr.salary.rule"]
+        par = Regra._esocial_regras_adiantamento_abono()
+        self.env["hr.salary.rule"].search([("code", "=", "ABONO_PECUNIARIO")]).write(
+            {"l10n_br_esocial_cod_inc_irrf": False}
+        )
+        par.write({"l10n_br_esocial_cod_inc_irrf": False})
+        S1010 = self.env["l10n_br.esocial.s1010"]
+        criados = S1010.criar_para_regras(self.rule | par, "2026-01")
+        self.assertEqual(criados.salary_rule_id, self.rule)
+        self.rule_abono.l10n_br_esocial_cod_inc_irrf = "75"
+        criados = S1010.criar_para_regras(self.rule | par, "2026-01")
+        self.assertEqual(criados.salary_rule_id & par, par)

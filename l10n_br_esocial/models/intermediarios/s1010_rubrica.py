@@ -44,6 +44,13 @@ class ESocialS1010(models.Model):
         Regras de estruturas diferentes (mensal, férias, 13º, rescisão) repetem
         o código eSocial; o governo recusa a rubrica declarada duas vezes.
         """
+        # O par 1015/9221 do abono copia o IRRF da rubrica do abono da empresa;
+        # enquanto ela não o tem, o par fica de fora do lote (senão recusaria o
+        # S-1010 de todas as rubricas).
+        Regra = self.env["hr.salary.rule"]
+        if regras & Regra._esocial_regras_adiantamento_abono():
+            if not Regra._esocial_sincronizar_irrf_adiantamento_abono():
+                regras -= Regra._esocial_regras_adiantamento_abono()
         if operacao in ("inclusao", "alteracao"):
             regras.filtered("l10n_br_esocial_cod_rubr")._esocial_check_irrf_vencimento()
         criados = self.browse()
