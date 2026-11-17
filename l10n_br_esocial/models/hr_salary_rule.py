@@ -551,7 +551,7 @@ class HrSalaryRule(models.Model):
         self.ensure_one()
         return (
             self.l10n_br_esocial_cod_rubr,
-            self.l10n_br_esocial_ide_tab_rubr or "1",
+            self._esocial_ide_tab_rubr_da_regra(),
         )
 
     def _esocial_definicao_rubrica(self):
@@ -665,20 +665,110 @@ class HrSalaryRule(models.Model):
         melhor = max(grupos, key=lambda g: g["l10n_br_esocial_ide_tab_rubr_count"])
         return melhor["l10n_br_esocial_ide_tab_rubr"]
 
-    @api.model
-    def _esocial_configurar_adiantamento_ferias(self):
-        """Dá às rubricas 1015 e 9221 (adiantamento de férias) a tabela da empresa.
+    def _esocial_rubrica_de_adiantamento_ferias(self):
+        """As regras 1015 e 9221 do adiantamento de férias (só do eSocial)."""
+        return self in self._esocial_regras_adiantamento_ferias()
 
-        Só preenche o que está vazio; idempotente (instalação e atualização).
-        """
+    @api.model
+    def _esocial_regras_adiantamento_ferias(self):
+        regras = self.browse()
         for xmlid in (
             "l10n_br_esocial.hr_rule_adiantamento_ferias_esocial",
             "l10n_br_esocial.hr_rule_desconto_adiantamento_ferias",
+            "l10n_br_esocial.hr_rule_adiantamento_abono_esocial",
+            "l10n_br_esocial.hr_rule_desconto_adiantamento_abono",
         ):
-            regra = self.env.ref(xmlid, raise_if_not_found=False)
-            if regra and not regra.l10n_br_esocial_ide_tab_rubr:
-                regra.l10n_br_esocial_ide_tab_rubr = (
-                    self._esocial_tabela_rubricas_da_empresa(regra.company_id)
+            regras |= self.env.ref(xmlid, raise_if_not_found=False) or self.browse()
+        return regras
+
+    def _esocial_rubrica_de_adiantamento_abono(self):
+        """As regras do par 1015/9221 do abono pecuniário (TG-152#P2)."""
+        return self in self._esocial_regras_adiantamento_abono()
+
+    @api.model
+    def _esocial_regras_adiantamento_abono(self):
+        regras = self.browse()
+        for xmlid in (
+            "l10n_br_esocial.hr_rule_adiantamento_abono_esocial",
+            "l10n_br_esocial.hr_rule_desconto_adiantamento_abono",
+        ):
+            regras |= self.env.ref(xmlid, raise_if_not_found=False) or self.browse()
+        return regras
+
+    @api.model
+    def _esocial_sincronizar_irrf_adiantamento_abono(self, exigir=False):
+        """Copia o ``codIncIRRF`` da rubrica do abono configurada para o par do abono.
+
+        O par 1015/9221 do abono (sem CP nem FGTS) leva a incidência de IRRF da
+        rubrica do abono pecuniário que a empresa configurou, não um valor fixo.
+        Com ``exigir``, recusa se o abono ainda não tem incidência de IRRF.
+        """
+        abono = self.sudo().search(
+            [
+                ("code", "=", "ABONO_PECUNIARIO"),
+                ("l10n_br_esocial_cod_inc_irrf", "!=", False),
+            ],
+            limit=1,
+        )
+        if not abono:
+            if exigir:
+                raise UserError(
+                    _(
+                        "O abono pecuniário tem parte futura (adiantamento), mas a "
+                        "regra ABONO_PECUNIARIO não tem Incidência IRRF "
+                        "configurada: o par 1015/9221 do abono copia a incidência "
+                        "dela. Configure a regra do abono na aba eSocial."
+                    )
+                )
+            return False
+        regras = self._esocial_regras_adiantamento_abono().sudo()
+        regras.filtered(
+            lambda r: r.l10n_br_esocial_cod_inc_irrf
+            != abono.l10n_br_esocial_cod_inc_irrf
+        ).write({"l10n_br_esocial_cod_inc_irrf": abono.l10n_br_esocial_cod_inc_irrf})
+        return abono
+
+    def _esocial_ide_tab_rubr_da_regra(self, company=None):
+        """``ideTabRubr`` da regra no S-1010, no S-1200 e no S-2299.
+
+        O da própria regra; ``"1"`` se vazio. As rubricas 1015 e 9221 do
+        adiantamento de férias (regras do módulo, sem tabela gravada) usam a
+        tabela de rubricas que a empresa já usa, resolvida na hora de usar: assim
+        vale na instalação, na atualização e em empresa configurada depois, sem
+        gravar um ``"1"`` que contaria como a tabela mais usada da empresa.
+        """
+        self.ensure_one()
+        if self.l10n_br_esocial_ide_tab_rubr:
+            return self.l10n_br_esocial_ide_tab_rubr
+        if self._esocial_rubrica_de_adiantamento_ferias():
+            return self._esocial_tabela_rubricas_da_empresa(company or self.company_id)
+        return "1"
+
+    @api.model
+    def _esocial_configurar_adiantamento_ferias(self):
+        """Cria o S-1010 das rubricas 1015 e 9221 onde a empresa já tem S-1010.
+
+        A tabela de rubricas delas não é gravada: ``_esocial_ide_tab_rubr_da_regra``
+        a resolve pela empresa. Nas empresas que já enviam S-1010, cria o S-1010
+        das duas (um por rubrica) com a validade do primeiro S-1010 da empresa, para
+        existirem na tabela do governo antes do primeiro S-1200 com adiantamento.
+        Idempotente; chamada pela migração (banco existente).
+        """
+        regras = self._esocial_regras_adiantamento_ferias()
+        if not self._esocial_sincronizar_irrf_adiantamento_abono():
+            # Sem incidência de IRRF no abono, o S-1010 do par do abono seria
+            # recusado; sai quando a regra do abono for configurada.
+            regras -= self._esocial_regras_adiantamento_abono()
+        S1010 = self.env["l10n_br.esocial.s1010"].sudo()
+        for company in self.env["res.company"].sudo().search([]):
+            primeiro = S1010.search(
+                [("company_id", "=", company.id), ("operacao", "=", "inclusao")],
+                order="ini_valid",
+                limit=1,
+            )
+            if primeiro:
+                S1010.with_company(company).criar_para_regras(
+                    regras, primeiro.ini_valid
                 )
         return True
 

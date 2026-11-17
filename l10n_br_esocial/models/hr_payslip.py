@@ -8,6 +8,9 @@ from odoo.exceptions import UserError
 
 # Estados do evento que ainda declaram valores ao eSocial (não retificado, não
 # excluído, não recusado).
+# Regras do abono pecuniário e do terço dele: a parte futura vai no par próprio
+# de adiantamento/desconto (TG-152#P2).
+CODIGOS_ABONO = ("ABONO_PECUNIARIO", "ADICIONAL_ABONO")
 EVENTO_VIGENTE = ("draft", "validated", "pending", "sent", "success")
 
 
@@ -459,6 +462,125 @@ class HrPayslip(models.Model):
             pers.insert(0, pago)
         return pers
 
+    def _esocial_competencia_ir(self):
+        """Competência cujo S-1200 leva a retenção e as deduções do IR do recibo.
+
+        O IRRF é regime de caixa: o S-1210 do pagamento só referencia o
+        demonstrativo do S-1200 em que o recibo foi pago, então a retenção e as
+        deduções do IR ficam inteiras nele (MOS S-1.3, S-1210, item 4.1, exemplos 1
+        e 2, pp. 186-188: o desconto do IR das férias vai inteiro, com
+        ``codIncIRRF`` 33, no demonstrativo da antecipação, que é o pago). É a
+        competência do pagamento (``l10n_br_esocial_data_pagamento``) quando o
+        recibo declara essa competência; sem data de pagamento, a primeira.
+        """
+        self.ensure_one()
+        pers = self._esocial_competencias_s1200()
+        pago = False
+        if self.struct_id.code == "FERIAS" and self.l10n_br_esocial_data_pagamento:
+            pago = self.l10n_br_esocial_data_pagamento.strftime("%Y-%m")
+        return pago if pago in pers else pers[0]
+
+    def _esocial_linha_inss(self, line):
+        """A linha é o desconto da contribuição previdenciária (``codIncCP`` 31)."""
+        rule = line.salary_rule_id
+        return (
+            rule.l10n_br_esocial_tp_rubr == "2"
+            and rule.l10n_br_esocial_cod_inc_cp == "31"
+        )
+
+    def _esocial_linha_inteira_no_pagamento(self, line):
+        """Retenção do IR e deduções da base do IR (exceto o INSS) do recibo de férias.
+
+        ``codIncIRRF`` 31 a 34 (retenção) e 4x, 5x e 6x (deduções: previdência
+        complementar, pensão alimentícia, FAPI etc.). Não rateiam: vão inteiras na
+        competência do pagamento (``_esocial_competencia_ir``). O INSS tem a CP por
+        parte (rateado pelos dias de gozo) e a dedução dele no IR se compensa pelo
+        adiantamento líquido do INSS da parte (``_esocial_liquido_da_competencia``).
+        """
+        if self.struct_id.code != "FERIAS" or self._esocial_linha_inss(line):
+            return False
+        incidencia = line.salary_rule_id.l10n_br_esocial_cod_inc_irrf or ""
+        return incidencia[:1] in ("3", "4", "5", "6")
+
+    def _esocial_valor_na_competencia(self, line, per_apur):
+        """Parte da linha do recibo que cabe no S-1200 de ``per_apur`` (TG-152).
+
+        Rateio por dias de gozo, menos a retenção e as deduções do IR, que vão
+        inteiras na competência do pagamento (``_esocial_competencia_ir``).
+        """
+        self.ensure_one()
+        if self._esocial_linha_inteira_no_pagamento(line):
+            return line.total if per_apur == self._esocial_competencia_ir() else 0.0
+        return self._l10n_br_ratear_valor(line.total, per_apur)
+
+    def _esocial_liquido_da_competencia(self, per_apur, abono=False):
+        """Proventos do recibo na competência, líquidos do INSS dela.
+
+        É o valor do adiantamento (1015, soma das partes seguintes) e do desconto
+        dele (9221, de cada competência seguinte). Líquido do INSS porque o INSS
+        da parte é descontado na própria competência dela, com a CP 31 por parte;
+        o adiantamento líquido zera o demonstrativo daquela competência e a dedução
+        do INSS no IR da parte (``codIncIRRF`` 41) cancela o que o 9221 deixa de
+        abater do rendimento. É o que o MOS faz no exemplo 4.1 do S-1210 (p. 186-187,
+        o desconto do adiantamento é o valor líquido pago).
+        """
+        self.ensure_one()
+        # ``abono``: só o abono pecuniário e o terço dele (par próprio de rubricas,
+        # sem INSS); senão, só as demais verbas (férias e terço), líquidas do INSS.
+        total = 0.0
+        for line in self.line_ids:
+            rule = line.salary_rule_id
+            if (
+                not line.total
+                or not rule.l10n_br_esocial_nat_rubr_id
+                or not rule.l10n_br_esocial_cod_rubr
+            ):
+                continue
+            if rule.l10n_br_esocial_tp_rubr == "1" and line.total > 0:
+                if (rule.code in CODIGOS_ABONO) == abono:
+                    total += self._l10n_br_ratear_valor(line.total, per_apur)
+            elif not abono and self._esocial_linha_inss(line):
+                total -= abs(self._l10n_br_ratear_valor(line.total, per_apur))
+        return round(total, 2)
+
+    def _esocial_adiantamentos_ferias(self, per_apur):
+        """``[(xmlid da regra, valor)]`` do 1015/9221 do recibo na competência.
+
+        Exemplos (a) e (c) do MOS, item 23 (pp. 112-114), opção 2: na competência
+        do pagamento, o adiantamento (1015) com o valor líquido das partes gozadas
+        nas competências seguintes; em cada competência seguinte, o desconto dele
+        (9221) da sua parte. Dois pares: o das férias e do terço (IRRF 13) e o do
+        abono pecuniário e do terço dele (TG-152#P2, opção 1; sem CP nem FGTS, com a
+        incidência de IRRF da rubrica do abono da empresa). Sem adiantamento, ``[]``.
+        """
+        self.ensure_one()
+        pago = self._esocial_competencia_adiantamento()
+        if not pago:
+            return []
+        seguintes = [
+            per for per, _dias in self._l10n_br_competencias_ferias() if per > pago
+        ]
+        if per_apur == pago:
+            pares = (
+                ("hr_rule_adiantamento_ferias_esocial", False),
+                ("hr_rule_adiantamento_abono_esocial", True),
+            )
+            pers = seguintes
+        elif per_apur in seguintes:
+            pares = (
+                ("hr_rule_desconto_adiantamento_ferias", False),
+                ("hr_rule_desconto_adiantamento_abono", True),
+            )
+            pers = [per_apur]
+        else:
+            return []
+        itens = []
+        for xmlid, abono in pares:
+            valor = sum(self._esocial_liquido_da_competencia(p, abono) for p in pers)
+            if round(valor, 2):
+                itens.append(("l10n_br_esocial." + xmlid, round(valor, 2)))
+        return itens
+
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self._esocial_em_vigor()
@@ -477,6 +599,24 @@ class HrPayslip(models.Model):
                 )
             )
         payslips -= no_s2299
+        # TG-152#P3: o recibo de férias com gozo em mais de uma competência exige a
+        # data de pagamento (decide a competência do adiantamento e a da retenção
+        # do IR); sem ela, o exemplo (a) do MOS ficaria sem adiantamento.
+        sem_data = payslips.filtered(
+            lambda slip: slip.struct_id.code == "FERIAS"
+            and len(slip._l10n_br_competencias_ferias()) > 1
+            and not slip.l10n_br_esocial_data_pagamento
+        )
+        if sem_data:
+            raise UserError(
+                _(
+                    "O recibo de férias com gozo em mais de uma competência exige a "
+                    "Data de Pagamento antes de gerar o S-1200 (ela decide o "
+                    "adiantamento das férias, MOS S-1.3, S-1010, item 23, e a "
+                    "competência da retenção do IR). Preencha a data em: %s."
+                )
+                % ", ".join(slip.number or slip.name for slip in sem_data)
+            )
         # Group by employee + period. O recibo de férias que atravessa o mês entra
         # no S-1200 de cada competência em que há gozo, rateado por dias de gozo
         # (MOS S-1.3, S-1010, item 23, pp. 112-114), e no da competência do
@@ -565,14 +705,50 @@ class HrPayslip(models.Model):
             s1200 = self.env["l10n_br.esocial.s1200"].create(vals)
             evento = s1200.action_gerar_evento()
             created_events |= evento
-            # O S-1210 aponta para o S-1200 da primeira competência do recibo
-            # (``l10n_br_esocial_s1200_id``); todos os S-1200 do holerite ficam em
-            # ``l10n_br_esocial_s1200_ids``.
+            # O S-1210 aponta para o S-1200 da competência do pagamento, onde ficam
+            # a retenção e as deduções do IR (``l10n_br_esocial_s1200_id``); todos
+            # os S-1200 do holerite ficam em ``l10n_br_esocial_s1200_ids``.
             slips.filtered(
-                lambda slip: slip._esocial_competencias_s1200()[0] == per_apur
+                lambda slip: slip._esocial_competencia_ir() == per_apur
             ).write({"l10n_br_esocial_s1200_id": s1200.id})
+            if so_per_apur:
+                # Retificador só desta competência (recibo novo, com a do
+                # pagamento vigente e inalterada): o S-1210 do recibo novo
+                # aponta para o S-1200 vigente dela.
+                for slip in slips.filtered(
+                    lambda slip: not slip.l10n_br_esocial_s1200_id
+                    and slip._esocial_competencia_ir() != per_apur
+                ):
+                    slip._esocial_vincular_s1200_da_competencia_ir()
 
         return self._action_esocial_eventos(created_events)
+
+    def _esocial_vincular_s1200_da_competencia_ir(self):
+        """Liga o recibo ao S-1200 vigente da competência do pagamento."""
+        self.ensure_one()
+        vigente = self.env["l10n_br.esocial.s1200"].search(
+            [
+                ("employee_id", "=", self.employee_id.id),
+                ("per_apur", "=", self._esocial_competencia_ir()),
+                ("ind_apuracao", "=", "1"),
+                ("company_id", "=", self.company_id.id),
+                ("evento_id.state", "in", EVENTO_VIGENTE),
+            ],
+            order="id desc",
+            limit=1,
+        )
+        if vigente:
+            self.l10n_br_esocial_s1200_id = vigente.id
+        return vigente
+
+    def action_esocial_gerar_s1200_competencia(self, per_apur):
+        """Gera (ou retifica) o S-1200 de uma só competência do recibo (AAAA-MM).
+
+        Para o recibo que atravessa o mês: retifica a segunda competência sem
+        mexer na primeira. Sem o contexto: ``action_esocial_gerar_s1200`` faz
+        todas.
+        """
+        return self.with_context(esocial_per_apur=per_apur).action_esocial_gerar_s1200()
 
     def _action_esocial_eventos(self, eventos):
         """Abre o(s) evento(s) gerado(s)."""

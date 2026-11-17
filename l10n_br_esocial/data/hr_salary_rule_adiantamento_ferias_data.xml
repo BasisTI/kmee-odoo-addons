@@ -43,6 +43,52 @@
         <field name="l10n_br_esocial_cod_inc_irrf">13</field>
         <field name="l10n_br_esocial_cod_inc_fgts">00</field>
     </record>
-    <!-- A tabela de rubricas (ideTabRubr) é a que a empresa já usa. -->
-    <function model="hr.salary.rule" name="_esocial_configurar_adiantamento_ferias" />
+    <!--
+        Par próprio do abono pecuniário e do terço dele (TG-152#P2, opção 1): o
+        MOS (item 23) não trata do abono. Sem CP nem FGTS; o codIncIRRF é copiado
+        da rubrica do abono configurada na empresa (``_esocial_sincronizar_irrf_
+        adiantamento_abono``), por isso não é fixo aqui.
+    -->
+    <record id="hr_rule_adiantamento_abono_esocial" model="hr.salary.rule">
+        <field name="name">Adiantamento do Abono de Férias (eSocial 1015)</field>
+        <field name="code">ADIANTAMENTO_ABONO_ESOCIAL</field>
+        <field name="sequence" eval="902" />
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_basic"
+        />
+        <field name="condition_select">none</field>
+        <field name="amount_select">fix</field>
+        <field name="amount_fix" eval="0" />
+        <field name="l10n_br_esocial_cod_rubr">ANTECIPABONO</field>
+        <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_1015" />
+        <field name="l10n_br_esocial_tp_rubr">1</field>
+        <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_fgts">00</field>
+    </record>
+    <record id="hr_rule_desconto_adiantamento_abono" model="hr.salary.rule">
+        <field
+            name="name"
+        >Desconto do Adiantamento do Abono de Férias (eSocial 9221)</field>
+        <field name="code">DESC_ADIANTAMENTO_ABONO_ESOCIAL</field>
+        <field name="sequence" eval="903" />
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_basic"
+        />
+        <field name="condition_select">none</field>
+        <field name="amount_select">fix</field>
+        <field name="amount_fix" eval="0" />
+        <field name="l10n_br_esocial_cod_rubr">DESCANTECIPABONO</field>
+        <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9221" />
+        <field name="l10n_br_esocial_tp_rubr">2</field>
+        <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_fgts">00</field>
+    </record>
+    <!--
+        A tabela de rubricas (ideTabRubr) não é gravada: é a que a empresa já usa,
+        resolvida na hora de usar (``_esocial_ide_tab_rubr_da_regra``), o que vale
+        na instalação e na atualização. O S-1010 delas, nas empresas que já enviam
+        S-1010, vem da migração 18.0.1.8.0.
+    -->
 </odoo>

@@ -27,12 +27,13 @@ class TestS1200FeriasSegundaCompetencia(ESocialCicloCommon):
         )
 
     def _recibo(self, valor=3100.0):
-        slip = self._criar_payslip(linhas=[("FERIAS", valor)])
+        slip = self._criar_payslip(linhas=[("FERIAS", valor), ("NET", valor)])
         slip.write(
             {
                 "struct_id": self.estrutura.id,
                 "date_from": "2026-11-10",
                 "date_to": "2026-12-10",
+                "l10n_br_esocial_data_pagamento": "2026-11-05",
             }
         )
         return slip
@@ -64,6 +65,9 @@ class TestS1200FeriasSegundaCompetencia(ESocialCicloCommon):
         novo.with_context(esocial_per_apur="2026-12").action_esocial_gerar_s1200()
         retificador = novo.l10n_br_esocial_s1200_ids
         self.assertEqual(retificador.per_apur, "2026-12")
+        # O recibo novo aponta para o S-1200 vigente da competência do pagamento
+        # (a primeira, inalterada): sem isso o S-1210 dele recusa.
+        self.assertEqual(novo.l10n_br_esocial_s1200_id, nov)
         self.assertEqual(retificador.ind_retif, "2")
         self.assertEqual(retificador.nr_recibo, RECIBO_DEZ)
         # A primeira competência não muda: o evento aceito segue como está e
@@ -74,6 +78,14 @@ class TestS1200FeriasSegundaCompetencia(ESocialCicloCommon):
                 [("per_apur", "=", "2026-11"), ("ind_retif", "=", "2")]
             )
         )
+
+    def test_acao_por_competencia_sem_contexto(self):
+        recibo, nov, dez = self._gera_e_aceita()
+        recibo.refund_sheet()
+        novo = self._recibo()
+        novo.action_esocial_gerar_s1200_competencia("2026-12")
+        self.assertEqual(novo.l10n_br_esocial_s1200_ids.per_apur, "2026-12")
+        self.assertEqual(nov.evento_id.state, "success")
 
     def test_exclui_so_a_segunda_competencia(self):
         if not HAS_ESOCIALLIB:

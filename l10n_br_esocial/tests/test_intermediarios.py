@@ -1158,6 +1158,96 @@ class TestS2299(TestESocialIntermediarioBase):
         with self.assertRaisesRegex(UserError, "S-3000"):
             self._verbas(s2299)
 
+    def _ferias_atravessando_o_mes(self):
+        """Férias de 20/11 a 19/12/2024: 11 dias em novembro e 19 em dezembro."""
+        estrutura = self.env["hr.payroll.structure"].search(
+            [("code", "=", "FERIAS")], limit=1
+        ) or self.env["hr.payroll.structure"].create(
+            {"name": "Férias (teste)", "code": "FERIAS"}
+        )
+        ferias = self.env["hr.payslip"].create(
+            {
+                "name": "Férias",
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "struct_id": estrutura.id,
+                "date_from": "2024-11-20",
+                "date_to": "2024-12-19",
+                "state": "done",
+            }
+        )
+        self._linha_rescisao(ferias, self._regra_rubrica("FER_X", "FERX"), 3000.0)
+        return ferias
+
+    def test_s2299_leva_a_parte_de_dezembro_das_ferias_que_comecaram_em_novembro(self):
+        """TG-152: férias de 20/11 a 19/12, desligamento em dezembro.
+
+        O recibo começa em novembro, mas a parte de dezembro (S-1200 de 12/2024)
+        é do mês do desligamento: o S-2299 a declara, só ela, e o S-1200 de
+        novembro segue como está.
+        """
+        s2299 = self._s2299_rescisao()
+        ferias = self._ferias_atravessando_o_mes()
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        self.assertIn(ferias, s2299._slips_verbas())
+        data = self._verbas(s2299)
+        por_dm = {
+            dm["ide_dm_dev"]: [
+                d["vr_rubr"]
+                for lot in dm["info_per_apur"]["ide_estab_lot"]
+                for d in lot["det_verbas"]
+            ]
+            for dm in data["verbas_resc"]
+        }
+        self.assertEqual(por_dm[s2299.get_ide_dm_dev(ferias)], ["1900.0"])
+
+    def test_s2299_s1200_de_dezembro_das_ferias_vindas_de_novembro_bloqueia(self):
+        s2299 = self._s2299_rescisao()
+        ferias = self._ferias_atravessando_o_mes()
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        S1200 = self.env["l10n_br.esocial.s1200"]
+        for per, estado in (("2024-11", "success"), ("2024-12", "success")):
+            s1200 = S1200.create(
+                {
+                    "employee_id": self.employee.id,
+                    "per_apur": per,
+                    "ind_apuracao": "1",
+                    "company_id": self.company.id,
+                    "payslip_ids": [(6, 0, ferias.ids)],
+                }
+            )
+            s1200.evento_id = self.env["l10n_br.esocial.evento"].create(
+                {"tipo": "S-1200", "company_id": self.company.id, "state": estado}
+            )
+            if per == "2024-11":
+                ferias.l10n_br_esocial_s1200_id = s1200
+        with self.assertRaisesRegex(UserError, "S-3000"):
+            self._verbas(s2299)
+
+    def test_s2299_s1200_de_novembro_das_ferias_nao_bloqueia(self):
+        s2299 = self._s2299_rescisao()
+        ferias = self._ferias_atravessando_o_mes()
+        self._linha_rescisao(
+            s2299.payslip_id, self._regra_rubrica("AVISO_X", "AVISO"), 3300.0
+        )
+        s1200 = self.env["l10n_br.esocial.s1200"].create(
+            {
+                "employee_id": self.employee.id,
+                "per_apur": "2024-11",
+                "ind_apuracao": "1",
+                "company_id": self.company.id,
+                "payslip_ids": [(6, 0, ferias.ids)],
+            }
+        )
+        s1200.evento_id = self.env["l10n_br.esocial.evento"].create(
+            {"tipo": "S-1200", "company_id": self.company.id, "state": "success"}
+        )
+        self.assertIn("verbas_resc", self._verbas(s2299))
+
     def test_s2299_sem_holerite_nao_leva_verbas_rescisorias(self):
         s2299 = self._s2299_rescisao(payslip_id=False)
         self.assertNotIn("verbas_resc", s2299._to_esociallib_dict())

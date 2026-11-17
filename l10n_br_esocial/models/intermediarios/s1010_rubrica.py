@@ -119,6 +119,8 @@ class ESocialS1010(models.Model):
         if not rule.l10n_br_esocial_tp_rubr:
             raise UserError(f"Regra '{rule.name}' não possui Tipo de Rubrica eSocial.")
 
+        if rule._esocial_rubrica_de_adiantamento_abono():
+            self.env["hr.salary.rule"]._esocial_sincronizar_irrf_adiantamento_abono()
         if self.operacao in ("inclusao", "alteracao"):
             rule._esocial_check_irrf_vencimento()
 
@@ -130,7 +132,7 @@ class ESocialS1010(models.Model):
             "nr_insc": ide["nr_insc"],
             "operacao": self.operacao,
             "cod_rubr": rule.l10n_br_esocial_cod_rubr,
-            "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
+            "ide_tab_rubr": rule._esocial_ide_tab_rubr_da_regra(self.company_id),
             "ini_valid": self.ini_valid,
             "proc_emi": proc["proc_emi"],
             "ver_proc": proc["ver_proc"],

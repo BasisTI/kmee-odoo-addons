@@ -163,31 +163,13 @@ class ESocialS1200(models.Model):
 
         Só o recibo de férias que atravessa o mês é rateado, pela função única
         das competências (``_l10n_br_competencias_ferias``); os demais holerites
-        vão inteiros.
+        vão inteiros. A retenção do IR e as deduções do IR (exceto o INSS) não
+        rateiam: vão inteiras na competência do pagamento, a que o S-1210
+        referencia (``_esocial_competencia_ir``).
         """
         if self.ind_apuracao != "1":
             return line.total
-        return payslip._l10n_br_ratear_valor(line.total, self.per_apur)
-
-    def _proventos_da_competencia(self, payslip, per_apur):
-        """Soma dos proventos (tpRubr 1) do recibo que cabem em ``per_apur``.
-
-        Mesmo critério do ``_build_itens_remun`` (linha com valor, rubrica
-        configurada, provento não negativo, rateio por dias de gozo).
-        """
-        total = 0.0
-        for line in payslip.line_ids:
-            rule = line.salary_rule_id
-            if (
-                not line.total
-                or not rule.l10n_br_esocial_nat_rubr_id
-                or not rule.l10n_br_esocial_cod_rubr
-                or rule.l10n_br_esocial_tp_rubr != "1"
-                or line.total < 0
-            ):
-                continue
-            total += payslip._l10n_br_ratear_valor(line.total, per_apur)
-        return round(total, 2)
+        return payslip._esocial_valor_na_competencia(line, self.per_apur)
 
     def _itens_adiantamento_ferias(self, payslip):
         """Rubricas 1015 e 9221 do recibo de férias pago adiantado (MOS 23, pp. 112-114).
@@ -196,27 +178,21 @@ class ESocialS1200(models.Model):
         adiantamento (natureza 1015, incidências 00/00/13) com o valor da parte
         gozada nas competências seguintes; em cada competência seguinte, o desconto
         dele (natureza 9221, 00/00/13) da parte dessa competência. A parte gozada
-        no mês do pagamento não leva 1015 nem 9221 (opção 2 do exemplo (b)).
+        no mês do pagamento não leva 1015 nem 9221 (opção 2 do exemplo (b)). O valor
+        é líquido do INSS da parte (``_esocial_liquido_da_competencia``). O abono
+        pecuniário e o terço dele vão em par próprio (TG-152#P2).
         """
         if self.ind_apuracao != "1":
             return []
-        pago = payslip._esocial_competencia_adiantamento()
-        if not pago:
-            return []
-        seguintes = [
-            per for per, _dias in payslip._l10n_br_competencias_ferias() if per > pago
+        adiantamentos = payslip._esocial_adiantamentos_ferias(self.per_apur)
+        if any("abono" in xmlid for xmlid, _valor in adiantamentos):
+            self.env["hr.salary.rule"]._esocial_sincronizar_irrf_adiantamento_abono(
+                exigir=True
+            )
+        return [
+            self._item_remun(self.env.ref(xmlid), valor)
+            for xmlid, valor in adiantamentos
         ]
-        if self.per_apur == pago:
-            valor = sum(self._proventos_da_competencia(payslip, p) for p in seguintes)
-            regra = self.env.ref("l10n_br_esocial.hr_rule_adiantamento_ferias_esocial")
-        elif self.per_apur in seguintes:
-            valor = self._proventos_da_competencia(payslip, self.per_apur)
-            regra = self.env.ref("l10n_br_esocial.hr_rule_desconto_adiantamento_ferias")
-        else:
-            return []
-        if not valor:
-            return []
-        return [self._item_remun(regra, round(valor, 2))]
 
     def _exige_ind_apur_ir(self):
         """``indApurIR`` é obrigatório a partir de 07/2021 (mensal) ou 2021 (13º)."""
@@ -225,7 +201,7 @@ class ESocialS1200(models.Model):
     def _item_remun(self, rule, valor):
         item = {
             "cod_rubr": rule.l10n_br_esocial_cod_rubr,
-            "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
+            "ide_tab_rubr": rule._esocial_ide_tab_rubr_da_regra(self.company_id),
             "vr_rubr": str(valor),
         }
         if self._exige_ind_apur_ir():

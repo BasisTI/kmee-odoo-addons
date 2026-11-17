@@ -258,11 +258,43 @@ class ESocialS2299(models.Model):
             and not (slip.struct_id.code or "").startswith("13_")
             and slip.struct_id.code != "RESCISAO"
         )
-        return rescisao | outros
+        return rescisao | outros | self._slips_ferias_do_mes_vindas_de_antes()
+
+    def _slips_ferias_do_mes_vindas_de_antes(self):
+        """Recibos de férias que começam antes do mês do desligamento e o atravessam.
+
+        O S-1200 deles de ``per_apur`` = mês do desligamento (TG-152: férias que
+        atravessam o mês têm um S-1200 por competência) é o que o leiaute recusa
+        junto com o S-2299; a parte desse mês vai em ``verbasResc``. ``date_from``
+        fica fora do mês, então a busca por ``date_from`` não os acha.
+        """
+        self.ensure_one()
+        mes = self.dt_deslig.strftime("%Y-%m")
+        inicio = self.dt_deslig.replace(day=1)
+        recibos = self.env["hr.payslip"].search(
+            [
+                ("employee_id", "=", self.employee_id.id),
+                ("company_id", "=", self.company_id.id),
+                ("state", "=", "done"),
+                ("date_from", "<", inicio),
+                ("date_to", ">=", inicio),
+            ]
+        )
+        return recibos.filtered(
+            lambda slip: not slip.l10n_br_fora_de_vigor
+            and slip.struct_id.code == "FERIAS"
+            and mes in [per for per, _dias in slip._l10n_br_competencias_ferias()]
+        )
 
     def _exigir_sem_s1200_vigente(self, slips):
         """Holerite com S-1200 vigente não pode ser declarado de novo aqui."""
-        eventos = slips.l10n_br_esocial_s1200_ids.evento_id.filtered(
+        # Só o S-1200 da competência do desligamento conflita: o recibo de férias
+        # que atravessa o mês tem os de outras competências, que seguem vigentes.
+        mes = self.dt_deslig.strftime("%Y-%m")
+        s1200_do_mes = slips.l10n_br_esocial_s1200_ids.filtered(
+            lambda s1200: s1200.per_apur == mes and s1200.ind_apuracao == "1"
+        )
+        eventos = s1200_do_mes.evento_id.filtered(
             lambda evento: evento.state in EVENTO_VIGENTE
         )
         com_s1200 = slips.filtered(
@@ -287,7 +319,14 @@ class ESocialS2299(models.Model):
     def _itens_verbas(self, slip, sem_config):
         """``detVerbas`` do holerite; o que não puder declarar vai a ``sem_config``."""
         itens = []
-        exige_ir = self.dt_deslig.strftime("%Y-%m") >= "2021-07"
+        mes = self.dt_deslig.strftime("%Y-%m")
+        exige_ir = mes >= "2021-07"
+        # Recibo de férias que atravessa o mês do desligamento: só a parte desta
+        # competência (rateio por dias de gozo), com o 1015/9221 dela.
+        parcial = (
+            slip.struct_id.code == "FERIAS"
+            and len(slip._l10n_br_competencias_ferias()) > 1
+        )
         for line in slip.line_ids:
             rule = line.salary_rule_id
             if not line.total or rule.code in CODIGOS_FORA_DAS_VERBAS:
@@ -329,15 +368,37 @@ class ESocialS2299(models.Model):
                     }
                 )
                 continue
+            valor = (
+                slip._esocial_valor_na_competencia(line, mes) if parcial else line.total
+            )
+            if not valor:
+                continue
             item = {
                 "cod_rubr": rule.l10n_br_esocial_cod_rubr,
-                "ide_tab_rubr": rule.l10n_br_esocial_ide_tab_rubr or "1",
-                "vr_rubr": str(abs(line.total)),
+                "ide_tab_rubr": rule._esocial_ide_tab_rubr_da_regra(self.company_id),
+                "vr_rubr": str(abs(valor)),
             }
             if exige_ir:
                 # 0 = apuração normal, sob a folha declarada no eSocial.
                 item["ind_apur_ir"] = 0
             itens.append(item)
+        if parcial:
+            for xmlid, valor in slip._esocial_adiantamentos_ferias(mes):
+                regra = self.env.ref(xmlid)
+                if "abono" in xmlid:
+                    self.env[
+                        "hr.salary.rule"
+                    ]._esocial_sincronizar_irrf_adiantamento_abono(exigir=True)
+                item = {
+                    "cod_rubr": regra.l10n_br_esocial_cod_rubr,
+                    "ide_tab_rubr": regra._esocial_ide_tab_rubr_da_regra(
+                        self.company_id
+                    ),
+                    "vr_rubr": str(valor),
+                }
+                if exige_ir:
+                    item["ind_apur_ir"] = 0
+                itens.append(item)
         return itens
 
     def _build_verbas_resc(self):
