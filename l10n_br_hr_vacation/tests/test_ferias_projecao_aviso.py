@@ -13,6 +13,7 @@ indenizado de 33 dias; alocação de 15/01/2025 a 14/01/2026.
 """
 from datetime import date, timedelta
 
+from odoo.exceptions import UserError
 from odoo.tests import tagged
 
 from .common import VacationCommon
@@ -23,6 +24,8 @@ AQ_INI, AQ_FIM = date(2025, 1, 15), date(2026, 1, 14)
 
 @tagged("post_install", "-at_install")
 class TestFeriasProjecaoAviso(VacationCommon):
+    exigir_alocacao_periodo = True
+
     def _contrato(self, wage=SALARIO):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=wage, date_start=date(2024, 1, 15))
@@ -125,10 +128,15 @@ class TestFeriasProjecaoAviso(VacationCommon):
         self.assertEqual(self._vencidas(slip), (3000.0, 1000.0))
 
     def test_sem_cruzar_o_aniversario(self):
-        """Projeção até 13/01/2026: o período continua em curso (proporcional)."""
-        slip = self._caso(date(2026, 1, 13))
+        """Projeção até 13/01/2026: o período 2025-2026 continua em curso
+        (proporcional); só o de 2024-2025, já completo, é vencido."""
+        emp, contract = self._contrato()
+        self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
+        self._alocacao(emp)
+        slip = self._rescisao(emp, contract, date(2026, 1, 13) - timedelta(days=33))
         self.assertEqual(slip.l10n_br_avos_ferias, 12)
-        self.assertEqual(self._vencidas(slip), (0.0, 0.0))
+        self.assertEqual(len(slip._l10n_br_ferias_vencidas_dados()), 1)
+        self.assertEqual(self._vencidas(slip), (3000.0, 1000.0))
         self.assertAlmostEqualMoney(
             self._get_line_total(slip, "FERIAS_INDENIZADAS"), 3000
         )
@@ -137,15 +145,86 @@ class TestFeriasProjecaoAviso(VacationCommon):
 
     def test_aviso_trabalhado_nao_projeta(self):
         emp, contract = self._contrato()
+        self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
         self._alocacao(emp)
         slip = self._rescisao(emp, contract, date(2025, 12, 31), aviso="trabalhado")
-        self.assertEqual(self._vencidas(slip), (0.0, 0.0))
+        # só o período 2024-2025, completo no desligamento
+        self.assertEqual(self._vencidas(slip), (3000.0, 1000.0))
         self.assertEqual(slip.l10n_br_avos_ferias, 12)
 
-    def test_sem_alocacao_nao_ha_periodo_vencido(self):
+    def test_sem_alocacao_do_periodo_que_fecha_na_projecao_recusa(self):
+        """Fluxo do POC: só a alocação do período anterior existe. A rescisão
+        recusa e diz qual alocação criar; com ela, paga 12/12 + 1/12 (r01 da
+        revisão, TG-147#P1)."""
         emp, contract = self._contrato()
+        self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
+        with self.assertRaisesRegex(UserError, "15/01/2025 a 14/01/2026"):
+            self._rescisao(emp, contract, date(2025, 12, 31))
+        self._alocacao(emp)
+        slip = self._rescisao(emp, contract, date(2025, 12, 31))
+        self.assertEqual(self._vencidas(slip)[0], 6000.0)
+
+    def test_sem_nenhuma_alocacao_recusa_a_rescisao(self):
+        emp, contract = self._contrato()
+        with self.assertRaisesRegex(UserError, "projeção do aviso"):
+            self._rescisao(emp, contract, date(2025, 12, 31))
+
+    def test_sem_alocacao_do_periodo_vencido_antes_do_desligamento_recusa(self):
+        """Mesma classe: período completo antes do desligamento, sem alocação."""
+        emp, contract = self._contrato()
+        with self.assertRaisesRegex(UserError, "antes do desligamento"):
+            self._rescisao(emp, contract, date(2025, 6, 30), aviso="trabalhado")
+
+    def test_menos_de_um_ano_nao_exige_alocacao(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=SALARIO, date_start=date(2025, 6, 1))
         slip = self._rescisao(emp, contract, date(2025, 12, 31))
         self.assertEqual(self._vencidas(slip), (0.0, 0.0))
+
+    def test_caso_poc_com_a_alocacao_paga_o_esperado(self):
+        emp, contract = self._contrato()
+        self._alocacao(emp)
+        slip = self._rescisao(emp, contract, date(2025, 12, 31))
+        self.assertEqual(self._vencidas(slip), (3000.0, 1000.0))
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "FERIAS_INDENIZADAS"), 250
+        )
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "ADICIONAL_FERIAS_INDENIZADAS"), 83.33
+        )
+
+    # ---- integridade da alocação usada pela rescisão (r08) ----------------
+
+    def test_alocacao_de_rescisao_confirmada_nao_muda(self):
+        emp, contract = self._contrato()
+        aloc = self._alocacao(emp)
+        slip = self._rescisao(emp, contract, date(2025, 12, 31))
+        slip.action_payslip_done()
+        for vals in (
+            {"l10n_br_faltas_periodo_aquisitivo": 10},
+            {"date_to": date(2026, 3, 14)},
+            {"date_from": date(2025, 1, 16)},
+        ):
+            with self.assertRaisesRegex(UserError, "rescisão confirmada"):
+                with self.env.cr.savepoint():
+                    aloc.write(vals)
+
+    def test_alocacao_de_rescisao_aberta_recalcula(self):
+        emp, contract = self._contrato()
+        aloc = self._alocacao(emp)
+        slip = self._rescisao(emp, contract, date(2025, 12, 31))
+        aloc.write({"l10n_br_faltas_periodo_aquisitivo": 10})
+        self.assertEqual(aloc.number_of_days, 24)
+        slip.compute_sheet()
+        self.assertAlmostEqualMoney(self._vencidas(slip)[0], 2400.0)
+
+    def test_alocacao_fora_da_projecao_muda_com_rescisao_confirmada(self):
+        emp, contract = self._contrato()
+        self._alocacao(emp)
+        posterior = self._alocacao(emp, date(2026, 1, 15), date(2027, 1, 14))
+        slip = self._rescisao(emp, contract, date(2025, 12, 31))
+        slip.action_payslip_done()
+        posterior.write({"l10n_br_faltas_periodo_aquisitivo": 10})
 
     def test_periodo_ja_completo_no_desligamento_segue_igual(self):
         """Período fechado antes da dispensa: vencido como sempre, e o período

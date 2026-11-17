@@ -110,7 +110,13 @@ do TST; CLT art. 487 § 1º). O período aquisitivo que se completa dentro da
 projeção (alocação de Férias que termina até a data projetada) é pago inteiro em
 ``FERIAS_VENCIDAS`` e ``ADICIONAL_FERIAS_VENCIDAS``, com a média de adicionais
 do período dele, e as férias proporcionais contam do aniversário seguinte. Esse
-período não é pago em dobro. É preciso que a alocação do período exista.
+período não é pago em dobro.
+
+A alocação de Férias é a única fonte do período: a rescisão **recusa o cálculo**
+se não houver alocação validada do último período aquisitivo completo até a data
+projetada (a mensagem traz as datas do período a criar). Crie e valide a
+alocação, e calcule de novo. Com a rescisão confirmada, as datas e as faltas da
+alocação que ela pagou não podem ser alteradas: volte a rescisão para rascunho.
 
 * **Término antecipado do contrato a prazo:** informe o ``Termo do Contrato a
   Prazo``. Pelo empregador, a rescisão paga a indenização do art. 479 (metade

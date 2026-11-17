@@ -719,6 +719,60 @@ class HrPayslip(models.Model):
                 if html_escape(aviso) not in anteriores:
                     slip.message_post(body=html_escape(aviso))
 
+    def _l10n_br_exigir_alocacao_periodo_completo(self):
+        """TG-147: a rescisão só calcula com a alocação de Férias do último
+        período aquisitivo que se completa até a data projetada.
+
+        A alocação do ``hr_holidays`` é a única fonte do período vencido (CLT
+        art. 146) e do que se completa na projeção do aviso indenizado (Súmula
+        371 TST). Sem ela as férias vencidas saíam zero, sem aviso, e os dias
+        proporcionais pagavam o período novo a menos. Só o período mais recente
+        é exigido: os anteriores podem ter sido gozados sem alocação no legado.
+        """
+        vacation_type = self.env.ref(
+            "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
+        )
+        for slip in self.filtered(lambda s: s.struct_id.code == "RESCISAO"):
+            admissao = slip.contract_id.date_start
+            if not (vacation_type and admissao and slip.date_to):
+                continue
+            referencia = slip._l10n_br_data_projetada_rescisao()
+            anos = relativedelta(referencia + timedelta(days=1), admissao).years
+            if anos < 1:
+                continue
+            inicio = admissao + relativedelta(years=anos - 1)
+            fim = admissao + relativedelta(years=anos) - relativedelta(days=1)
+            if (
+                self.env["hr.leave.allocation"]
+                .sudo()
+                .search_count(
+                    [
+                        ("employee_id", "=", slip.employee_id.id),
+                        ("holiday_status_id", "=", vacation_type.id),
+                        ("state", "=", "validate"),
+                        ("date_to", ">=", inicio),
+                        ("date_to", "<=", fim),
+                    ]
+                )
+            ):
+                continue
+            projetado = fim > slip.date_to
+            raise UserError(
+                _(
+                    "Falta a alocação de Férias validada do período aquisitivo de "
+                    "%(inicio)s a %(fim)s, que se completa %(quando)s: sem ela as "
+                    "férias do período (e o terço) não são pagas. Crie a alocação "
+                    "de Férias do empregado com essas datas, valide-a e calcule a "
+                    "rescisão de novo.",
+                    inicio=inicio.strftime("%d/%m/%Y"),
+                    fim=fim.strftime("%d/%m/%Y"),
+                    quando=_("na projeção do aviso prévio indenizado (até %s)")
+                    % referencia.strftime("%d/%m/%Y")
+                    if projetado
+                    else _("antes do desligamento"),
+                )
+            )
+
     def compute_sheet(self):
         confirmados = self.filtered(lambda slip: slip.state == "done")
         if confirmados:
@@ -731,6 +785,7 @@ class HrPayslip(models.Model):
                     nomes=", ".join(confirmados.mapped(lambda r: r.number or r.name)),
                 )
             )
+        self._l10n_br_exigir_alocacao_periodo_completo()
         # O compute_sheet apaga as linhas e grava as novas: a conferência é uma
         # só, no fim, contra a participação de antes (variável local).
         antes = self._l10n_br_participacao()
