@@ -7,7 +7,9 @@ Saldo informado = extrato do FGTS Digital posicionado ANTES do mês da rescisão
 seguinte à competência), então a base da multa soma as competências R-1 e R
 (Lei 8.036/90 art. 18 §1º; Decreto 99.684/90 art. 9º §1º).
 """
-from datetime import date
+from datetime import date, timedelta
+
+from dateutil.relativedelta import relativedelta
 
 from odoo.exceptions import UserError
 from odoo.tests import tagged
@@ -19,6 +21,35 @@ from .common import VacationCommon
 
 @tagged("post_install", "-at_install")
 class TestFgtsRescisaoLacunas(VacationCommon):
+    # TG-147: o caso real da rescisão tem a alocação de Férias validada do
+    # último período aquisitivo; ``_alocacao_do_periodo`` a cria antes do cálculo.
+    exigir_alocacao_periodo = True
+
+    def _alocacao_do_periodo(self, emp, contract, ate):
+        anos = relativedelta(ate + timedelta(days=1), contract.date_start).years
+        if anos < 1:
+            return
+        inicio = contract.date_start + relativedelta(years=anos - 1)
+        fim = contract.date_start + relativedelta(years=anos) - timedelta(days=1)
+        existe = self.env["hr.leave.allocation"].search_count(
+            [
+                ("employee_id", "=", emp.id),
+                ("holiday_status_id", "=", self.leave_type_ferias.id),
+                ("state", "=", "validate"),
+                ("date_to", ">=", inicio),
+                ("date_to", "<=", ate),
+            ]
+        )
+        if not existe:
+            self.env["hr.leave.allocation"].create(
+                {
+                    "employee_id": emp.id,
+                    "holiday_status_id": self.leave_type_ferias.id,
+                    "date_from": inicio,
+                    "date_to": fim,
+                }
+            ).action_validate()
+
     def _contrato(self, nome="FGTS lacunas", wage=2500.00):
         emp = self._create_employee(nome)
         contract = self._create_contract(emp, wage=wage, date_start=date(2020, 1, 1))
@@ -37,6 +68,8 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         valores.update(extra)
         slip = self.env["hr.payslip"].create(valores)
         if calcular:
+            if struct == self.structure_rescisao:
+                self._alocacao_do_periodo(emp, contract, ate)
             slip.compute_sheet()
         return slip
 
