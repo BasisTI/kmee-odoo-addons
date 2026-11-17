@@ -240,9 +240,15 @@ class TestContabilizacaoFgtsVacation(PayrollCommon):
         spec.loader.exec_module(modulo)
         modulo.migrate(self.env.cr, "18.0.1.0.0")
         regras.invalidate_recordset()
+        # A migração resolve a empresa pelo diário FOPAG (como o hook de
+        # instalação); num banco com mais de um plano de contas a conta do slot
+        # pode diferir da que o FGTS mensal já tinha gravada.
+        empresa = self.journal.company_id or self.env.ref("base.main_company")
+        debito = self.SalaryRule._l10n_br_find_account(empresa, "expense_encargos")
+        credito = self.SalaryRule._l10n_br_find_account(empresa, "liability_fgts")
         for rule in regras:
-            self.assertEqual(rule.account_debit, self.fgts_mensal.account_debit)
-            self.assertEqual(rule.account_credit, self.fgts_mensal.account_credit)
+            self.assertEqual(rule.account_debit, debito, rule.name)
+            self.assertEqual(rule.account_credit, credito, rule.name)
 
     def test_configuracao_manual_nao_e_sobrescrita(self):
         self._exige_vacation()
