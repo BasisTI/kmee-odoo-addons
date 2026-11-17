@@ -366,14 +366,32 @@ saiu; o total do S-1200 deixa de bater com o holerite nesse caso. O MOS S-1.3
 natureza: configure essa rubrica no cálculo em vez de contar com o provento
 negativo.
 
-Férias que atravessam o mês (MOS S-1.3, item 23.1 (c)): o recibo de férias entra
-no S-1200 de cada competência em que há gozo, e os valores das rubricas são
-rateados pelos dias de gozo em cada mês (gozo de 20/11 a 18/12: 11 dias em
-novembro e 18 em dezembro), com o resíduo do arredondamento na última
-competência, de modo que a soma das partes é o valor do recibo. O abono
-pecuniário e o terço dele não são gozo: vão inteiros na competência em que o gozo
-começa. O S-1210 do recibo aponta para o S-1200 dessa primeira competência. A
-base da multa do FGTS usa a mesma função de competência.
+Férias que atravessam o mês (MOS S-1.3, S-1010, item 23, pp. 112-114,
+exemplos (a), (b) e (c)): o recibo de férias entra no S-1200 de cada competência
+em que há gozo, e os valores das rubricas são rateados pelos dias de gozo em
+cada mês (gozo de 20/11 a 18/12: 11 dias em novembro e 18 em dezembro), com o
+resíduo do arredondamento na última competência, de modo que a soma das partes é
+o valor do recibo. Os dias são corridos, contados de forma inclusiva sobre o
+período real de gozo: o exemplo (c) do MOS (10/11 a 10/12, "20 + 10 dias") é
+impreciso, pois dá 21 + 10. O abono pecuniário e o terço do abono **também são
+rateados**, na mesma proporção dos dias de gozo; o MOS não trata do abono, e a
+regra segue o que o mercado transmite hoje (decisão TG-152#P1). O S-1210 do
+recibo aponta para o S-1200 da primeira competência (o do pagamento adiantado,
+se houver); todos os S-1200 do holerite aparecem em "S-1200 eSocial (todas as
+competências)", e cada um se retifica ou se exclui (S-3000) sozinho (para gerar
+só o retificador de uma competência, use o contexto ``esocial_per_apur``).
+
+Adiantamento das férias (exemplos (a) e (c), opção 2): informe a **Data de
+Pagamento** do recibo (a mesma do S-1210) **antes** de gerar o S-1200. Quando ela
+cai em competência anterior à de parte do gozo, o S-1200 da competência do
+pagamento leva a rubrica de natureza 1015 (incidências 00/00/13) com o valor da
+parte gozada nas competências seguintes, e o S-1200 de cada competência seguinte
+leva o desconto de natureza 9221 (00/00/13) da sua parte. A parte gozada no mês
+do pagamento não leva 1015 nem 9221 (opção 2 do exemplo (b)). Sem data de
+pagamento, não há adiantamento. As rubricas ``ANTECIPFERI`` e ``DESCANTECIPFERI``
+vêm cadastradas e entram na tabela de rubricas (S-1010) como as demais. A base
+da multa do FGTS usa a mesma função de competência do gozo e não soma o 1015
+(sem FGTS).
 
 Bug Tracker
 ===========

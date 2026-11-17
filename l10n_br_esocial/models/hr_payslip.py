@@ -20,6 +20,19 @@ class HrPayslip(models.Model):
         readonly=True,
         copy=False,
     )
+    l10n_br_esocial_s1200_ids = fields.Many2many(
+        "l10n_br.esocial.s1200",
+        "hr_payslip_l10n_br_esocial_s1200_rel",
+        "hr_payslip_id",
+        "l10n_br_esocial_s1200_id",
+        string="S-1200 eSocial (todas as competências)",
+        readonly=True,
+        copy=False,
+        help="Todos os S-1200 que declaram este holerite. O recibo de férias que "
+        "atravessa o mês (e o adiantamento pago em mês anterior) tem um S-1200 por "
+        "competência (MOS S-1.3, S-1010, item 23, pp. 112-114); o campo "
+        "'S-1200 eSocial' é o da primeira.",
+    )
     l10n_br_esocial_s1210_id = fields.Many2one(
         "l10n_br.esocial.s1210",
         string="S-1210 eSocial",
@@ -55,6 +68,7 @@ class HrPayslip(models.Model):
     @api.depends(
         "l10n_br_fora_de_vigor",
         "l10n_br_esocial_s1200_id.evento_id.state",
+        "l10n_br_esocial_s1200_ids.evento_id.state",
         "l10n_br_esocial_s1210_id.evento_id.state",
         "l10n_br_esocial_s2299_ids.evento_id.state",
     )
@@ -62,6 +76,7 @@ class HrPayslip(models.Model):
         for slip in self:
             eventos = (
                 slip.l10n_br_esocial_s1200_id.evento_id
+                | slip.l10n_br_esocial_s1200_ids.evento_id
                 | slip.l10n_br_esocial_s1210_id.evento_id
                 | slip.l10n_br_esocial_s2299_ids.evento_id
             )
@@ -87,6 +102,7 @@ class HrPayslip(models.Model):
         for slip in self.filtered("l10n_br_fora_de_vigor"):
             eventos = (
                 slip.l10n_br_esocial_s1200_id.evento_id
+                | slip.l10n_br_esocial_s1200_ids.evento_id
                 | slip.l10n_br_esocial_s1210_id.evento_id
                 | slip.l10n_br_esocial_s2299_ids.evento_id
             ).filtered(lambda e: e.state in ("draft", "validated"))
@@ -403,6 +419,46 @@ class HrPayslip(models.Model):
             "proximo": proximo,
         }
 
+    def _esocial_s1200_vigentes(self):
+        """Eventos S-1200 vigentes que declaram este holerite (um por competência)."""
+        self.ensure_one()
+        return self.l10n_br_esocial_s1200_ids.evento_id.filtered(
+            lambda evento: evento.state in EVENTO_VIGENTE
+        )
+
+    def _esocial_competencia_adiantamento(self):
+        """Competência do pagamento adiantado do recibo de férias, ou ``False``.
+
+        MOS S-1.3, S-1010, item 23 (pp. 112-114), exemplos (a) e (c): quando o
+        recibo é pago em competência anterior à de parte do gozo, o S-1200 da
+        competência do pagamento leva o adiantamento (natureza 1015) e o de cada
+        competência seguinte, o desconto dele (9221). A data de pagamento vem de
+        ``l10n_br_esocial_data_pagamento`` (a mesma do S-1210): sem ela, ou com o
+        pagamento no mês do gozo e nada depois dele, não há adiantamento (opção 2
+        do exemplo (b)).
+        """
+        self.ensure_one()
+        if self.struct_id.code != "FERIAS" or not self.l10n_br_esocial_data_pagamento:
+            return False
+        pago = self.l10n_br_esocial_data_pagamento.strftime("%Y-%m")
+        gozo = [per for per, _dias in self._l10n_br_competencias_ferias()]
+        if not any(per > pago for per in gozo):
+            return False
+        return pago
+
+    def _esocial_competencias_s1200(self):
+        """Períodos de apuração (AAAA-MM) cujo S-1200 declara este holerite.
+
+        As competências do gozo (``_l10n_br_competencias_ferias``, a mesma função
+        da base da multa do FGTS) e, antes delas, a do pagamento adiantado.
+        """
+        self.ensure_one()
+        pers = [per for per, _dias in self._l10n_br_competencias_ferias()]
+        pago = self._esocial_competencia_adiantamento()
+        if pago and pago not in pers:
+            pers.insert(0, pago)
+        return pers
+
     def action_esocial_gerar_s1200(self):
         """Generate S-1200 event for selected confirmed payslips."""
         payslips = self._esocial_em_vigor()
@@ -421,33 +477,58 @@ class HrPayslip(models.Model):
                 )
             )
         payslips -= no_s2299
-        # Segunda chamada não duplica o retificador: o holerite que já tem um
-        # retificador vigente fica como está.
-        pendentes = payslips.filtered(
-            lambda slip: slip.l10n_br_esocial_s1200_id.ind_retif == "2"
-            and slip.l10n_br_esocial_s1200_id.evento_id.state
-            in ("draft", "validated", "pending", "sent")
-        )
-        if pendentes == payslips:
+        # Group by employee + period. O recibo de férias que atravessa o mês entra
+        # no S-1200 de cada competência em que há gozo, rateado por dias de gozo
+        # (MOS S-1.3, S-1010, item 23, pp. 112-114), e no da competência do
+        # pagamento adiantado; a função que decide as competências do gozo é a
+        # mesma da base da multa do FGTS (``_l10n_br_competencias_ferias``). O
+        # contexto ``esocial_per_apur`` limita a geração a uma competência (para
+        # retificar só a segunda de um recibo que gerou dois S-1200).
+        so_per_apur = self.env.context.get("esocial_per_apur")
+        groups = {}
+        for slip in payslips:
+            for per_apur in slip._esocial_competencias_s1200():
+                if so_per_apur and per_apur != so_per_apur:
+                    continue
+                key = (slip.employee_id.id, per_apur)
+                groups.setdefault(key, self.env["hr.payslip"])
+                groups[key] |= slip
+        if not groups:
+            raise UserError(
+                _("Nenhum dos holerites selecionados tem a competência %s.")
+                % so_per_apur
+            )
+        # Segunda chamada não duplica o retificador: a competência cujo S-1200
+        # vigente já é um retificador ainda não finalizado fica como está.
+        pendentes = []
+        for key, slips in list(groups.items()):
+            ultimo = self.env["l10n_br.esocial.s1200"].search(
+                [
+                    ("employee_id", "=", key[0]),
+                    ("per_apur", "=", key[1]),
+                    ("ind_apuracao", "=", "1"),
+                    ("payslip_ids", "in", slips.ids),
+                    ("evento_id", "!=", False),
+                ],
+                order="id desc",
+                limit=1,
+            )
+            if ultimo.ind_retif == "2" and ultimo.evento_id.state in (
+                "draft",
+                "validated",
+                "pending",
+                "sent",
+            ):
+                pendentes.append(ultimo)
+                del groups[key]
+        if not groups:
             raise UserError(
                 _(
                     "O holerite já tem S-1200 retificador gerado (%(evento)s). "
                     "Use o evento existente em vez de gerar outro."
                 )
-                % {"evento": pendentes[0].l10n_br_esocial_s1200_id.evento_id.name}
+                % {"evento": pendentes[0].evento_id.name}
             )
-        payslips -= pendentes
-
-        # Group by employee + period. O recibo de férias que atravessa o mês entra
-        # no S-1200 de cada competência dele, rateado por dias de gozo (MOS S-1.3,
-        # item 23.1 (c)); a função que decide as competências é a mesma da base
-        # da multa do FGTS (``_l10n_br_competencias_ferias``).
-        groups = {}
-        for slip in payslips:
-            for per_apur, _dias in slip._l10n_br_competencias_ferias():
-                key = (slip.employee_id.id, per_apur)
-                groups.setdefault(key, self.env["hr.payslip"])
-                groups[key] |= slip
 
         created_events = self.env["l10n_br.esocial.evento"]
         for (emp_id, per_apur), slips in groups.items():
@@ -485,9 +566,10 @@ class HrPayslip(models.Model):
             evento = s1200.action_gerar_evento()
             created_events |= evento
             # O S-1210 aponta para o S-1200 da primeira competência do recibo
-            # (as demais partes do rateio ficam em ``payslip_ids`` do S-1200).
+            # (``l10n_br_esocial_s1200_id``); todos os S-1200 do holerite ficam em
+            # ``l10n_br_esocial_s1200_ids``.
             slips.filtered(
-                lambda slip: slip._l10n_br_competencias_ferias()[0][0] == per_apur
+                lambda slip: slip._esocial_competencias_s1200()[0] == per_apur
             ).write({"l10n_br_esocial_s1200_id": s1200.id})
 
         return self._action_esocial_eventos(created_events)

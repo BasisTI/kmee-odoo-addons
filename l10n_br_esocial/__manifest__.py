@@ -81,6 +81,7 @@
         "data/l10n_br.esocial.motivo.desligamento.csv",
         # Views
         "data/hr_salary_rule_maternidade_data.xml",
+        "data/hr_salary_rule_adiantamento_ferias_data.xml",
         "views/esocial_tabelas_views.xml",
         "views/hr_salary_rule_views.xml",
         "views/hr_employee_views.xml",

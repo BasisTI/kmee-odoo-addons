@@ -308,9 +308,10 @@ class HrPayslip(models.Model):
         "rescisão: a regra soma o depósito do mês da rescisão e o do mês "
         "anterior (vence no dia 20 do mês da rescisão), os recibos de férias "
         "cuja competência é a do mês "
-        "anterior ou a da rescisão (o recibo que atravessa o mês é rateado por dias de gozo "
-        "em cada mês, como no S-1200, MOS 23.1 (c): entra só a parte do FGTS dos meses "
-        "da janela) e o FGTS do 13º pago em um desses dois meses "
+        "anterior ou a da rescisão (o recibo que atravessa o mês é rateado por "
+        "dias de gozo em cada mês, como no S-1200, MOS item 23, pp. 112-114: "
+        "entra só a parte do FGTS dos meses da janela) e o FGTS do 13º pago em um "
+        "desses dois meses "
         "(em janeiro, o de dezembro do ano anterior); o que já venceu antes "
         "está no extrato e não soma de novo. Extrato posicionado depois do dia "
         "20 do mês da rescisão já traz o mês anterior: a base o soma de novo. "
@@ -1428,7 +1429,7 @@ class HrPayslip(models.Model):
             return total
         inicio, fim, _i13, _f13 = rescisao._l10n_br_janela_base_multa()
         return sum(
-            self._l10n_br_ratear_valor(total, c, "FGTS")
+            self._l10n_br_ratear_valor(total, c)
             for c, _dias in self._l10n_br_competencias_ferias()
             if inicio <= date(int(c[:4]), int(c[5:]), 1) <= fim
         )

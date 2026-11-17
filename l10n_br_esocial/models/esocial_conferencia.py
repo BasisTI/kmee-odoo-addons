@@ -129,8 +129,11 @@ class ESocialConferencia(models.Model):
             payslips = rec._buscar_payslips()
             rec.payslip_ids = payslips
             sem_evento = payslips.filtered(
-                lambda slip: not slip.l10n_br_esocial_s1200_id.evento_id
-                or slip.l10n_br_esocial_s1200_id.evento_id.state != "success"
+                lambda slip: not slip._esocial_s1200_vigentes()
+                or any(
+                    evento.state != "success"
+                    for evento in slip._esocial_s1200_vigentes()
+                )
             )
             rec.payslip_sem_evento_ids = sem_evento
             rec.payslip_sem_evento_count = len(sem_evento)

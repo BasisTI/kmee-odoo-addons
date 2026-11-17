@@ -262,11 +262,11 @@ class ESocialS2299(models.Model):
 
     def _exigir_sem_s1200_vigente(self, slips):
         """Holerite com S-1200 vigente não pode ser declarado de novo aqui."""
-        eventos = slips.l10n_br_esocial_s1200_id.evento_id.filtered(
+        eventos = slips.l10n_br_esocial_s1200_ids.evento_id.filtered(
             lambda evento: evento.state in EVENTO_VIGENTE
         )
         com_s1200 = slips.filtered(
-            lambda slip: slip.l10n_br_esocial_s1200_id.evento_id in eventos
+            lambda slip: slip.l10n_br_esocial_s1200_ids.evento_id & eventos
         )
         if com_s1200:
             raise UserError(

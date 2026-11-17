@@ -2,8 +2,9 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 """TG-152: férias que atravessam o mês no S-1200, rateadas por dias de gozo.
 
-MOS do eSocial S-1.3, item 23.1 (c): gozo de 10/11 a 10/12 informa 20 dias na
-competência 11 e 10 dias na 12, em cada S-1200, com a mesma rubrica.
+MOS do eSocial S-1.3, S-1010, item 23 (pp. 112-114), exemplo (c): gozo de
+10/11 a 10/12 vai ao S-1200 de cada competência, rateado por dias. O exemplo diz
+"20 + 10"; a contagem de dias corridos inclusiva dá 21 + 10 (o MOS é impreciso).
 """
 
 from odoo.tests.common import TransactionCase
@@ -152,18 +153,92 @@ class TestS1200FeriasRateio(TransactionCase):
         self.assertEqual(partes[0], round(1000.01 * 12 / 47, 2))
         self.assertEqual(partes[1], round(1000.01 * 30 / 47, 2))
 
-    def test_abono_nao_e_rateado(self):
-        """Abono pecuniário e o terço dele vão inteiros na 1ª competência."""
+    def test_abono_e_terco_rateados_na_proporcao_dos_dias_de_gozo(self):
+        """TG-152#P1: abono pecuniário e terço do abono rateiam como as férias."""
         slip = self._recibo(
             "2026-11-10",
             "2026-12-10",
-            [3100.0, 500.0, 166.67],
+            [3100.0, 620.0, 206.67],
             {1: "ABONO_PECUNIARIO", 2: "ADICIONAL_ABONO"},
         )
         nov = self._soma(self._s1200(slip, "2026-11"))
         dez = self._soma(self._s1200(slip, "2026-12"))
-        self.assertEqual(nov, 2100.0 + 500.0 + 166.67)
-        self.assertEqual(dez, 1000.0)
+        self.assertEqual(
+            nov, 2100.0 + round(620.0 * 21 / 31, 2) + round(206.67 * 21 / 31, 2)
+        )
+        self.assertAlmostEqual(nov + dez, 3100.0 + 620.0 + 206.67, places=2)
+
+    # ── Adiantamento (MOS S-1010, item 23, pp. 112-114, exemplos a e c) ─────
+
+    def _por_rubrica(self, s1200):
+        itens = {}
+        for item in s1200._build_itens_remun():
+            itens[item["cod_rubr"]] = itens.get(item["cod_rubr"], 0.0) + float(
+                item["vr_rubr"]
+            )
+        return itens
+
+    def _pago(self, slip, data):
+        slip.l10n_br_esocial_data_pagamento = data
+        return slip
+
+    def test_exemplo_a_pago_no_mes_anterior_ao_gozo(self):
+        """Gozo 01/12 a 30/12, pago em 28/11: 1015 em 11; 1016/1017 e 9221 em 12."""
+        slip = self._pago(
+            self._recibo("2026-12-01", "2026-12-30", [3000.0, 1000.0]), "2026-11-28"
+        )
+        self.assertEqual(slip._esocial_competencias_s1200(), ["2026-11", "2026-12"])
+        nov = self._por_rubrica(self._s1200(slip, "2026-11"))
+        dez = self._por_rubrica(self._s1200(slip, "2026-12"))
+        self.assertEqual(nov, {"ANTECIPFERI": 4000.0})
+        self.assertEqual(dez["DESCANTECIPFERI"], 4000.0)
+        self.assertEqual(dez["SAL_BASE"], 4000.0)
+
+    def test_exemplo_b_opcao_2_pago_no_mes_do_gozo_sem_adiantamento(self):
+        slip = self._pago(
+            self._recibo("2026-11-10", "2026-11-30", [3000.0, 1000.0]), "2026-11-07"
+        )
+        self.assertEqual(slip._esocial_competencias_s1200(), ["2026-11"])
+        nov = self._por_rubrica(self._s1200(slip, "2026-11"))
+        self.assertEqual(set(nov), {"SAL_BASE"})
+
+    def test_exemplo_c_opcao_2_gozo_parcial_no_mes_do_pagamento(self):
+        """10/11 a 10/12 pago em 07/11: 1015 só da parte de dezembro, em 11."""
+        slip = self._pago(
+            self._recibo("2026-11-10", "2026-12-10", [3100.0]), "2026-11-07"
+        )
+        self.assertEqual(slip._esocial_competencias_s1200(), ["2026-11", "2026-12"])
+        nov = self._por_rubrica(self._s1200(slip, "2026-11"))
+        dez = self._por_rubrica(self._s1200(slip, "2026-12"))
+        self.assertEqual(nov["SAL_BASE"], 2100.0)
+        self.assertEqual(nov["ANTECIPFERI"], 1000.0)
+        self.assertNotIn("DESCANTECIPFERI", nov)
+        self.assertEqual(dez["SAL_BASE"], 1000.0)
+        self.assertEqual(dez["DESCANTECIPFERI"], 1000.0)
+        self.assertNotIn("ANTECIPFERI", dez)
+
+    def test_sem_data_de_pagamento_nao_ha_adiantamento(self):
+        slip = self._recibo("2026-12-01", "2026-12-30", [4000.0])
+        self.assertEqual(slip._esocial_competencias_s1200(), ["2026-12"])
+        self.assertEqual(
+            set(self._por_rubrica(self._s1200(slip, "2026-12"))), {"SAL_BASE"}
+        )
+
+    def test_adiantamento_nao_muda_o_fgts_das_competencias_do_gozo(self):
+        """1015/9221 têm FGTS 00 e a base de FGTS por parte segue o rateio (11)."""
+        regra = self.env.ref("l10n_br_esocial.hr_rule_adiantamento_ferias_esocial")
+        desconto = self.env.ref("l10n_br_esocial.hr_rule_desconto_adiantamento_ferias")
+        for r in (regra, desconto):
+            self.assertEqual(r.l10n_br_esocial_cod_inc_fgts, "00")
+            self.assertEqual(r.l10n_br_esocial_cod_inc_cp, "00")
+            self.assertEqual(r.l10n_br_esocial_cod_inc_irrf, "13")
+        self.assertEqual(regra.l10n_br_esocial_nat_rubr_id.codigo, "1015")
+        self.assertEqual(desconto.l10n_br_esocial_nat_rubr_id.codigo, "9221")
+        slip = self._recibo("2026-11-10", "2026-12-10", [3100.0])
+        antes = [slip._l10n_br_ratear_valor(3100.0, c) for c in ("2026-11", "2026-12")]
+        self._pago(slip, "2026-11-07")
+        depois = [slip._l10n_br_ratear_valor(3100.0, c) for c in ("2026-11", "2026-12")]
+        self.assertEqual(antes, depois)
 
     def test_gerar_s1200_cria_um_evento_por_competencia(self):
         slip = self._recibo("2026-11-10", "2026-12-10", [3100.0])
@@ -174,3 +249,4 @@ class TestS1200FeriasRateio(TransactionCase):
         )
         self.assertEqual(sorted(eventos.mapped("per_apur")), ["2026-11", "2026-12"])
         self.assertEqual(slip.l10n_br_esocial_s1200_id.per_apur, "2026-11")
+        self.assertEqual(slip.l10n_br_esocial_s1200_ids, eventos)

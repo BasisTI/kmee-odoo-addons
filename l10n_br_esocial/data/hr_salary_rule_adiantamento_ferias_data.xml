@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo noupdate="1">
+    <!--
+        Rubricas do adiantamento de férias no S-1200 (MOS S-1.3, S-1010, item 23,
+        pp. 112-114, exemplos (a) e (c)). São rubricas só do eSocial: o holerite
+        não as calcula (nenhuma estrutura as usa); o S-1200 as gera quando o
+        recibo de férias é pago em competência anterior à do gozo, e elas existem
+        aqui para entrar na tabela de rubricas (S-1010) da empresa.
+    -->
+    <record id="hr_rule_adiantamento_ferias_esocial" model="hr.salary.rule">
+        <field name="name">Adiantamento de Férias (eSocial 1015)</field>
+        <field name="code">ADIANTAMENTO_FERIAS_ESOCIAL</field>
+        <field name="sequence" eval="900" />
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_basic"
+        />
+        <field name="condition_select">none</field>
+        <field name="amount_select">fix</field>
+        <field name="amount_fix" eval="0" />
+        <field name="l10n_br_esocial_cod_rubr">ANTECIPFERI</field>
+        <field name="l10n_br_esocial_ide_tab_rubr">1</field>
+        <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_1015" />
+        <field name="l10n_br_esocial_tp_rubr">1</field>
+        <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_irrf">13</field>
+        <field name="l10n_br_esocial_cod_inc_fgts">00</field>
+    </record>
+    <record id="hr_rule_desconto_adiantamento_ferias" model="hr.salary.rule">
+        <field name="name">Desconto do Adiantamento de Férias (eSocial 9221)</field>
+        <field name="code">DESC_ADIANTAMENTO_FERIAS_ESOCIAL</field>
+        <field name="sequence" eval="901" />
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_basic"
+        />
+        <field name="condition_select">none</field>
+        <field name="amount_select">fix</field>
+        <field name="amount_fix" eval="0" />
+        <field name="l10n_br_esocial_cod_rubr">DESCANTECIPFERI</field>
+        <field name="l10n_br_esocial_ide_tab_rubr">1</field>
+        <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9221" />
+        <field name="l10n_br_esocial_tp_rubr">2</field>
+        <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_irrf">13</field>
+        <field name="l10n_br_esocial_cod_inc_fgts">00</field>
+    </record>
+</odoo>

@@ -393,7 +393,7 @@ posicionado antes do mês da rescisão. A base soma a ele o depósito do mês da
 rescisão e o do mês anterior (Lei 8.036/90, art. 18, § 1º; Decreto 99.684/90,
 art. 9º, § 1º), os recibos de férias, rateados por dias de gozo em cada mês (a
 mesma função que decide a competência de cada parte no S-1200 de
-``l10n_br_esocial``, MOS 23.1 (c)): entra a parte do FGTS do recibo cujo mês é o
+``l10n_br_esocial``, MOS S-1.3, S-1010, item 23, pp. 112-114): entra a parte do FGTS do recibo cujo mês é o
 mês anterior ou o da rescisão (gozo de 20/10 a 18/11, rescisão em dezembro: só a
 parte de novembro), e o FGTS do 13º pago em um desses dois meses (em janeiro, o
 de dezembro do ano anterior): o que já venceu antes está no extrato. Sem saldo informado,

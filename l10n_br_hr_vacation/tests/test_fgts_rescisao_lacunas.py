@@ -444,6 +444,28 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         )
         self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, parte_nov))
 
+    def test_base_da_multa_com_abono_rateado_e_adiantamento_pelo_fgts_das_competencias(
+        self,
+    ):
+        """TG-152: o abono rateia e o adiantamento (1015, FGTS 00) não entra no FGTS.
+
+        A base soma o FGTS de cada competência do gozo (codIncFGTS 11 por parte),
+        igual ao rateio da linha ``FGTS`` do recibo, com ou sem data de pagamento
+        (que só cria o 1015/9221 no S-1200, sem FGTS).
+        """
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        fgts = self._get_line_total(recibo, "FGTS")
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        sem_data = resc._l10n_br_fgts_depositado_mensal(contract)
+        if "l10n_br_esocial_data_pagamento" in recibo._fields:
+            recibo.l10n_br_esocial_data_pagamento = date(2026, 10, 5)
+        com_data = resc._l10n_br_fgts_depositado_mensal(contract)
+        self.assertEqual(sem_data, com_data)
+        partes = [recibo._l10n_br_ratear_valor(fgts, c) for c in ("2026-10", "2026-11")]
+        self.assertAlmostEqual(sum(partes), fgts, places=2)
+        self.assertAlmostEqual(com_data, partes[1], places=2)
+
     def test_recibo_so_com_a_competencia_fora_da_janela_nao_entra(self):
         """Gozo todo em outubro, R em dezembro: já está no extrato."""
         emp, contract = self._contrato()

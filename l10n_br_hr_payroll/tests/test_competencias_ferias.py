@@ -56,11 +56,10 @@ class TestCompetenciasFerias(PayrollCommon):
             self.assertAlmostEqual(sum(partes), valor, places=2)
             self.assertEqual(slip._l10n_br_ratear_valor(valor, "2027-01"), 0.0)
 
-    def test_abono_vai_inteiro_na_primeira_competencia(self):
+    def test_abono_e_rateado_como_as_ferias(self):
+        """TG-152#P1: sem exceção por rubrica; a soma bate ao centavo."""
         slip = self._slip("FERIAS", date(2026, 11, 20), date(2026, 12, 18))
-        self.assertEqual(
-            slip._l10n_br_ratear_valor(500.0, "2026-11", "ABONO_PECUNIARIO"), 500.0
-        )
-        self.assertEqual(
-            slip._l10n_br_ratear_valor(500.0, "2026-12", "ADICIONAL_ABONO"), 0.0
-        )
+        nov = slip._l10n_br_ratear_valor(500.0, "2026-11")
+        dez = slip._l10n_br_ratear_valor(500.0, "2026-12")
+        self.assertEqual(nov, round(500.0 * 11 / 29, 2))
+        self.assertAlmostEqual(nov + dez, 500.0, places=2)
