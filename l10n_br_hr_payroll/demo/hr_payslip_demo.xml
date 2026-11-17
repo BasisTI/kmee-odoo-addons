@@ -289,7 +289,7 @@
         <field name="date_to" eval="time.strftime('%Y-04-30')" />
     </record>
 
-    <!-- Lucas - Abril (aprendiz: INSS 2%, FGTS 2%) -->
+    <!-- Lucas - Abril (aprendiz: INSS pela tabela, FGTS 2%) -->
     <record id="demo_payslip_lucas_04" model="hr.payslip">
         <field
             name="name"

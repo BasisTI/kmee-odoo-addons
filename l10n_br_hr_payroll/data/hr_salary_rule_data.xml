@@ -250,16 +250,13 @@ result = categories.BASIC + categories.ALW
          CONTRIBUIÇÕES PREVIDENCIÁRIAS
          ══════════════════════════════════════════════════════════════ -->
 
-    <!-- 100. INSS (RGPS) - CLT normal -->
+    <!-- 100. INSS (RGPS) - CLT e aprendiz: tabela progressiva (TG-149) -->
     <record id="hr_rule_inss" model="hr.salary.rule">
         <field name="name">INSS</field>
         <field name="sequence" eval="100" />
         <field name="code">INSS</field>
         <field name="category_id" ref="hr_salary_rule_category_ded" />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = employee.l10n_br_tipo_contrato != 'aprendiz'
-        </field>
+        <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 base_inss = categories.GROSS - FALTAS - DESC_DSR
@@ -272,8 +269,15 @@ result = max(
         </field>
     </record>
 
-    <!-- 101. INSS Aprendiz (2%) -->
+    <!--
+        101. INSS Aprendiz (2%) - DESATIVADA (TG-149).
+        O 2% do aprendiz é só do FGTS (Lei 8.036/90, art. 15 §7º); o INSS do
+        segurado aprendiz é o da tabela progressiva, calculado pela regra
+        `hr_rule_inss`. A regra fica no banco (mesmo xmlid, para não quebrar
+        referência de quem a usava), inativa e fora da estrutura.
+    -->
     <record id="hr_rule_inss_aprendiz" model="hr.salary.rule">
+        <field name="active" eval="False" />
         <field name="name">INSS Aprendiz</field>
         <field name="sequence" eval="101" />
         <field name="code">INSS</field>

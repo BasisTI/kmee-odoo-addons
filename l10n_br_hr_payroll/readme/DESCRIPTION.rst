@@ -2,7 +2,7 @@ Folha de Pagamento Brasileira para Odoo 16.0.
 
 Implementa os cálculos de:
 
-* INSS (tabela progressiva por vigência)
+* INSS (tabela progressiva por vigência, inclusive para o aprendiz)
 * IRRF (tabela progressiva por vigência, desconto simplificado e redutor)
 * FGTS (8% CLT, 2% aprendiz)
 * Hora extra 50% e 100%

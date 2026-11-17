@@ -30,3 +30,5 @@ from . import test_adicionais_fixos_art142
 from . import test_ferias_dobro
 from . import test_ferias_dobro_periodo_debitado
 from . import test_ferias_projecao_aviso
+from . import test_aprendiz_fgts_inss
+from . import test_migracao_aprendiz_149

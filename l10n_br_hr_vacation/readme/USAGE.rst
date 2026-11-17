@@ -147,6 +147,16 @@ mesmo que em branco e cai na estimativa. O
 FGTS do mensal integra a compensação entre holerites: alterá-lo recalcula a
 rescisão em rascunho e é recusado se ela já estiver confirmada.
 
+**Aprendiz: FGTS de 2% e INSS nas férias e na rescisão**
+
+O aprendiz (``Tipo de Contrato`` = Aprendiz) recolhe FGTS de 2% (Lei 8.036/90,
+art. 15, §7º) sobre as férias, o saldo de salário, o aviso prévio indenizado e o
+13º, e o INSS pela tabela comum em todas as verbas tributáveis, inclusive o saldo
+de salário e o 13º da rescisão. Só o percentual do FGTS muda; as incidências das
+rubricas são as do empregado comum. Em bancos instalados as regras trocam na
+atualização do módulo só se estiverem como a versão anterior; regra
+personalizada fica como está, com aviso no log.
+
 **FGTS do 13º (1ª e 2ª parcelas)**
 
 A 1ª parcela do 13º não tem INSS nem IRRF, mas gera FGTS (8% do adiantamento) na
