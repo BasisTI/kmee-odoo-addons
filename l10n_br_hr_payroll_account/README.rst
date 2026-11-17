@@ -45,6 +45,7 @@ Salário base                  Salários                        (contrapartida d
 INSS / IRRF do empregado      -                               INSS / IRRF a recolher
 Salário líquido               -                               Salários a pagar
 FGTS                          Encargos sociais                FGTS a recolher
+FGTS (saldo, aviso)           Encargos sociais                FGTS a recolher
 CPP (patronal 20%)            Encargos sociais                INSS a recolher
 RAT ajustado                  Encargos sociais                INSS a recolher
 Terceiros (FPAS)              Encargos sociais                Terceiros a recolher
@@ -53,6 +54,22 @@ Encargos sobre férias         Provisão de férias              Férias a pagar
 Provisão de 13º               Provisão de 13º                 13º salário a pagar
 Encargos sobre 13º            Provisão de 13º                 13º salário a pagar
 ============================  ==============================  ==========================
+
+O FGTS **sem provisão** das estruturas do ``l10n_br_hr_vacation`` (o do saldo de
+salário e o do aviso prévio indenizado da rescisão) tem o mesmo lançamento do
+FGTS mensal e a mesma conta dele: se o contador configurou a conta do
+``hr_rule_fgts``, as duas regras a herdam (só caem no slot se a do mensal
+estiver vazia). O ``l10n_br_hr_vacation`` não é dependência: sem ele instalado o
+mapa ignora essas regras, e se ele for instalado depois as contas são vinculadas
+no carregamento das regras. Em banco que já tinha este módulo, a migração
+18.0.1.1.0 preenche as contas dessas duas regras.
+
+O FGTS de férias, do 13º (1ª e 2ª parcelas) e do 13º da rescisão **não** foi
+mapeado de propósito: as provisões ``PROV_FERIAS_ENC`` e ``PROV_13_ENC`` já
+contêm o FGTS (alíquota ``total_com_fgts``) e já foram à despesa; contabilizá-lo
+de novo duplicaria o custo. Essas regras continuam sem conta, no ajuste do
+diário, até a TG-157 (baixa das provisões, com o contador), que trata também
+das demais rubricas dessas estruturas (proventos, descontos, multa do FGTS).
 
 Como os encargos patronais e as provisões têm os dois lados, o custo do
 empregador passa a aparecer no resultado (e a variar conforme o regime

@@ -3,3 +3,4 @@
 from . import test_contabilizacao
 from . import test_contract_journal
 from . import test_encargos_contabilizacao
+from . import test_contabilizacao_fgts_vacation
