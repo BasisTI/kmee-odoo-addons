@@ -1745,6 +1745,14 @@ class HrPayslip(models.Model):
         (``l10n_br_ferias_allocation_id``): dias de direito menos os já
         pagos (gozados + vendidos) em qualquer fração anterior.
 
+        TG-147: com aviso prévio indenizado o contrato é projetado até
+        ``_l10n_br_data_projetada_rescisao`` (Súmula 371 TST, CLT art. 487
+        § 1º): o período aquisitivo que se completa dentro da projeção também
+        é vencido, pago inteiro. A fonte do período é a mesma alocação do
+        ``hr_holidays``; os avos proporcionais recomeçam no aniversário
+        (``_calc_avos_ferias_proporcionais``), sem sobreposição. Esse período
+        nunca é em dobro: o concessivo dele termina depois do desligamento.
+
         Returns:
             list[dict]: ``[{"dias": int, "dobro": bool, "inicio": date,
             "fim": date}, ...]``, um item por período aquisitivo vencido com
@@ -1764,7 +1772,7 @@ class HrPayslip(models.Model):
                 ("holiday_status_id", "=", vacation_type.id),
                 ("state", "=", "validate"),
                 ("date_to", "!=", False),
-                ("date_to", "<=", self.date_to),
+                ("date_to", "<=", self._l10n_br_data_projetada_rescisao()),
             ]
         )
         resultado = []

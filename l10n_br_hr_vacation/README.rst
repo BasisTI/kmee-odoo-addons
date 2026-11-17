@@ -139,6 +139,13 @@ contrato):
 As férias vencidas são devidas em qualquer causa (CLT art. 146). O aviso só
 gera verba quando marcado ``Indenizado``; ``Trabalhado`` já foi pago na folha.
 
+Com aviso ``Indenizado``, o contrato é projetado até o fim do aviso (Súmula 371
+do TST; CLT art. 487 § 1º). O período aquisitivo que se completa dentro da
+projeção (alocação de Férias que termina até a data projetada) é pago inteiro em
+``FERIAS_VENCIDAS`` e ``ADICIONAL_FERIAS_VENCIDAS``, com a média de adicionais
+do período dele, e as férias proporcionais contam do aniversário seguinte. Esse
+período não é pago em dobro. É preciso que a alocação do período exista.
+
 * **Término antecipado do contrato a prazo:** informe o ``Termo do Contrato a
   Prazo``. Pelo empregador, a rescisão paga a indenização do art. 479 (metade
   da remuneração dos dias até o termo; indenizatória, sem INSS, IRRF nem FGTS).
