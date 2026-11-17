@@ -158,7 +158,12 @@ class TestFeriasProjecaoAviso(VacationCommon):
         revisão, TG-147#P1)."""
         emp, contract = self._contrato()
         self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
-        with self.assertRaisesRegex(UserError, "15/01/2025 a 14/01/2026"):
+        # A recusa vem depois do create: o savepoint descarta o holerite recusado,
+        # senão o seguinte, no mesmo período, bate na validação de sobreposição
+        # (``l10n_br_hr_validacao_folha``, instalada no CI completo).
+        with self.assertRaisesRegex(
+            UserError, "15/01/2025 a 14/01/2026"
+        ), self.env.cr.savepoint():
             self._rescisao(emp, contract, date(2025, 12, 31))
         self._alocacao(emp)
         slip = self._rescisao(emp, contract, date(2025, 12, 31))

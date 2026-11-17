@@ -59,4 +59,29 @@
         <field name="l10n_br_faltas_periodo_aquisitivo">0</field>
         <field name="state">confirm</field>
     </record>
+    <!-- Pedro — período aquisitivo completo antes da rescisão de demonstração
+         (09/ano corrente): admissão em 02/01/2024, período de 02/01 do ano
+         anterior a 01/01 do ano corrente. A rescisão exige a alocação validada
+         do período para pagar as férias vencidas e o terço (TG-147). -->
+    <record id="demo_allocation_pedro_periodo_rescisao" model="hr.leave.allocation">
+        <field
+            name="name"
+            eval="time.strftime('Férias %Y - Pedro Henrique Oliveira (período da rescisão)')"
+        />
+        <field name="holiday_status_id" ref="leave_type_ferias" />
+        <field name="employee_id" ref="l10n_br_hr.demo_employee_pedro" />
+        <field
+            name="date_from"
+            eval="'%d-01-02' % (int(time.strftime('%Y')) - 1)"
+        />
+        <field name="date_to" eval="time.strftime('%Y-01-01')" />
+        <field name="number_of_days">30</field>
+        <field name="l10n_br_faltas_periodo_aquisitivo">0</field>
+        <field name="state">confirm</field>
+    </record>
+    <function
+        model="hr.leave.allocation"
+        name="action_validate"
+        eval="[ref('demo_allocation_pedro_periodo_rescisao')]"
+    />
 </odoo>

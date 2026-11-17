@@ -765,8 +765,9 @@ class HrPayslip(models.Model):
             projetado = fim > slip.date_to
             recusas.append(
                 _(
-                    "Rescisão %(holerite)s de %(empregado)s: falta a alocação de "
-                    "Férias validada do período aquisitivo de %(inicio)s a "
+                    "Rescisão: holerite %(holerite)s, empregado %(empregado)s: "
+                    "falta a alocação de Férias validada do período aquisitivo "
+                    "de %(inicio)s a "
                     "%(fim)s, que se completa %(quando)s: sem ela as férias do "
                     "período (e o terço) não são pagas. Crie a alocação de "
                     "Férias do empregado com essas datas, valide-a e calcule a "
