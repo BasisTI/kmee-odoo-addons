@@ -689,7 +689,7 @@ result = tools.br.round_money(AVISO_PREVIO_INDENIZADO * (0.02 if employee.l10n_b
         </field>
     </record>
 
-    <!-- INSS sobre o saldo de salário -->
+    <!-- INSS sobre o saldo de salário (também do aprendiz, pela tabela; TG-149) -->
     <record id="hr_rule_inss_rescisao" model="hr.salary.rule">
         <field name="name">INSS (Saldo de Salário)</field>
         <field name="sequence" eval="100" />
@@ -698,10 +698,7 @@ result = tools.br.round_money(AVISO_PREVIO_INDENIZADO * (0.02 if employee.l10n_b
             name="category_id"
             ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
         />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = employee.l10n_br_tipo_contrato != 'aprendiz'
-        </field>
+        <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 result = tools.br.calc_inss(max(SALDO_SALARIO, 0))
@@ -719,10 +716,7 @@ result = tools.br.calc_inss(max(SALDO_SALARIO, 0))
             name="category_id"
             ref="l10n_br_hr_payroll.hr_salary_rule_category_ded"
         />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = employee.l10n_br_tipo_contrato != 'aprendiz'
-        </field>
+        <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 # TG-97: INSS sobre o 13º total do ano, menos o já retido na 2ª parcela.
@@ -891,7 +885,7 @@ result = max(tools.br.irrf_mais_favoravel(DECIMO_DEVIDO, BASE_IRRF_13) - pago['i
         </field>
     </record>
 
-    <!-- FGTS sobre o saldo de salário -->
+    <!-- FGTS sobre o saldo de salário (8%; 2% no aprendiz, art. 15 §7º, TG-149) -->
     <record id="hr_rule_fgts_rescisao" model="hr.salary.rule">
         <field name="name">FGTS (Saldo de Salário)</field>
         <field name="sequence" eval="150" />
@@ -900,13 +894,10 @@ result = max(tools.br.irrf_mais_favoravel(DECIMO_DEVIDO, BASE_IRRF_13) - pago['i
             name="category_id"
             ref="l10n_br_hr_payroll.hr_salary_rule_category_comp"
         />
-        <field name="condition_select">python</field>
-        <field name="condition_python">
-result = employee.l10n_br_tipo_contrato != 'aprendiz'
-        </field>
+        <field name="condition_select">none</field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.round_money(max(SALDO_SALARIO, 0) * 0.08)
+result = tools.br.round_money(max(SALDO_SALARIO, 0) * (0.02 if employee.l10n_br_tipo_contrato == 'aprendiz' else 0.08))
         </field>
     </record>
 
