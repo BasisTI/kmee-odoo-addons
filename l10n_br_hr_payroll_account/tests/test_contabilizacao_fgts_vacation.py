@@ -181,6 +181,20 @@ class TestContabilizacaoFgtsVacation(PayrollCommon):
         emp = self._create_employee("FGTS rescisão com aviso")
         contract = self._create_contract(emp, wage=3000.0, date_start=date(2020, 1, 1))
         struct = self.env.ref("l10n_br_hr_vacation.structure_rescisao")
+        # TG-147: a rescisão recusa o cálculo sem a alocação de Férias validada
+        # do último período aquisitivo completo (01/01/2025 a 31/12/2025).
+        # O teste usa o caso real: a alocação existe.
+        alocacao = self.env["hr.leave.allocation"].create(
+            {
+                "employee_id": emp.id,
+                "holiday_status_id": self.env.ref(
+                    "l10n_br_hr_vacation.leave_type_ferias"
+                ).id,
+                "date_from": date(2025, 1, 1),
+                "date_to": date(2025, 12, 31),
+            }
+        )
+        alocacao.action_validate()
         slip = self._slip(
             emp,
             contract,
