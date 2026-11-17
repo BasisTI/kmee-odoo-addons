@@ -148,9 +148,13 @@ período não é pago em dobro.
 
 A alocação de Férias é a única fonte do período: a rescisão **recusa o cálculo**
 se não houver alocação validada do último período aquisitivo completo até a data
-projetada (a mensagem traz as datas do período a criar). Crie e valide a
-alocação, e calcule de novo. Com a rescisão confirmada, as datas e as faltas da
-alocação que ela pagou não podem ser alteradas: volte a rescisão para rascunho.
+projetada (a mensagem traz o empregado, o holerite e as datas do período a
+criar; no cálculo em lote, junta todos os recusados). Vale a alocação cujo fim
+cai entre o início do período devido e a data projetada, o que cobre o período
+reiniciado no retorno ao serviço (CLT art. 133 § 2º). Crie e valide a
+alocação, e calcule de novo. Com a rescisão confirmada, as datas, as faltas, os
+dias e o estado (recusar) da alocação que ela pagou não podem ser alterados:
+volte a rescisão para rascunho.
 
 * **Término antecipado do contrato a prazo:** informe o ``Termo do Contrato a
   Prazo``. Pelo empregador, a rescisão paga a indenização do art. 479 (metade

@@ -732,6 +732,7 @@ class HrPayslip(models.Model):
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
         )
+        recusas = []
         for slip in self.filtered(lambda s: s.struct_id.code == "RESCISAO"):
             admissao = slip.contract_id.date_start
             if not (vacation_type and admissao and slip.date_to):
@@ -742,6 +743,11 @@ class HrPayslip(models.Model):
                 continue
             inicio = admissao + relativedelta(years=anos - 1)
             fim = admissao + relativedelta(years=anos) - relativedelta(days=1)
+            # Art. 133 § 2º: o período reiniciado no retorno ao serviço, ou
+            # deslocado por afastamento, termina depois (ou antes) do
+            # aniversário: vale qualquer alocação cujo fim caia entre o início
+            # do período devido e a data projetada (a do período anterior
+            # termina antes do início).
             if (
                 self.env["hr.leave.allocation"]
                 .sudo()
@@ -751,19 +757,22 @@ class HrPayslip(models.Model):
                         ("holiday_status_id", "=", vacation_type.id),
                         ("state", "=", "validate"),
                         ("date_to", ">=", inicio),
-                        ("date_to", "<=", fim),
+                        ("date_to", "<=", referencia),
                     ]
                 )
             ):
                 continue
             projetado = fim > slip.date_to
-            raise UserError(
+            recusas.append(
                 _(
-                    "Falta a alocação de Férias validada do período aquisitivo de "
-                    "%(inicio)s a %(fim)s, que se completa %(quando)s: sem ela as "
-                    "férias do período (e o terço) não são pagas. Crie a alocação "
-                    "de Férias do empregado com essas datas, valide-a e calcule a "
+                    "Rescisão %(holerite)s de %(empregado)s: falta a alocação de "
+                    "Férias validada do período aquisitivo de %(inicio)s a "
+                    "%(fim)s, que se completa %(quando)s: sem ela as férias do "
+                    "período (e o terço) não são pagas. Crie a alocação de "
+                    "Férias do empregado com essas datas, valide-a e calcule a "
                     "rescisão de novo.",
+                    holerite=slip.number or slip.name or slip.display_name,
+                    empregado=slip.employee_id.name,
                     inicio=inicio.strftime("%d/%m/%Y"),
                     fim=fim.strftime("%d/%m/%Y"),
                     quando=_("na projeção do aviso prévio indenizado (até %s)")
@@ -772,6 +781,8 @@ class HrPayslip(models.Model):
                     else _("antes do desligamento"),
                 )
             )
+        if recusas:
+            raise UserError("\n".join(recusas))
 
     def compute_sheet(self):
         confirmados = self.filtered(lambda slip: slip.state == "done")

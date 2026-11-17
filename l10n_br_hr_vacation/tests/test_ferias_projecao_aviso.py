@@ -164,6 +164,84 @@ class TestFeriasProjecaoAviso(VacationCommon):
         slip = self._rescisao(emp, contract, date(2025, 12, 31))
         self.assertEqual(self._vencidas(slip)[0], 6000.0)
 
+    def test_periodo_reiniciado_ou_deslocado_calcula_e_paga_uma_vez(self):
+        """Art. 133 § 2º: período que recomeça no retorno ao serviço (ou deslocado
+        por afastamento) termina depois do aniversário. A alocação de
+        16/01/2025 a 15/01/2026 (ou 20/01 a 19/01) vale como a do período devido:
+        calcula, sem pedir a de 15/01 a 14/01, e paga o período uma vez só."""
+        for inicio, fim in (
+            (date(2025, 1, 16), date(2026, 1, 15)),
+            (date(2025, 1, 20), date(2026, 1, 19)),
+        ):
+            emp, contract = self._contrato()
+            self._alocacao(emp, inicio, fim)
+            slip = self._rescisao(emp, contract, date(2025, 12, 31))
+            dados = slip._l10n_br_ferias_vencidas_dados()
+            self.assertEqual(len(dados), 1, (inicio, fim))
+            self.assertEqual(self._vencidas(slip), (3000.0, 1000.0), (inicio, fim))
+            self.assertEqual(slip.l10n_br_avos_ferias, 1, (inicio, fim))
+
+    def test_alocacao_que_termina_depois_da_projecao_nao_vale(self):
+        """O período deslocado só vale se completa até a data projetada."""
+        emp, contract = self._contrato()
+        self._alocacao(emp, date(2025, 2, 5), date(2026, 2, 4))
+        with self.assertRaisesRegex(UserError, "15/01/2025 a 14/01/2026"):
+            self._rescisao(emp, contract, date(2025, 12, 31))
+
+    def test_recusa_diz_o_empregado_e_o_holerite_e_o_lote_junta_todas(self):
+        """A recusa nomeia o empregado e o holerite; no lote, junta os recusados."""
+        slips = self.env["hr.payslip"]
+        nomes = []
+        for _i in range(2):
+            emp, contract = self._contrato()
+            nomes.append(emp.name)
+            contract.date_end = date(2025, 12, 31)
+            slips |= self.env["hr.payslip"].create(
+                {
+                    "name": "TG-147 lote",
+                    "employee_id": emp.id,
+                    "contract_id": contract.id,
+                    "struct_id": self.structure_rescisao.id,
+                    "date_from": date(2025, 12, 1),
+                    "date_to": date(2025, 12, 31),
+                    "l10n_br_tipo_rescisao": "sem_justa_causa",
+                    "l10n_br_aviso_previo": "indenizado",
+                    "company_id": self.env.company.id,
+                }
+            )
+        with self.assertRaises(UserError) as cm:
+            slips.compute_sheet()
+        mensagem = cm.exception.args[0]
+        for slip, nome in zip(slips, nomes):
+            self.assertIn(nome, mensagem)
+            self.assertIn(slip.number or slip.name, mensagem)
+
+    def test_vencido_em_dobro_com_a_alocacao_do_periodo_mais_recente(self):
+        """Período 2023-2024 vencido e fora do concessivo (em dobro) junto com a
+        alocação exigida do período mais recente (2024-2025, no prazo): o
+        antigo paga em dobro, o recente simples."""
+        emp = self._create_employee()
+        contract = self._create_contract(
+            emp, wage=SALARIO, date_start=date(2022, 1, 15)
+        )
+        self._alocacao(emp, date(2023, 1, 15), date(2024, 1, 14))
+        self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
+        slip = self._rescisao(emp, contract, date(2025, 6, 30), aviso="trabalhado")
+        dados = slip._l10n_br_ferias_vencidas_dados()
+        self.assertEqual(sorted(d["dobro"] for d in dados), [False, True])
+        self.assertAlmostEqualMoney(self._vencidas(slip)[0], 3000.0 * 3)
+
+    def test_rescisao_com_dois_periodos_vencidos_paga_os_dois(self):
+        emp = self._create_employee()
+        contract = self._create_contract(
+            emp, wage=SALARIO, date_start=date(2022, 1, 15)
+        )
+        self._alocacao(emp, date(2024, 1, 15), date(2025, 1, 14))
+        self._alocacao(emp, date(2025, 1, 15), date(2026, 1, 14))
+        slip = self._rescisao(emp, contract, date(2026, 3, 31), aviso="trabalhado")
+        self.assertEqual(len(slip._l10n_br_ferias_vencidas_dados()), 2)
+        self.assertEqual(self._vencidas(slip), (9000.0, 3000.0))
+
     def test_sem_nenhuma_alocacao_recusa_a_rescisao(self):
         emp, contract = self._contrato()
         with self.assertRaisesRegex(UserError, "projeção do aviso"):
@@ -204,10 +282,17 @@ class TestFeriasProjecaoAviso(VacationCommon):
             {"l10n_br_faltas_periodo_aquisitivo": 10},
             {"date_to": date(2026, 3, 14)},
             {"date_from": date(2025, 1, 16)},
+            {"number_of_days": 20},
+            {"state": "refuse"},
         ):
             with self.assertRaisesRegex(UserError, "rescisão confirmada"):
                 with self.env.cr.savepoint():
                     aloc.write(vals)
+        with self.assertRaisesRegex(UserError, "rescisão confirmada"):
+            with self.env.cr.savepoint():
+                aloc.action_refuse()
+        self.assertEqual(aloc.state, "validate")
+        self.assertEqual(aloc.number_of_days, 30)
 
     def test_alocacao_de_rescisao_aberta_recalcula(self):
         emp, contract = self._contrato()

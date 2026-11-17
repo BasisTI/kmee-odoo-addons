@@ -9,6 +9,7 @@ Cobertura:
   - Seções do holerite (proventos, descontos, líquido)
 """
 from datetime import date
+from unittest.mock import patch
 
 from odoo.addons.l10n_br_hr_payroll.models import salary_rules_br
 from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
@@ -16,6 +17,18 @@ from odoo.addons.l10n_br_hr_payroll.tests.common import PayrollCommon
 
 class TestHoleriteReport(PayrollCommon):
     """Testes do relatório holerite brasileiro."""
+
+    def _sem_exigencia_alocacao(self):
+        """TG-147: a rescisão recusa o cálculo sem a alocação de Férias do
+        último período aquisitivo completo. Este teste confere outra coisa
+        (ver o docstring) e não monta alocação: desliga a exigência."""
+        patcher = patch.object(
+            type(self.env["hr.payslip"]),
+            "_l10n_br_exigir_alocacao_periodo_completo",
+            lambda slip: None,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
     def _create_computed_payslip(self):
         """Helper: cria e computa payslip para relatório."""
@@ -331,6 +344,7 @@ class TestHoleriteReport(PayrollCommon):
     def test_rescisao_base_inss_13_soma_as_duas_rubricas(self):
         """TG-136: a "Base INSS 13º" da rescisão soma o 13º proporcional e o
         13º do aviso indenizado."""
+        self._sem_exigencia_alocacao()  # confere a base INSS 13º
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=2000.00, date_start=date(2006, 1, 1))
         payslip = self.env["hr.payslip"].create(
