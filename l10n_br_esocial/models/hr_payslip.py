@@ -494,8 +494,8 @@ class HrPayslip(models.Model):
         ``codIncIRRF`` 31 a 34 (retenção) e 4x, 5x e 6x (deduções: previdência
         complementar, pensão alimentícia, FAPI etc.). Não rateiam: vão inteiras na
         competência do pagamento (``_esocial_competencia_ir``). O INSS tem a CP por
-        parte (rateado pelos dias de gozo) e a dedução dele no IR se compensa pelo
-        adiantamento líquido do INSS da parte (``_esocial_liquido_da_competencia``).
+        parte (rateado pelos dias de gozo); a dedução dele no IR das partes seguintes
+        vai inteira no pagamento, pela provisão de CP (``_esocial_adiantamentos_ferias``).
         """
         if self.struct_id.code != "FERIAS" or self._esocial_linha_inss(line):
             return False
@@ -513,20 +513,58 @@ class HrPayslip(models.Model):
             return line.total if per_apur == self._esocial_competencia_ir() else 0.0
         return self._l10n_br_ratear_valor(line.total, per_apur)
 
-    def _esocial_liquido_da_competencia(self, per_apur, abono=False):
-        """Proventos do recibo na competência, líquidos do INSS dela.
+    def _esocial_competencias_seguintes(self):
+        """Competências do gozo posteriores à do pagamento adiantado (ou ``[]``)."""
+        self.ensure_one()
+        pago = self._esocial_competencia_adiantamento()
+        if not pago:
+            return []
+        return [per for per, _dias in self._l10n_br_competencias_ferias() if per > pago]
 
-        É o valor do adiantamento (1015, soma das partes seguintes) e do desconto
-        dele (9221, de cada competência seguinte). Líquido do INSS porque o INSS
-        da parte é descontado na própria competência dela, com a CP 31 por parte;
-        o adiantamento líquido zera o demonstrativo daquela competência e a dedução
-        do INSS no IR da parte (``codIncIRRF`` 41) cancela o que o 9221 deixa de
-        abater do rendimento. É o que o MOS faz no exemplo 4.1 do S-1210 (p. 186-187,
-        o desconto do adiantamento é o valor líquido pago).
+    def _esocial_linha_tributavel(self, line):
+        """Provento com ``codIncIRRF`` 1x (rendimento tributável): conta no IR."""
+        rule = line.salary_rule_id
+        incidencia = rule.l10n_br_esocial_cod_inc_irrf or ""
+        return rule.l10n_br_esocial_tp_rubr == "1" and incidencia[:1] == "1"
+
+    def _esocial_regra_da_linha(self, line, per_apur):
+        """Regra com que a linha é declarada no S-1200 (ou S-2299) de ``per_apur``.
+
+        Nas competências do gozo posteriores à do pagamento, a verba de férias
+        tributável e o INSS dela já tiveram o efeito no IR no demonstrativo pago
+        (rendimento bruto no 1015, dedução inteira com a provisão de CP): nelas vão
+        com a rubrica "mês do gozo" (``codIncIRRF`` 09; MOS S-1.3, S-1210, item 4.1,
+        exemplos 1 e 2, pp. 186-188: v010, v020 e d200 têm IRRF 9), que mantém a
+        incidência de INSS e de FGTS. As demais linhas vão com a regra delas.
         """
         self.ensure_one()
-        # ``abono``: só o abono pecuniário e o terço dele (par próprio de rubricas,
-        # sem INSS); senão, só as demais verbas (férias e terço), líquidas do INSS.
+        rule = line.salary_rule_id
+        if per_apur not in self._esocial_competencias_seguintes():
+            return rule
+        incidencia = rule.l10n_br_esocial_cod_inc_irrf or ""
+        if self._esocial_linha_tributavel(line) or (
+            self._esocial_linha_inss(line) and incidencia[:1] == "4"
+        ):
+            return rule._esocial_regra_mes_gozo()
+        return rule
+
+    def _esocial_linha_do_par_abono(self, line):
+        """A linha vai no par 1015/9221 do abono (e não no das férias).
+
+        O par das férias é de IRRF 13: o abono tributável (terço do abono, 13 no
+        vacation) vai nele; o abono pecuniário isento, no par próprio, que leva a
+        incidência de IRRF da rubrica do abono da empresa.
+        """
+        return line.salary_rule_id.code in CODIGOS_ABONO and not (
+            self._esocial_linha_tributavel(line)
+        )
+
+    def _esocial_proventos_da_competencia(self, per_apur, abono=False):
+        """Proventos do recibo na parte de ``per_apur``, brutos (rateio por dias).
+
+        ``abono``: só os do par do abono; senão, os do par das férias.
+        """
+        self.ensure_one()
         total = 0.0
         for line in self.line_ids:
             rule = line.salary_rule_id
@@ -536,49 +574,88 @@ class HrPayslip(models.Model):
                 or not rule.l10n_br_esocial_cod_rubr
             ):
                 continue
-            if rule.l10n_br_esocial_tp_rubr == "1" and line.total > 0:
-                if (rule.code in CODIGOS_ABONO) == abono:
-                    total += self._l10n_br_ratear_valor(line.total, per_apur)
-            elif not abono and self._esocial_linha_inss(line):
-                total -= abs(self._l10n_br_ratear_valor(line.total, per_apur))
+            if (
+                rule.l10n_br_esocial_tp_rubr == "1"
+                and line.total > 0
+                and self._esocial_linha_do_par_abono(line) == abono
+            ):
+                total += self._l10n_br_ratear_valor(line.total, per_apur)
         return round(total, 2)
 
-    def _esocial_adiantamentos_ferias(self, per_apur):
-        """``[(xmlid da regra, valor)]`` do 1015/9221 do recibo na competência.
+    def _esocial_inss_da_competencia(self, per_apur):
+        """INSS do recibo na parte de ``per_apur`` (rateado pelos dias de gozo)."""
+        self.ensure_one()
+        total = 0.0
+        for line in self.line_ids:
+            rule = line.salary_rule_id
+            if (
+                line.total
+                and rule.l10n_br_esocial_nat_rubr_id
+                and rule.l10n_br_esocial_cod_rubr
+                and self._esocial_linha_inss(line)
+            ):
+                total += abs(self._l10n_br_ratear_valor(line.total, per_apur))
+        return round(total, 2)
 
-        Exemplos (a) e (c) do MOS, item 23 (pp. 112-114), opção 2: na competência
-        do pagamento, o adiantamento (1015) com o valor líquido das partes gozadas
-        nas competências seguintes; em cada competência seguinte, o desconto dele
-        (9221) da sua parte. Dois pares: o das férias e do terço (IRRF 13) e o do
-        abono pecuniário e do terço dele (TG-152#P2, opção 1; sem CP nem FGTS, com a
-        incidência de IRRF da rubrica do abono da empresa). Sem adiantamento, ``[]``.
+    def _esocial_liquido_da_competencia(self, per_apur, abono=False):
+        """Proventos da parte de ``per_apur`` líquidos do INSS dela (o 9221).
+
+        O desconto do adiantamento é o valor líquido (MOS S-1.3, S-1210, item 4.1,
+        exemplo 1, pp. 186-187: 3.380,80 = 4.000 - 440 - 179,20): o INSS da parte
+        é descontado na própria competência (CP 31) e o IR já foi retido no
+        pagamento. O abono não tem INSS.
+        """
+        proventos = self._esocial_proventos_da_competencia(per_apur, abono)
+        if abono:
+            return proventos
+        return round(proventos - self._esocial_inss_da_competencia(per_apur), 2)
+
+    def _esocial_adiantamentos_ferias(self, per_apur):
+        """``[(xmlid da regra, valor)]`` do 1015, 9221 e provisão de CP na competência.
+
+        Exemplos (a) e (c) do MOS, item 23 (pp. 112-114), opção 2, e exemplos 1 e 2
+        do S-1210, item 4.1 (pp. 186-188). Na competência do pagamento: o
+        adiantamento **bruto** (1015) das partes gozadas nas competências seguintes
+        e a provisão de CP (9201, IRRF 43) com o INSS delas, que completa a dedução
+        do INSS no IR no demonstrativo pago. Em cada competência seguinte: o
+        desconto do adiantamento (9221, IRRF 09) **líquido** do INSS da parte. Dois
+        pares: o das férias e do terço (IRRF 13) e o do abono pecuniário (TG-152#P2,
+        opção 1; sem CP nem FGTS, com a incidência de IRRF da rubrica do abono da
+        empresa). Sem adiantamento, ``[]``.
         """
         self.ensure_one()
         pago = self._esocial_competencia_adiantamento()
         if not pago:
             return []
-        seguintes = [
-            per for per, _dias in self._l10n_br_competencias_ferias() if per > pago
-        ]
+        seguintes = self._esocial_competencias_seguintes()
+        itens = []
         if per_apur == pago:
-            pares = (
+            for xmlid, abono in (
                 ("hr_rule_adiantamento_ferias_esocial", False),
                 ("hr_rule_adiantamento_abono_esocial", True),
-            )
-            pers = seguintes
+            ):
+                valor = sum(
+                    self._esocial_proventos_da_competencia(per, abono)
+                    for per in seguintes
+                )
+                if round(valor, 2):
+                    itens.append(("l10n_br_esocial." + xmlid, round(valor, 2)))
+            provisao = sum(self._esocial_inss_da_competencia(per) for per in seguintes)
+            if round(provisao, 2):
+                itens.append(
+                    (
+                        "l10n_br_esocial.hr_rule_provisao_inss_ferias_esocial",
+                        round(provisao, 2),
+                    )
+                )
         elif per_apur in seguintes:
-            pares = (
+            for xmlid, abono in (
                 ("hr_rule_desconto_adiantamento_ferias", False),
                 ("hr_rule_desconto_adiantamento_abono", True),
-            )
-            pers = [per_apur]
-        else:
-            return []
-        itens = []
-        for xmlid, abono in pares:
-            valor = sum(self._esocial_liquido_da_competencia(p, abono) for p in pers)
-            if round(valor, 2):
-                itens.append(("l10n_br_esocial." + xmlid, round(valor, 2)))
+            ):
+                valor = self._esocial_liquido_da_competencia(per_apur, abono)
+                if round(valor, 2):
+                    itens.append(("l10n_br_esocial." + xmlid, round(valor, 2)))
         return itens
 
     def action_esocial_gerar_s1200(self):

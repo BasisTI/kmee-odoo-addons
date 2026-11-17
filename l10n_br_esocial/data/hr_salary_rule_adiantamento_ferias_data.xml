@@ -7,6 +7,14 @@
         recibo de férias é pago em competência anterior à do gozo, e elas existem
         aqui para entrar na tabela de rubricas (S-1010) da empresa.
     -->
+    <!--
+        IR do recibo que atravessa o mês (MOS S-1.3, S-1210, item 4.1, exemplos 1 e 2,
+        pp. 186-188): o 1015 é o adiantamento bruto (IRRF 13) e fica no demonstrativo
+        pago, onde ficam também o IRRF retido e a dedução do INSS inteira (a da
+        parte do mês mais a "provisão de CP" das partes seguintes, IRRF 43); o 9221
+        das competências seguintes é líquido do INSS da parte e tem IRRF 09, como as
+        verbas de férias delas (rubricas "mês do gozo", ``_esocial_regra_mes_gozo``).
+    -->
     <record id="hr_rule_adiantamento_ferias_esocial" model="hr.salary.rule">
         <field name="name">Adiantamento de Férias (eSocial 1015)</field>
         <field name="code">ADIANTAMENTO_FERIAS_ESOCIAL</field>
@@ -40,14 +48,14 @@
         <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9221" />
         <field name="l10n_br_esocial_tp_rubr">2</field>
         <field name="l10n_br_esocial_cod_inc_cp">00</field>
-        <field name="l10n_br_esocial_cod_inc_irrf">13</field>
+        <field name="l10n_br_esocial_cod_inc_irrf">09</field>
         <field name="l10n_br_esocial_cod_inc_fgts">00</field>
     </record>
     <!--
         Par próprio do abono pecuniário e do terço dele (TG-152#P2, opção 1): o
         MOS (item 23) não trata do abono. Sem CP nem FGTS; o codIncIRRF é copiado
         da rubrica do abono configurada na empresa (``_esocial_sincronizar_irrf_
-        adiantamento_abono``), por isso não é fixo aqui.
+        adiantamento_abono``), por isso não é fixo aqui (só o do 1015; o 9221 é 09).
     -->
     <record id="hr_rule_adiantamento_abono_esocial" model="hr.salary.rule">
         <field name="name">Adiantamento do Abono de Férias (eSocial 1015)</field>
@@ -83,6 +91,25 @@
         <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9221" />
         <field name="l10n_br_esocial_tp_rubr">2</field>
         <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_irrf">09</field>
+        <field name="l10n_br_esocial_cod_inc_fgts">00</field>
+    </record>
+    <record id="hr_rule_provisao_inss_ferias_esocial" model="hr.salary.rule">
+        <field name="name">Provisão de CP das Férias (eSocial 9201, IRRF 43)</field>
+        <field name="code">PROVISAO_INSS_FERIAS_ESOCIAL</field>
+        <field name="sequence" eval="904" />
+        <field
+            name="category_id"
+            ref="l10n_br_hr_payroll.hr_salary_rule_category_basic"
+        />
+        <field name="condition_select">none</field>
+        <field name="amount_select">fix</field>
+        <field name="amount_fix" eval="0" />
+        <field name="l10n_br_esocial_cod_rubr">PROVCPFERIAS</field>
+        <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9201" />
+        <field name="l10n_br_esocial_tp_rubr">2</field>
+        <field name="l10n_br_esocial_cod_inc_cp">00</field>
+        <field name="l10n_br_esocial_cod_inc_irrf">43</field>
         <field name="l10n_br_esocial_cod_inc_fgts">00</field>
     </record>
     <!--

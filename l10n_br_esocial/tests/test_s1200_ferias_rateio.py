@@ -231,7 +231,8 @@ class TestS1200FeriasRateio(TransactionCase):
         dez = self._por_rubrica(self._s1200(slip, "2026-12"))
         self.assertEqual(nov, {"ANTECIPFERI": 4000.0})
         self.assertEqual(dez["DESCANTECIPFERI"], 4000.0)
-        self.assertEqual(dez["SAL_BASE"], 4000.0)
+        # Rendimento tributável de competência seguinte: rubrica do mês do gozo.
+        self.assertEqual(dez["SAL_BASEMG"], 4000.0)
 
     def test_exemplo_b_opcao_2_pago_no_mes_do_gozo_sem_adiantamento(self):
         slip = self._pago(
@@ -252,7 +253,7 @@ class TestS1200FeriasRateio(TransactionCase):
         self.assertEqual(nov["SAL_BASE"], 2100.0)
         self.assertEqual(nov["ANTECIPFERI"], 1000.0)
         self.assertNotIn("DESCANTECIPFERI", nov)
-        self.assertEqual(dez["SAL_BASE"], 1000.0)
+        self.assertEqual(dez["SAL_BASEMG"], 1000.0)
         self.assertEqual(dez["DESCANTECIPFERI"], 1000.0)
         self.assertNotIn("ANTECIPFERI", dez)
 
@@ -270,7 +271,9 @@ class TestS1200FeriasRateio(TransactionCase):
         for r in (regra, desconto):
             self.assertEqual(r.l10n_br_esocial_cod_inc_fgts, "00")
             self.assertEqual(r.l10n_br_esocial_cod_inc_cp, "00")
-            self.assertEqual(r.l10n_br_esocial_cod_inc_irrf, "13")
+        # 1015 bruto e tributável no pagamento; 9221 neutro no IR (MOS S-1210, 4.1).
+        self.assertEqual(regra.l10n_br_esocial_cod_inc_irrf, "13")
+        self.assertEqual(desconto.l10n_br_esocial_cod_inc_irrf, "09")
         self.assertEqual(regra.l10n_br_esocial_nat_rubr_id.codigo, "1015")
         self.assertEqual(desconto.l10n_br_esocial_nat_rubr_id.codigo, "9221")
         slip = self._recibo("2026-11-10", "2026-12-10", [3100.0])
@@ -308,12 +311,13 @@ class TestS1200FeriasRateio(TransactionCase):
 
     def _liquido(self, s1200):
         """Proventos menos descontos do demonstrativo do S-1200 (tpRubr)."""
+        itens = s1200._build_itens_remun()
         regras = self.env["hr.salary.rule"].search([])
         tipo = {}
         for r in regras.filtered("l10n_br_esocial_cod_rubr"):
             tipo[r.l10n_br_esocial_cod_rubr] = r.l10n_br_esocial_tp_rubr
         total = 0.0
-        for item in s1200._build_itens_remun():
+        for item in itens:
             sinal = -1 if tipo[item["cod_rubr"]] == "2" else 1
             total += sinal * float(item["vr_rubr"])
         return round(total, 2)
@@ -331,50 +335,111 @@ class TestS1200FeriasRateio(TransactionCase):
         nov = self._por_rubrica(self._s1200(slip, "2026-11"))
         dez = self._por_rubrica(self._s1200(slip, "2026-12"))
         self.assertEqual(nov["INSS_F"], round(988.09 * 11 / 30, 2))
-        self.assertAlmostEqual(nov["INSS_F"] + dez["INSS_F"], 988.09, places=2)
+        self.assertAlmostEqual(nov["INSS_F"] + dez["INSS_FMG"], 988.09, places=2)
 
-    def test_adiantamento_liquido_do_inss_e_demonstrativos_fecham(self):
-        """1015 = 9221 (líquidos do INSS da parte); o líquido de 11 é o do recibo.
+    def test_adiantamento_bruto_desconto_liquido_e_demonstrativos_fecham(self):
+        """1015 bruto, 9221 líquido do INSS da parte, provisão de CP no pagamento.
 
-        O de 12 fecha em zero: a parte de dezembro já foi paga em 07/11.
+        MOS S-1210, item 4.1, exemplo 1 (pp. 186-187): adiantamento bruto, desconto
+        líquido. O líquido de 11 é o do recibo; o de 12 fecha em zero.
         """
         slip = self._recibo_ir("2026-11-20", "2026-12-19", "2026-11-07")
         s_nov, s_dez = self._s1200(slip, "2026-11"), self._s1200(slip, "2026-12")
         nov, dez = self._por_rubrica(s_nov), self._por_rubrica(s_dez)
-        parte_dez = round(20000.0 * 19 / 30, 2) - dez["INSS_F"]
-        self.assertAlmostEqual(nov["ANTECIPFERI"], parte_dez, places=2)
-        self.assertAlmostEqual(dez["DESCANTECIPFERI"], parte_dez, places=2)
+        bruto_dez = round(20000.0 - round(20000.0 * 11 / 30, 2), 2)
+        inss_dez = dez["INSS_FMG"]
+        self.assertAlmostEqual(nov["ANTECIPFERI"], bruto_dez, places=2)
+        self.assertAlmostEqual(dez["DESCANTECIPFERI"], bruto_dez - inss_dez, places=2)
+        self.assertAlmostEqual(nov["PROVCPFERIAS"], inss_dez, places=2)
         self.assertAlmostEqual(self._liquido(s_nov), 20000.0 - 988.09 - 4319.55, 2)
         self.assertAlmostEqual(self._liquido(s_dez), 0.0, places=2)
 
-    def test_base_do_irrf_do_pagamento_e_a_do_recibo(self):
-        """Rendimento 13 menos deduções (41/43) no S-1200 do pagamento = base do recibo.
+    def _ir(self, s1200):
+        """Totais do IR do demonstrativo, como o S-5002 os consolida pelo S-1010.
 
-        A retenção (31 a 34) e a base que ela usa ficam no mesmo demonstrativo.
+        ``rendimento``: proventos com ``codIncIRRF`` 1x; ``deducao``: descontos com
+        4x/5x/6x; ``retido``: descontos 3x. Devolve também o rendimento de férias
+        (13) e a previdência oficial (41/43).
+        """
+        itens = s1200._build_itens_remun()  # cria as gêmeas, se faltarem
+        regras = {
+            r.l10n_br_esocial_cod_rubr: r
+            for r in self.env["hr.salary.rule"].search(
+                [("l10n_br_esocial_cod_rubr", "!=", False)]
+            )
+        }
+        ir = {"rendimento": 0.0, "deducao": 0.0, "retido": 0.0}
+        for item in itens:
+            regra = regras[item["cod_rubr"]]
+            incidencia = regra.l10n_br_esocial_cod_inc_irrf or ""
+            valor = float(item["vr_rubr"])
+            if regra.l10n_br_esocial_tp_rubr == "1" and incidencia[:1] == "1":
+                ir["rendimento"] += valor
+            elif regra.l10n_br_esocial_tp_rubr == "2" and incidencia[:1] in "456":
+                ir["deducao"] += valor
+            elif regra.l10n_br_esocial_tp_rubr == "2" and incidencia[:1] == "3":
+                ir["retido"] += valor
+        return {k: round(v, 2) for k, v in ir.items()}
+
+    def test_s5002_do_pagamento_leva_rendimento_e_deducao_do_mos(self):
+        """E91: rendimento 20.000,00, dedução 988,09, base 19.011,91, retido 4.319,55.
+
+        MOS S-1210, item 4.1, exemplos 1 e 2 (pp. 186-188): o demonstrativo pago
+        leva o rendimento das férias inteiro e a dedução do INSS inteira; o das
+        competências seguintes é neutro no IR (rendimento 13 e dedução 0).
         """
         slip = self._recibo_ir("2026-11-20", "2026-12-19", "2026-11-07")
-        s_nov, s_dez = self._s1200(slip, "2026-11"), self._s1200(slip, "2026-12")
+        nov = self._ir(self._s1200(slip, "2026-11"))
+        dez = self._ir(self._s1200(slip, "2026-12"))
+        self.assertEqual(nov["rendimento"], 20000.0)
+        self.assertEqual(nov["deducao"], 988.09)
+        self.assertEqual(round(nov["rendimento"] - nov["deducao"], 2), 19011.91)
+        self.assertEqual(nov["retido"], 4319.55)
+        self.assertEqual(dez, {"rendimento": 0.0, "deducao": 0.0, "retido": 0.0})
 
-        def base(s1200):
-            regras = {
-                r.l10n_br_esocial_cod_rubr: r
-                for r in self.env["hr.salary.rule"].search(
-                    [("l10n_br_esocial_cod_rubr", "!=", False)]
-                )
-            }
-            total = 0.0
-            for item in s1200._build_itens_remun():
-                regra = regras[item["cod_rubr"]]
-                incidencia = regra.l10n_br_esocial_cod_inc_irrf
-                valor = float(item["vr_rubr"])
-                if incidencia == "13":
-                    total += valor if regra.l10n_br_esocial_tp_rubr == "1" else -valor
-                elif incidencia in ("41", "43", "53"):
-                    total -= valor
-            return round(total, 2)
+    def test_demonstrativo_seguinte_usa_as_rubricas_do_mes_do_gozo(self):
+        """Férias e INSS de dezembro vão com a gêmea (IRRF 09) e mantêm CP e FGTS."""
+        slip = self._recibo_ir("2026-11-20", "2026-12-19", "2026-11-07")
+        nov = self._por_rubrica(self._s1200(slip, "2026-11"))
+        dez = self._por_rubrica(self._s1200(slip, "2026-12"))
+        self.assertIn("FERIAS_F", nov)
+        self.assertNotIn("FERIAS_F", dez)
+        self.assertNotIn("INSS_F", dez)
+        self.assertIn("FERIAS_FMG", dez)
+        self.assertIn("INSS_FMG", dez)
+        gemea = self.rule_ferias._esocial_regra_mes_gozo()
+        self.assertEqual(gemea.l10n_br_esocial_cod_inc_irrf, "09")
+        for campo in (
+            "l10n_br_esocial_nat_rubr_id",
+            "l10n_br_esocial_tp_rubr",
+            "l10n_br_esocial_cod_inc_cp",
+            "l10n_br_esocial_cod_inc_fgts",
+        ):
+            self.assertEqual(gemea[campo], self.rule_ferias[campo])
+        gemea_inss = self.rule_inss._esocial_regra_mes_gozo()
+        self.assertEqual(gemea_inss.l10n_br_esocial_cod_inc_cp, "31")
+        self.assertEqual(gemea_inss.l10n_br_esocial_cod_inc_irrf, "09")
+        # Uma só gêmea por regra, mantida igual à de origem.
+        self.rule_ferias.l10n_br_esocial_cod_inc_fgts = "00"
+        self.assertEqual(self.rule_ferias._esocial_regra_mes_gozo(), gemea)
+        self.assertEqual(gemea.l10n_br_esocial_cod_inc_fgts, "00")
 
-        self.assertAlmostEqual(base(s_nov), 20000.0 - 988.09, places=2)
-        self.assertAlmostEqual(base(s_dez), 0.0, places=2)
+    def test_recibo_sem_adiantamento_nao_usa_gemea(self):
+        slip = self._recibo_ir("2026-11-20", "2026-12-19")
+        slip.l10n_br_esocial_data_pagamento = "2026-12-05"
+        dez = self._por_rubrica(self._s1200(slip, "2026-12"))
+        self.assertIn("FERIAS_F", dez)
+        self.assertNotIn("FERIAS_FMG", dez)
+
+    def test_base_do_irrf_do_pagamento_e_a_do_recibo(self):
+        """Rendimento menos deduções (41/43) no S-1200 do pagamento = base do recibo."""
+        slip = self._recibo_ir("2026-11-20", "2026-12-19", "2026-11-07")
+        nov = self._ir(self._s1200(slip, "2026-11"))
+        dez = self._ir(self._s1200(slip, "2026-12"))
+        self.assertAlmostEqual(
+            nov["rendimento"] - nov["deducao"], 20000.0 - 988.09, places=2
+        )
+        self.assertAlmostEqual(dez["rendimento"] - dez["deducao"], 0.0, places=2)
 
     def test_deducao_do_ir_que_nao_e_inss_tambem_vai_inteira(self):
         """Pensão alimentícia (IRRF 53) como a retenção: inteira no pagamento."""
@@ -430,7 +495,7 @@ class TestS1200FeriasRateio(TransactionCase):
 
     def test_tabela_das_rubricas_de_adiantamento_vem_da_empresa(self):
         regras = self.env["hr.salary.rule"]._esocial_regras_adiantamento_ferias()
-        self.assertEqual(len(regras), 4)
+        self.assertEqual(len(regras), 5)
         for regra in regras:
             self.assertFalse(regra.l10n_br_esocial_ide_tab_rubr)
         self.rule.l10n_br_esocial_ide_tab_rubr = "BASIS"
@@ -497,19 +562,19 @@ class TestS1200FeriasRateio(TransactionCase):
         # O 1015 das férias não leva o abono.
         ferias_dez = round(15000.0 - round(15000.0 * 11 / 30, 2), 2)
         inss_dez = round(4000.0 - round(4000.0 * 11 / 30, 2), 2)
-        self.assertAlmostEqual(nov["ANTECIPFERI"], ferias_dez - inss_dez, places=2)
+        self.assertAlmostEqual(nov["ANTECIPFERI"], ferias_dez, places=2)
         self.assertAlmostEqual(dez["DESCANTECIPFERI"], ferias_dez - inss_dez, places=2)
 
     def test_par_do_abono_copia_o_irrf_da_rubrica_do_abono_da_empresa(self):
         slip = self._recibo_abono()
         itens = self._s1200(slip, "2026-11")._build_itens_remun()
         self.assertIn("ANTECIPABONO", [i["cod_rubr"] for i in itens])
-        for xmlid in (
-            "hr_rule_adiantamento_abono_esocial",
-            "hr_rule_desconto_adiantamento_abono",
+        for xmlid, irrf in (
+            ("hr_rule_adiantamento_abono_esocial", "75"),
+            ("hr_rule_desconto_adiantamento_abono", "09"),
         ):
             regra = self.env.ref("l10n_br_esocial." + xmlid)
-            self.assertEqual(regra.l10n_br_esocial_cod_inc_irrf, "75")
+            self.assertEqual(regra.l10n_br_esocial_cod_inc_irrf, irrf)
             self.assertEqual(regra.l10n_br_esocial_cod_inc_cp, "00")
             self.assertEqual(regra.l10n_br_esocial_cod_inc_fgts, "00")
         self.rule_abono.l10n_br_esocial_cod_inc_irrf = "09"
@@ -540,3 +605,82 @@ class TestS1200FeriasRateio(TransactionCase):
         self.rule_abono.l10n_br_esocial_cod_inc_irrf = "75"
         criados = S1010.criar_para_regras(self.rule | par, "2026-01")
         self.assertEqual(criados.salary_rule_id & par, par)
+
+    def test_terco_do_abono_tributavel_vai_no_par_das_ferias(self):
+        """O par é escolhido pela incidência de IRRF da linha (TG-152, r4)."""
+        terco = self._regra_extra(
+            "ADICIONAL_ABONO", "TERCOABONO_F", "1023", "1", "00", "13", "00"
+        )
+        slip = self._recibo(
+            "2026-11-20",
+            "2026-12-19",
+            [15000.0, 5000.0, 1666.67],
+            {0: "FERIAS", 1: "ABONO_PECUNIARIO", 2: "ADICIONAL_ABONO"},
+            {0: self.rule_ferias, 1: self.rule_abono, 2: terco},
+        )
+        slip.l10n_br_esocial_data_pagamento = "2026-11-07"
+        nov = self._por_rubrica(self._s1200(slip, "2026-11"))
+        dez = self._por_rubrica(self._s1200(slip, "2026-12"))
+        parte = lambda valor: round(valor - round(valor * 11 / 30, 2), 2)  # noqa: E731
+        self.assertAlmostEqual(nov["ANTECIPABONO"], parte(5000.0), places=2)
+        self.assertAlmostEqual(
+            nov["ANTECIPFERI"], parte(15000.0) + parte(1666.67), places=2
+        )
+        # O terço tributável de dezembro vai com a rubrica do mês do gozo (IRRF 09).
+        self.assertIn("TERCOABONO_FMG", dez)
+        self.assertNotIn("TERCOABONO_F", dez)
+        # O abono isento segue com a dele.
+        self.assertIn("ABONO_F", dez)
+
+    def test_s1200_com_antecipabono_cria_o_s1010_do_par_que_falta(self):
+        """Na empresa que já envia S-1010, o par do abono sem S-1010 é criado."""
+        S1010 = self.env["l10n_br.esocial.s1010"]
+        S1010.criar_para_regras(self.rule, "2026-01")
+        par = self.env["hr.salary.rule"]._esocial_regras_adiantamento_abono()
+        self.assertFalse(S1010.search([("salary_rule_id", "in", par.ids)]))
+        slip = self._recibo_abono()
+        self._s1200(slip, "2026-11")._build_itens_remun()
+        self.assertEqual(
+            S1010.search([("salary_rule_id", "in", par.ids)]).salary_rule_id, par
+        )
+        # Segunda geração não repete a inclusão.
+        self._s1200(slip, "2026-11")._build_itens_remun()
+        self.assertEqual(len(S1010.search([("salary_rule_id", "in", par.ids)])), 2)
+
+    def test_gemea_do_mes_do_gozo_ganha_s1010_na_empresa_que_envia(self):
+        S1010 = self.env["l10n_br.esocial.s1010"]
+        S1010.criar_para_regras(self.rule, "2026-01")
+        slip = self._recibo_ir("2026-11-20", "2026-12-19", "2026-11-07")
+        self._s1200(slip, "2026-12")._build_itens_remun()
+        gemeas = self.env["hr.salary.rule"].search(
+            [
+                (
+                    "l10n_br_esocial_regra_origem_id",
+                    "in",
+                    self.rule_ferias.ids + self.rule_inss.ids,
+                )
+            ]
+        )
+        self.assertEqual(len(gemeas), 2)
+        self.assertEqual(
+            S1010.search([("salary_rule_id", "in", gemeas.ids)]).salary_rule_id, gemeas
+        )
+
+    def test_migracao_1_9_0_corrige_banco_que_ja_esta_na_1_8_0(self):
+        """O ``"1"`` gravado e o 9221 com IRRF 13 são corrigidos no banco em 1.8.0."""
+        regras = self.env["hr.salary.rule"]._esocial_regras_adiantamento_ferias()
+        regras.write({"l10n_br_esocial_ide_tab_rubr": "1"})
+        desconto = self.env.ref("l10n_br_esocial.hr_rule_desconto_adiantamento_ferias")
+        desconto.l10n_br_esocial_cod_inc_irrf = "13"
+        self.rule.l10n_br_esocial_ide_tab_rubr = "BASIS"
+        caminho = Path(__file__).parent.parent / "migrations/18.0.1.9.0"
+        spec = importlib.util.spec_from_file_location(
+            "migracao_1_9_0", caminho / "post-migration.py"
+        )
+        migracao = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(migracao)
+        migracao.migrate(self.env.cr, "18.0.1.8.0")
+        regras.invalidate_recordset()
+        for regra in regras:
+            self.assertFalse(regra.l10n_br_esocial_ide_tab_rubr)
+        self.assertEqual(desconto.l10n_br_esocial_cod_inc_irrf, "09")

@@ -373,6 +373,9 @@ class ESocialS2299(models.Model):
             )
             if not valor:
                 continue
+            if parcial:
+                # Competência do gozo após o pagamento: rubrica "mês do gozo".
+                rule = slip._esocial_regra_da_linha(line, mes)
             item = {
                 "cod_rubr": rule.l10n_br_esocial_cod_rubr,
                 "ide_tab_rubr": rule._esocial_ide_tab_rubr_da_regra(self.company_id),
@@ -386,9 +389,7 @@ class ESocialS2299(models.Model):
             for xmlid, valor in slip._esocial_adiantamentos_ferias(mes):
                 regra = self.env.ref(xmlid)
                 if "abono" in xmlid:
-                    self.env[
-                        "hr.salary.rule"
-                    ]._esocial_sincronizar_irrf_adiantamento_abono(exigir=True)
+                    self.env["hr.salary.rule"]._esocial_garantir_par_abono()
                 item = {
                     "cod_rubr": regra.l10n_br_esocial_cod_rubr,
                     "ide_tab_rubr": regra._esocial_ide_tab_rubr_da_regra(

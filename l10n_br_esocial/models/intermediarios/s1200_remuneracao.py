@@ -153,6 +153,10 @@ class ESocialS1200(models.Model):
                 valor = self._valor_na_competencia(payslip, line)
                 if not valor:
                     continue
+                if self.ind_apuracao == "1":
+                    # Nas competências do gozo após o pagamento, a verba de férias
+                    # tributável e o INSS vão com a rubrica "mês do gozo" (IRRF 09).
+                    rule = payslip._esocial_regra_da_linha(line, self.per_apur)
                 itens.append(self._item_remun(rule, abs(valor)))
             itens += self._itens_adiantamento_ferias(payslip)
         self._registrar_avisos_sem_config(sem_config, negativos)
@@ -172,23 +176,21 @@ class ESocialS1200(models.Model):
         return payslip._esocial_valor_na_competencia(line, self.per_apur)
 
     def _itens_adiantamento_ferias(self, payslip):
-        """Rubricas 1015 e 9221 do recibo de férias pago adiantado (MOS 23, pp. 112-114).
+        """Rubricas 1015, 9221 e provisão de CP do recibo de férias pago adiantado.
 
-        Exemplos (a) e (c) do MOS (opção 2): na competência do pagamento, o
-        adiantamento (natureza 1015, incidências 00/00/13) com o valor da parte
-        gozada nas competências seguintes; em cada competência seguinte, o desconto
-        dele (natureza 9221, 00/00/13) da parte dessa competência. A parte gozada
-        no mês do pagamento não leva 1015 nem 9221 (opção 2 do exemplo (b)). O valor
-        é líquido do INSS da parte (``_esocial_liquido_da_competencia``). O abono
-        pecuniário e o terço dele vão em par próprio (TG-152#P2).
+        MOS S-1.3, item 23 (pp. 112-114), exemplos (a) e (c), opção 2, e S-1210,
+        item 4.1, exemplos 1 e 2 (pp. 186-188): na competência do pagamento, o
+        adiantamento **bruto** (natureza 1015, incidências 00/13/00) da parte
+        gozada nas competências seguintes e a provisão de CP dela (IRRF 43); em
+        cada competência seguinte, o desconto **líquido** do INSS da parte (natureza
+        9221, IRRF 09). A parte gozada no mês do pagamento não leva 1015 nem 9221
+        (opção 2 do exemplo (b)). O abono pecuniário vai em par próprio (TG-152#P2).
         """
         if self.ind_apuracao != "1":
             return []
         adiantamentos = payslip._esocial_adiantamentos_ferias(self.per_apur)
         if any("abono" in xmlid for xmlid, _valor in adiantamentos):
-            self.env["hr.salary.rule"]._esocial_sincronizar_irrf_adiantamento_abono(
-                exigir=True
-            )
+            self.env["hr.salary.rule"]._esocial_garantir_par_abono()
         return [
             self._item_remun(self.env.ref(xmlid), valor)
             for xmlid, valor in adiantamentos

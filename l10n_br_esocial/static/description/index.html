@@ -728,41 +728,65 @@ S-2299 declara a parte desse mês do recibo (rateada, com o 1015/9221 dela), e o
 S-1200 desse mês precisa ser excluído (S-3000) antes.</p>
 <p>Retenção do IR e INSS no recibo que atravessa o mês (MOS S-1.3, S-1210, item 4.1,
 exemplos 1 e 2, pp. 186-188): o IRRF é regime de caixa, e o S-1210 do pagamento
-só referencia o demonstrativo do S-1200 em que o recibo foi pago. Por isso a
-<strong>retenção do IRRF</strong> (<tt class="docutils literal">codIncIRRF</tt> 31 a 34) e as <strong>deduções da base do IR</strong>
+só referencia o demonstrativo do S-1200 em que o recibo foi pago. Por isso o
+demonstrativo da competência do pagamento leva <strong>todo o efeito no IR</strong> do recibo,
+e os das competências seguintes ficam <strong>neutros no IR</strong>:</p>
+<ul class="simple">
+<li>a <strong>retenção do IRRF</strong> (<tt class="docutils literal">codIncIRRF</tt> 31 a 34) e as <strong>deduções da base do IR</strong>
 que não são o INSS (4x, 5x e 6x: pensão alimentícia, previdência complementar)
-<strong>não são rateadas</strong>: vão inteiras no S-1200 da competência do pagamento (no
-exemplo do MOS, o desconto do IR das férias vai inteiro no demonstrativo da
-antecipação). O <strong>INSS</strong> segue o gozo: a contribuição previdenciária é declarada
-por parte (<tt class="docutils literal">codIncCP</tt> 31, rateada pelos dias de gozo, resíduo na última). O
-1015 e o 9221 são <strong>líquidos do INSS da parte</strong> (no exemplo 4.1 do MOS, o desconto
-do adiantamento é o valor líquido pago, p. 186-187): o demonstrativo de cada
-competência seguinte fecha em zero, a dedução do INSS no IR da parte (<tt class="docutils literal">codIncIRRF</tt>
-41) cancela o rendimento que o 9221 deixa de abater, e o S-1200 do pagamento fica
-com o líquido do recibo e com a base do IRRF do recibo (rendimento 13 menos as
-deduções).</p>
+não são rateadas: vão inteiras no S-1200 da competência do pagamento;</li>
+<li>o <strong>adiantamento (1015) é bruto</strong> (<tt class="docutils literal">codIncIRRF</tt> 13): o rendimento tributável do
+recibo inteiro fica no demonstrativo pago;</li>
+<li>a <strong>dedução do INSS no IR</strong> também vai inteira no pagamento: a parte do mês
+segue com a rubrica do INSS (<tt class="docutils literal">codIncCP</tt> 31, <tt class="docutils literal">codIncIRRF</tt> 41) e as partes
+seguintes vão na <strong>provisão de CP</strong> (<tt class="docutils literal">PROVCPFERIAS</tt>, natureza 9201,
+<tt class="docutils literal">codIncCP</tt> 00, <tt class="docutils literal">codIncIRRF</tt> 43, “d201” do MOS);</li>
+<li>nas competências seguintes, as verbas de férias tributáveis e o INSS delas vão
+com rubricas “do mês do gozo” (<tt class="docutils literal">v010</tt>, <tt class="docutils literal">v020</tt> e <tt class="docutils literal">d200</tt> do MOS, <tt class="docutils literal">codIncIRRF</tt>
+9): o módulo cria, para cada regra de férias tributável e para a regra do INSS, uma
+rubrica gêmea de código <tt class="docutils literal">&lt;código&gt;MG</tt> com a mesma natureza e as mesmas incidências
+de INSS e FGTS e a incidência de IRRF 09, mantida igual à de origem e com S-1010
+próprio (criado junto nas empresas que já enviam S-1010);</li>
+<li>o <strong>desconto do adiantamento (9221) é líquido do INSS da parte</strong> e tem
+<tt class="docutils literal">codIncIRRF</tt> 09 (no exemplo 4.1 do MOS, o desconto é o valor líquido pago,
+p. 186-187). O demonstrativo de cada competência seguinte fecha em zero.</li>
+</ul>
+<p>O S-5002 do pagamento sai com o rendimento e a dedução do recibo inteiros (no caso
+de teste E91: rendimento 20.000,00, dedução 988,09, base 19.011,91 e IRRF 4.319,55)
+e o das seguintes sem rendimento nem dedução. O <strong>INSS</strong> segue o gozo na CP: cada
+competência declara a CP 31 da sua parte (rateada pelos dias de gozo, resíduo na
+última).</p>
 <p>Adiantamento das férias (exemplos (a) e (c), opção 2): informe a <strong>Data de
 Pagamento</strong> do recibo (a mesma do S-1210) <strong>antes</strong> de gerar o S-1200. Quando ela
 cai em competência anterior à de parte do gozo, o S-1200 da competência do
-pagamento leva a rubrica de natureza 1015 (incidências 00/00/13) com o valor da
-parte gozada nas competências seguintes, e o S-1200 de cada competência seguinte
-leva o desconto de natureza 9221 (00/00/13) da sua parte. A parte gozada no mês
-do pagamento não leva 1015 nem 9221 (opção 2 do exemplo (b)). A data de
-pagamento é <strong>obrigatória</strong> quando o gozo atravessa mais de uma competência: sem
-ela a geração do S-1200 é recusada, com mensagem pedindo a data (TG-152#P3). Recibo
-com gozo numa competência só segue sem a data, e então o exemplo (a) do MOS (pagamento
-no mês anterior ao gozo) fica sem adiantamento: o S-1200 sai só na competência do
-gozo. A <strong>parte futura do abono pecuniário e do terço dele</strong> vai em par próprio de
-adiantamento e desconto (<tt class="docutils literal">ANTECIPABONO</tt> e <tt class="docutils literal">DESCANTECIPABONO</tt>, naturezas 1015 e
-9221, sem CP nem FGTS), com o <tt class="docutils literal">codIncIRRF</tt> copiado da regra <tt class="docutils literal">ABONO_PECUNIARIO</tt>
-configurada na empresa (sem essa incidência, o S-1200 com abono futuro é recusado);
-o 1015 das férias (IRRF 13) leva só as férias e o terço (TG-152#P2). As rubricas <tt class="docutils literal">ANTECIPFERI</tt> e <tt class="docutils literal">DESCANTECIPFERI</tt>
-(e as do abono) vêm cadastradas e entram na tabela de rubricas (S-1010) como as demais, com a
-tabela de rubricas (<tt class="docutils literal">ideTabRubr</tt>) que a empresa já usa, resolvida na hora de usar
-(na instalação e na atualização); a migração 18.0.1.8.0 cria o S-1010 delas nas
-empresas que já enviam S-1010. A base
-da multa do FGTS usa a mesma função de competência do gozo e não soma o 1015
-(sem FGTS).</p>
+pagamento leva a rubrica de natureza 1015 (<tt class="docutils literal">ANTECIPFERI</tt>, 00/13/00) com o valor
+<strong>bruto</strong> da parte gozada nas competências seguintes, e o S-1200 de cada competência
+seguinte leva o desconto de natureza 9221 (<tt class="docutils literal">DESCANTECIPFERI</tt>, 00/09/00), líquido do
+INSS da sua parte. A parte gozada no mês do pagamento não leva 1015 nem 9221 (opção 2
+do exemplo (b)). A data de pagamento é <strong>obrigatória</strong> quando o gozo atravessa mais
+de uma competência: sem ela a geração do S-1200 é recusada, com mensagem pedindo a
+data (TG-152#P3). Recibo com gozo numa competência só segue sem a data, e então o
+exemplo (a) do MOS (pagamento no mês anterior ao gozo) fica sem adiantamento: o
+S-1200 sai só na competência do gozo. A <strong>parte futura do abono pecuniário</strong> (isento)
+vai em par próprio de adiantamento e desconto (<tt class="docutils literal">ANTECIPABONO</tt> e
+<tt class="docutils literal">DESCANTECIPABONO</tt>, naturezas 1015 e 9221, sem CP nem FGTS): o 1015 copia o
+<tt class="docutils literal">codIncIRRF</tt> da regra <tt class="docutils literal">ABONO_PECUNIARIO</tt> configurada na empresa (sem essa
+incidência, o S-1200 com abono futuro é recusado) e o 9221 tem IRRF 09. O par é
+escolhido pela incidência de IRRF da linha: o <strong>terço do abono tributável</strong> (1x) vai
+no par das férias (TG-152#P2). No S-1200 que usa o par do abono, o S-1010 dele é
+criado se a empresa já envia S-1010 e ainda não o tem. As rubricas <tt class="docutils literal">ANTECIPFERI</tt>,
+<tt class="docutils literal">DESCANTECIPFERI</tt> e <tt class="docutils literal">PROVCPFERIAS</tt> (e as do abono) vêm cadastradas e entram na
+tabela de rubricas (S-1010) como as demais, com a tabela de rubricas
+(<tt class="docutils literal">ideTabRubr</tt>) que a empresa já usa, resolvida na hora de usar (na instalação e
+na atualização); as migrações 18.0.1.8.0 e 18.0.1.9.0 criam o S-1010 delas nas
+empresas que já enviam S-1010 (a 1.9.0 vale também para o banco que já estava na
+1.8.0). A base da multa do FGTS usa a mesma função de competência do gozo e não soma
+o 1015 (sem FGTS).</p>
+<p>Limites desta versão: o botão de retificar só a segunda competência não existe na
+tela (use <tt class="docutils literal">action_esocial_gerar_s1200_competencia</tt>); o recibo pago <strong>depois</strong> do
+início do gozo (por exemplo, gozo 20/11 a 19/12 pago em 05/12) declara a parte de
+novembro, com o rendimento e a dedução dela, no S-1200 de novembro, que nenhum S-1210
+referencia.</p>
 </div>
 <div class="section" id="bug-tracker">
 <h1><a class="toc-backref" href="#toc-entry-2">Bug Tracker</a></h1>
