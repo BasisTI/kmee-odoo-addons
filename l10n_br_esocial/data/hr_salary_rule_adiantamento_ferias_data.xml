@@ -19,7 +19,6 @@
         <field name="amount_select">fix</field>
         <field name="amount_fix" eval="0" />
         <field name="l10n_br_esocial_cod_rubr">ANTECIPFERI</field>
-        <field name="l10n_br_esocial_ide_tab_rubr">1</field>
         <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_1015" />
         <field name="l10n_br_esocial_tp_rubr">1</field>
         <field name="l10n_br_esocial_cod_inc_cp">00</field>
@@ -38,11 +37,12 @@
         <field name="amount_select">fix</field>
         <field name="amount_fix" eval="0" />
         <field name="l10n_br_esocial_cod_rubr">DESCANTECIPFERI</field>
-        <field name="l10n_br_esocial_ide_tab_rubr">1</field>
         <field name="l10n_br_esocial_nat_rubr_id" ref="nat_rubr_9221" />
         <field name="l10n_br_esocial_tp_rubr">2</field>
         <field name="l10n_br_esocial_cod_inc_cp">00</field>
         <field name="l10n_br_esocial_cod_inc_irrf">13</field>
         <field name="l10n_br_esocial_cod_inc_fgts">00</field>
     </record>
+    <!-- A tabela de rubricas (ideTabRubr) é a que a empresa já usa. -->
+    <function model="hr.salary.rule" name="_esocial_configurar_adiantamento_ferias" />
 </odoo>

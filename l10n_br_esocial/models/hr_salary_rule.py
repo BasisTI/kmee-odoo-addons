@@ -666,6 +666,23 @@ class HrSalaryRule(models.Model):
         return melhor["l10n_br_esocial_ide_tab_rubr"]
 
     @api.model
+    def _esocial_configurar_adiantamento_ferias(self):
+        """Dá às rubricas 1015 e 9221 (adiantamento de férias) a tabela da empresa.
+
+        Só preenche o que está vazio; idempotente (instalação e atualização).
+        """
+        for xmlid in (
+            "l10n_br_esocial.hr_rule_adiantamento_ferias_esocial",
+            "l10n_br_esocial.hr_rule_desconto_adiantamento_ferias",
+        ):
+            regra = self.env.ref(xmlid, raise_if_not_found=False)
+            if regra and not regra.l10n_br_esocial_ide_tab_rubr:
+                regra.l10n_br_esocial_ide_tab_rubr = (
+                    self._esocial_tabela_rubricas_da_empresa(regra.company_id)
+                )
+        return True
+
+    @api.model
     def _esocial_configurar_salario_maternidade(self):
         """Configura no eSocial a rubrica ``SALARIO_MATERNIDADE`` do payroll.
 
