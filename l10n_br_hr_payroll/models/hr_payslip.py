@@ -939,13 +939,18 @@ class HrPayslip(models.Model):
         """Parte de ``valor`` (linha deste recibo) que cabe na ``competencia``.
 
         Rateio por dias de gozo, arredondado ao centavo, com o resíduo na última
-        competência: a soma das partes é o valor do recibo. Vale para todas as
+        competência: a soma das partes é o valor do recibo. Competência fora do
+        gozo (por exemplo a do pagamento adiantado) não leva nada do recibo. Vale para todas as
         rubricas do recibo, inclusive o abono pecuniário e o terço dele (TG-152#P1:
         rateados na mesma proporção dos dias de gozo; o MOS não trata do abono).
         """
         self.ensure_one()
+        if self.struct_id.code != "FERIAS":
+            return valor
         partes = self._l10n_br_competencias_ferias()
-        if len(partes) <= 1:
+        if competencia not in [chave for chave, _dias in partes]:
+            return 0.0
+        if len(partes) == 1:
             return valor
         total = sum(dias for _c, dias in partes)
         acumulado = 0.0
