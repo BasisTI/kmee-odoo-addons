@@ -35,6 +35,18 @@ class TestRescisaoReport(PayrollCommon):
         super().setUpClass()
         cls.structure_rescisao = cls.env.ref("l10n_br_hr_vacation.structure_rescisao")
 
+    def _sem_exigencia_alocacao(self):
+        """TG-147: a rescisão recusa o cálculo sem a alocação de Férias do
+        último período aquisitivo completo. Este teste confere outra coisa
+        (ver o docstring) e não monta alocação: desliga a exigência."""
+        patcher = patch.object(
+            type(self.env["hr.payslip"]),
+            "_l10n_br_exigir_alocacao_periodo_completo",
+            lambda slip: None,
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def _create_rescisao_payslip(self):
         """Helper: cria payslip de rescisão computado."""
         emp = self._create_employee()
@@ -437,6 +449,19 @@ class TestRescisaoReport(PayrollCommon):
             }
         )
         aloc.sudo().action_validate()
+        # O período mais recente (2025) também é exigido (TG-147): sem a
+        # alocação dele a rescisão recusa. Ele entra junto, como vencido.
+        recente = self.env["hr.leave.allocation"].create(
+            {
+                "name": "Aquisitivo 2025",
+                "employee_id": emp.id,
+                "holiday_status_id": tipo.id,
+                "allocation_type": "regular",
+                "date_from": date(2025, 1, 1),
+                "date_to": date(2025, 12, 31),
+            }
+        )
+        recente.sudo().action_validate()
         payslip = self.env["hr.payslip"].create(
             {
                 "name": "Rescisão vencidas",
@@ -452,12 +477,16 @@ class TestRescisaoReport(PayrollCommon):
         payslip.compute_sheet()
         campos = {c: (v, d) for c, _r, v, d in self._trct(payslip)["verbas"]}
         self.assertGreater(campos["66.1"][0], 0)
-        self.assertEqual(campos["66.1"][1], "01/01/2023 a 31/12/2023")
+        # TRCT com dois períodos: os dois aparecem, do mais antigo ao recente
+        self.assertEqual(
+            campos["66.1"][1], "01/01/2023 a 31/12/2023; 01/01/2025 a 31/12/2025"
+        )
 
     def test_trct_excesso_do_13_vai_para_95_e_115_com_subitens(self):
         """TG-141: 2ª parcela confirmada acima do devido. A devolução de INSS
         sai em 95.n e o desconto do excesso em 115.n, com o nome, e os totais
         fecham no termo impresso."""
+        self._sem_exigencia_alocacao()  # confere o excesso do 13º (95 e 115)
         emp = self._create_employee("Excesso 13")
         contract = self._create_contract(emp, wage=3000.0, date_start=date(2020, 1, 1))
         segunda = self.env["hr.payslip"].create(
@@ -550,6 +579,7 @@ class TestRescisaoReport(PayrollCommon):
     def test_trct_63_e_70_mostram_os_avos_de_cada_rubrica(self):
         """63 só com os avos do proporcional e 70 com os do aviso (30 dias de
         aviso a partir de 30/11: 11 avos + 1)."""
+        self._sem_exigencia_alocacao()  # confere os avos do 13º (63 e 70)
         payslip = self._rescisao_aviso(date(2025, 7, 1), date(2026, 11, 30))
         trct = self._trct(payslip)
         self.assertEqual(self._detalhe(trct, "63"), "11/12 avos")
@@ -569,6 +599,7 @@ class TestRescisaoReport(PayrollCommon):
     def test_trct_aviso_de_90_dias_com_dispensa_em_31_12(self):
         """Aviso de 90 dias: o 63 nunca passa de 12/12 e o 70 leva os 3 avos
         de janeiro a março."""
+        self._sem_exigencia_alocacao()  # confere os avos do 13º (63 e 70)
         payslip = self._rescisao_aviso(date(2006, 1, 1), date(2026, 12, 31))
         trct = self._trct(payslip)
         self.assertEqual(self._detalhe(trct, "63"), "12/12 avos")
@@ -589,6 +620,7 @@ class TestRescisaoReport(PayrollCommon):
         """Holerite calculado na 1.10.0 (sem DECIMO_AVISO_INDENIZADO, com o 13º
         inteiro no DECIMO_RESCISAO): o 63 mostra os avos totais e o 70 fica em
         branco."""
+        self._sem_exigencia_alocacao()  # confere o 13º do aviso (63 e 70)
         payslip = self._rescisao_aviso(date(2025, 7, 1), date(2026, 11, 30))
         avos_totais = payslip.l10n_br_avos_13
         aviso = payslip.line_ids.filtered(
