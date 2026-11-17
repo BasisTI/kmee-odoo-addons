@@ -150,9 +150,23 @@ class ESocialS1200(models.Model):
                 if rule.l10n_br_esocial_tp_rubr == "1" and line.total < 0:
                     negativos.setdefault(rule, []).append(line.total)
                     continue
-                itens.append(self._item_remun(rule, abs(line.total)))
+                valor = self._valor_na_competencia(payslip, line)
+                if not valor:
+                    continue
+                itens.append(self._item_remun(rule, abs(valor)))
         self._registrar_avisos_sem_config(sem_config, negativos)
         return itens
+
+    def _valor_na_competencia(self, payslip, line):
+        """Parte da linha que cabe neste S-1200 (rateio por dias de gozo, TG-152).
+
+        Só o recibo de férias que atravessa o mês é rateado, pela função única
+        das competências (``_l10n_br_competencias_ferias``); os demais holerites
+        vão inteiros.
+        """
+        if self.ind_apuracao != "1":
+            return line.total
+        return payslip._l10n_br_ratear_valor(line.total, self.per_apur, line.code)
 
     def _exige_ind_apur_ir(self):
         """``indApurIR`` é obrigatório a partir de 07/2021 (mensal) ou 2021 (13º)."""

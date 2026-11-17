@@ -426,11 +426,30 @@ class TestFgtsRescisaoLacunas(VacationCommon):
         with self.assertRaises(UserError), self.env.cr.savepoint():
             linha.write({"amount": linha.amount + 5.0})
 
-    def test_recibo_pela_competencia_do_fgts_inicio_do_gozo(self):
-        """Gozo de 20/10 a 18/11 é competência de outubro: já está no extrato."""
+    def test_recibo_rateado_por_dias_de_gozo_so_a_parte_da_janela_entra(self):
+        """TG-152: gozo de 20/10 a 18/11 (30 dias): 12 em outubro (no extrato),
+        18 em novembro (R-1): só a parte de novembro entra na base."""
         emp, contract = self._contrato()
-        self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        recibo = self._recibo(emp, contract, date(2026, 10, 20), date(2026, 11, 18), 30)
+        fgts = self._get_line_total(recibo, "FGTS")
+        self.assertGreater(fgts, 0)
         resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        parte_nov = recibo._l10n_br_ratear_valor(fgts, "2026-11", "FGTS")
+        parte_out = recibo._l10n_br_ratear_valor(fgts, "2026-10", "FGTS")
+        self.assertAlmostEqual(parte_out + parte_nov, fgts, places=2)
+        self.assertGreater(parte_nov, 0)
+        self.assertIn(recibo, resc._l10n_br_holerites_da_base_multa(contract))
+        self.assertAlmostEqual(
+            resc._l10n_br_fgts_depositado_mensal(contract), parte_nov, places=2
+        )
+        self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc, parte_nov))
+
+    def test_recibo_so_com_a_competencia_fora_da_janela_nao_entra(self):
+        """Gozo todo em outubro, R em dezembro: já está no extrato."""
+        emp, contract = self._contrato()
+        recibo = self._recibo(emp, contract, date(2026, 10, 1), date(2026, 10, 30), 30)
+        resc = self._rescisao(emp, contract, date(2026, 12, 10))
+        self.assertNotIn(recibo, resc._l10n_br_holerites_da_base_multa(contract))
         self.assertAlmostEqualMoney(self._multa(resc), self._esperada(resc))
 
     def test_recibo_que_cruza_dezembro_e_janeiro_entra_na_rescisao_de_janeiro(self):

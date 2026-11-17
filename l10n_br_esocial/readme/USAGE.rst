@@ -315,3 +315,12 @@ saiu; o total do S-1200 deixa de bater com o holerite nesse caso. O MOS S-1.3
 (item 15.3, p. 109) pede que o valor negativo vá em rubrica de desconto da mesma
 natureza: configure essa rubrica no cálculo em vez de contar com o provento
 negativo.
+
+Férias que atravessam o mês (MOS S-1.3, item 23.1 (c)): o recibo de férias entra
+no S-1200 de cada competência em que há gozo, e os valores das rubricas são
+rateados pelos dias de gozo em cada mês (gozo de 20/11 a 18/12: 11 dias em
+novembro e 18 em dezembro), com o resíduo do arredondamento na última
+competência, de modo que a soma das partes é o valor do recibo. O abono
+pecuniário e o terço dele não são gozo: vão inteiros na competência em que o gozo
+começa. O S-1210 do recibo aponta para o S-1200 dessa primeira competência. A
+base da multa do FGTS usa a mesma função de competência.

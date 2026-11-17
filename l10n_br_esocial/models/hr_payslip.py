@@ -438,12 +438,16 @@ class HrPayslip(models.Model):
             )
         payslips -= pendentes
 
-        # Group by employee + period
+        # Group by employee + period. O recibo de férias que atravessa o mês entra
+        # no S-1200 de cada competência dele, rateado por dias de gozo (MOS S-1.3,
+        # item 23.1 (c)); a função que decide as competências é a mesma da base
+        # da multa do FGTS (``_l10n_br_competencias_ferias``).
         groups = {}
         for slip in payslips:
-            key = (slip.employee_id.id, slip.date_from.strftime("%Y-%m"))
-            groups.setdefault(key, self.env["hr.payslip"])
-            groups[key] |= slip
+            for per_apur, _dias in slip._l10n_br_competencias_ferias():
+                key = (slip.employee_id.id, per_apur)
+                groups.setdefault(key, self.env["hr.payslip"])
+                groups[key] |= slip
 
         created_events = self.env["l10n_br.esocial.evento"]
         for (emp_id, per_apur), slips in groups.items():
@@ -480,7 +484,11 @@ class HrPayslip(models.Model):
             s1200 = self.env["l10n_br.esocial.s1200"].create(vals)
             evento = s1200.action_gerar_evento()
             created_events |= evento
-            slips.write({"l10n_br_esocial_s1200_id": s1200.id})
+            # O S-1210 aponta para o S-1200 da primeira competência do recibo
+            # (as demais partes do rateio ficam em ``payslip_ids`` do S-1200).
+            slips.filtered(
+                lambda slip: slip._l10n_br_competencias_ferias()[0][0] == per_apur
+            ).write({"l10n_br_esocial_s1200_id": s1200.id})
 
         return self._action_esocial_eventos(created_events)
 

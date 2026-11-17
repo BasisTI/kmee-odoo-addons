@@ -891,6 +891,82 @@ class HrPayslip(models.Model):
         """
         return []
 
+    # Rubricas do recibo de férias que não são gozo: o abono pecuniário e o terço
+    # dele não se rateiam por dias de gozo (TG-152).
+    _L10N_BR_CODIGOS_FERIAS_SEM_RATEIO = (
+        "ABONO_PECUNIARIO",
+        "ADICIONAL_ABONO",
+        "ABONO_DOBRO",
+        "ADICIONAL_ABONO_DOBRO",
+    )
+
+    def _l10n_br_periodo_gozo(self):
+        """``(inicio, fim)`` do gozo do recibo de férias (gancho do vacation).
+
+        Sem o ``l10n_br_hr_vacation``, é o período do holerite.
+        """
+        self.ensure_one()
+        return self.date_from, self.date_to
+
+    def _l10n_br_competencias_ferias(self):
+        """Competências de um holerite e os dias de gozo em cada uma (TG-152).
+
+        ÚNICA decisão da competência de cada parte do recibo de férias: o S-1200
+        (``l10n_br_esocial``) e a base da multa do FGTS (``l10n_br_hr_vacation``)
+        a chamam. MOS do eSocial S-1.3, item 23.1 (c): férias que atravessam o
+        mês são informadas no S-1200 de cada período de apuração, rateadas pelos
+        dias de gozo em cada mês.
+
+        Devolve ``[(AAAA-MM, dias)]`` em ordem. Holerite que não é recibo de
+        férias: ``[(mês de date_from, 0)]`` (inteiro, sem rateio).
+        """
+        self.ensure_one()
+        if not self.date_from:
+            return []
+        inteiro = [(self.date_from.strftime("%Y-%m"), 0)]
+        if self.struct_id.code != "FERIAS" or not self.date_to:
+            return inteiro
+        inicio, fim = self._l10n_br_periodo_gozo()
+        return self._l10n_br_competencias_do_gozo(inicio, fim) or inteiro
+
+    @api.model
+    def _l10n_br_competencias_do_gozo(self, inicio, fim):
+        """``[(AAAA-MM, dias)]`` de um período de gozo de ``inicio`` a ``fim``."""
+        if not inicio or not fim or fim < inicio:
+            return []
+        meses = {}
+        dia = inicio
+        while dia <= fim:
+            chave = dia.strftime("%Y-%m")
+            meses[chave] = meses.get(chave, 0) + 1
+            dia += timedelta(days=1)
+        return sorted(meses.items())
+
+    def _l10n_br_ratear_valor(self, valor, competencia, codigo=None):
+        """Parte de ``valor`` (linha deste recibo) que cabe na ``competencia``.
+
+        Rateio por dias de gozo, arredondado ao centavo, com o resíduo na última
+        competência: a soma das partes é o valor do recibo. Abono pecuniário e o
+        terço dele (``_L10N_BR_CODIGOS_FERIAS_SEM_RATEIO``) vão inteiros na
+        primeira competência.
+        """
+        self.ensure_one()
+        partes = self._l10n_br_competencias_ferias()
+        if len(partes) <= 1:
+            return valor
+        if codigo in self._L10N_BR_CODIGOS_FERIAS_SEM_RATEIO:
+            return valor if competencia == partes[0][0] else 0.0
+        total = sum(dias for _c, dias in partes)
+        acumulado = 0.0
+        for chave, dias in partes[:-1]:
+            parte = round(valor * dias / total, 2)
+            if chave == competencia:
+                return parte
+            acumulado += parte
+        if competencia == partes[-1][0]:
+            return round(valor - acumulado, 2)
+        return 0.0
+
     def _l10n_br_semanas_com_falta(self, contract=None):
         """Repousos que este holerite desconta: semanas com falta mais as sem data."""
         self.ensure_one()
