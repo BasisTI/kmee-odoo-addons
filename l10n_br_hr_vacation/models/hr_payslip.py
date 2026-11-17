@@ -307,9 +307,11 @@ class HrPayslip(models.Model):
         "o extrato oficial (FGTS Digital), posicionado ANTES do mês da "
         "rescisão: a regra soma o depósito do mês da rescisão e o do mês "
         "anterior (vence no dia 20 do mês da rescisão), os recibos de férias "
-        "cuja competência, a que este sistema declara no S-1200 (o recibo inteiro "
-        "no mês em que o gozo começa), é a do mês "
-        "anterior ou a da rescisão e o FGTS do 13º pago em um desses dois meses "
+        "cuja competência é a do mês "
+        "anterior ou a da rescisão (o recibo que atravessa o mês é rateado por "
+        "dias de gozo em cada mês, como no S-1200, MOS item 23, pp. 112-114: "
+        "entra só a parte do FGTS dos meses da janela) e o FGTS do 13º pago em um "
+        "desses dois meses "
         "(em janeiro, o de dezembro do ano anterior); o que já venceu antes "
         "está no extrato e não soma de novo. Extrato posicionado depois do dia "
         "20 do mês da rescisão já traz o mês anterior: a base o soma de novo. "
@@ -501,7 +503,11 @@ class HrPayslip(models.Model):
             res[slip.id] = (
                 slip.contract_id.id,
                 slip.date_from,
-                slip.date_to,
+                # Férias: o fim do gozo (sem os dias de abono) decide as
+                # competências da base da multa (TG-152).
+                slip._l10n_br_periodo_gozo()[1]
+                if tipo == "ferias" and slip.date_to
+                else slip.date_to,
                 valor,
                 tipo,
             )
@@ -1362,6 +1368,21 @@ class HrPayslip(models.Model):
         ano = self.date_to.year
         return self.date_from, fim, date(ano, 1, 1), date(ano, 12, 31)
 
+    def _l10n_br_periodo_gozo(self):
+        """Gozo do recibo de férias: ``date_from`` por ``l10n_br_dias_ferias_gozadas``.
+
+        Limitado a ``date_to``; os dias de abono pecuniário não são gozo.
+        """
+        self.ensure_one()
+        if self.struct_id.code != "FERIAS" or not self.date_from or not self.date_to:
+            return super()._l10n_br_periodo_gozo()
+        fim = min(
+            self.date_to,
+            self.date_from
+            + timedelta(days=max(self.l10n_br_dias_ferias_gozadas, 1) - 1),
+        )
+        return self.date_from, fim
+
     def _l10n_br_entra_na_base_multa(self, tipo, de, ate):
         """Um holerite de ``tipo`` (mensal, ferias, decimo1) de ``de`` a ``ate`` entra na base?
 
@@ -1370,12 +1391,12 @@ class HrPayslip(models.Model):
         integridade (quem depende de um holerite alterado) usam este predicado.
 
         * ``mensal``: o período se sobrepõe à janela.
-        * ``ferias``: com saldo informado, pela competência que este sistema
-          declara no S-1200 (``l10n_br_esocial``: recibo inteiro no mês de
-          ``date_from``), dentro da janela; o recibo de 20/10 a 18/11 é de
-          outubro, mesmo com R em dezembro. Sem saldo informado, como já era: o
-          recibo que se sobrepõe ao período da rescisão. (O MOS 23.1 (c) rateia
-          por dias de gozo em cada mês; essa divergência é tratada fora da TG-138.)
+        * ``ferias``: com saldo informado, pelas competências do recibo, rateado
+          por dias de gozo (``_l10n_br_competencias_ferias``, a mesma função que
+          o S-1200 de ``l10n_br_esocial`` usa, MOS 23.1 (c)): entra se alguma
+          competência dele cai na janela; o recibo de 20/10 a 18/11 tem parte em
+          outubro e parte em novembro. Sem saldo informado, como já era: o
+          recibo que se sobrepõe ao período da rescisão.
         * ``decimo1`` (1ª, 2ª parcela e 13º integral): a data de fim (competência
           do pagamento, vence no dia 20 do mês seguinte) dentro da janela, sem
           filtro por ano de R: a rescisão de janeiro soma o 13º de dezembro.
@@ -1391,7 +1412,10 @@ class HrPayslip(models.Model):
             return de <= fim and ate >= inicio
         if tipo == "ferias":
             if self.l10n_br_fgts_saldo_conta:
-                return inicio <= de <= fim
+                return any(
+                    inicio <= date(int(c[:4]), int(c[5:]), 1) <= fim
+                    for c, _dias in self._l10n_br_competencias_do_gozo(de, ate)
+                )
             return de <= fim and ate >= inicio
         if tipo == "decimo1":
             return inicio_13 <= ate <= fim_13
@@ -1436,7 +1460,11 @@ class HrPayslip(models.Model):
             lambda slip: slip._l10n_br_tipo_integridade()
             and (slip.state == "done" or slip._l10n_br_tipo_integridade() != "decimo1")
             and self._l10n_br_entra_na_base_multa(
-                slip._l10n_br_tipo_integridade(), slip.date_from, slip.date_to
+                slip._l10n_br_tipo_integridade(),
+                slip.date_from,
+                slip._l10n_br_periodo_gozo()[1]
+                if slip._l10n_br_tipo_integridade() == "ferias"
+                else slip.date_to,
             )
         )
 
@@ -1452,10 +1480,25 @@ class HrPayslip(models.Model):
         slips = self._l10n_br_holerites_da_base_multa(contract).filtered(
             lambda slip: slip._l10n_br_tipo_integridade() in ("mensal", "ferias")
         )
+        return sum(slip._l10n_br_fgts_do_recibo_na_janela(self) for slip in slips)
+
+    def _l10n_br_fgts_do_recibo_na_janela(self, rescisao):
+        """FGTS deste holerite que cabe na janela da base da multa de ``rescisao``.
+
+        Recibo de férias com saldo informado: só as partes das competências dentro
+        da janela, rateadas por dias de gozo (TG-152); o resto já está no extrato.
+        """
+        self.ensure_one()
+        total = sum(ln.total for ln in self.line_ids if ln.code == "FGTS")
+        if self._l10n_br_tipo_integridade() != "ferias":
+            return total
+        if not rescisao.l10n_br_fgts_saldo_conta:
+            return total
+        inicio, fim, _i13, _f13 = rescisao._l10n_br_janela_base_multa()
         return sum(
-            slips.mapped("line_ids")
-            .filtered(lambda ln: ln.code == "FGTS")
-            .mapped("total")
+            self._l10n_br_ratear_valor(total, c)
+            for c, _dias in self._l10n_br_competencias_ferias()
+            if inicio <= date(int(c[:4]), int(c[5:]), 1) <= fim
         )
 
     def _l10n_br_fgts_13_primeira_depositado(self, contract):

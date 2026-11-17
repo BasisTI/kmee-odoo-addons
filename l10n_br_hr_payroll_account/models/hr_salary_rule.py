@@ -96,9 +96,51 @@ _RULE_ACCOUNT_MAP = {
     "l10n_br_hr_payroll.hr_rule_net": {"credit": "liability_salarios"},
 }
 
+# FGTS sem provisão das estruturas do l10n_br_hr_vacation (TG-148): o do saldo
+# de salário e o do aviso prévio indenizado da rescisão. Têm o mesmo
+# lançamento do ``hr_rule_fgts`` (despesa de encargos x FGTS a recolher) e a
+# MESMA conta dele: o passivo do FGTS é um só, para a guia fechar. Sem conta, o
+# lançamento da folha ficava menor que a guia do FGTS Digital.
+#
+# FICAM DE FORA o FGTS de férias, do 13º (1ª, 2ª parcela) e do 13º da rescisão
+# (``hr_rule_fgts_ferias``, ``_13_primeira``, ``_13``, ``_13_rescisao``): as
+# provisões mensais ``PROV_FERIAS_ENC`` e ``PROV_13_ENC`` já contêm o FGTS
+# (``total_com_fgts``) e já foram à despesa; lançá-lo de novo duplicaria o
+# custo. A baixa das provisões é a TG-157, com o contador.
+#
+# O l10n_br_hr_vacation não é dependência: xmlid ausente é ignorado, como no
+# mapa acima, e as regras são vinculadas quando o módulo chega depois deste
+# (ver ``_load_records``).
+_FGTS_VACATION = {"debit": "expense_encargos", "credit": "liability_fgts"}
+_FGTS_MENSAL = "l10n_br_hr_payroll.hr_rule_fgts"
+_RULE_ACCOUNT_MAP.update(
+    {
+        "l10n_br_hr_vacation.%s" % name: dict(_FGTS_VACATION)
+        for name in ("hr_rule_fgts_rescisao", "hr_rule_fgts_aviso")
+    }
+)
+# Regras que herdam a conta já gravada no FGTS mensal (slot só se ele estiver
+# vazio).
+_RULES_COPY_FGTS_MENSAL = frozenset(
+    xmlid for xmlid in _RULE_ACCOUNT_MAP if xmlid.startswith("l10n_br_hr_vacation.")
+)
+
 
 class HrSalaryRule(models.Model):
     _inherit = "hr.salary.rule"
+
+    def _load_records(self, data_list, *args, **kwargs):
+        """Vincula as contas às regras do mapa que chegam depois do módulo.
+
+        O ``post_init_hook`` só vê as regras que já existem na instalação deste
+        módulo. Se o ``l10n_br_hr_vacation`` for instalado depois, as regras de
+        FGTS dele nasceriam sem conta; a rotina é idempotente e só preenche
+        campo vazio, então roda sempre que o carregamento traz regra do mapa.
+        """
+        records = super()._load_records(data_list, *args, **kwargs)
+        if any(data.get("xml_id") in _RULE_ACCOUNT_MAP for data in data_list):
+            self._l10n_br_setup_payroll_accounts()
+        return records
 
     @api.model
     def _l10n_br_find_account(self, company, kind):
@@ -205,6 +247,11 @@ class HrSalaryRule(models.Model):
                 slot = sides.get(side)
                 if not slot or rule[field]:
                     continue
+                if xmlid in _RULES_COPY_FGTS_MENSAL:
+                    mensal = self.env.ref(_FGTS_MENSAL, raise_if_not_found=False)
+                    if mensal and mensal[field]:
+                        vals[field] = mensal[field].id
+                        continue
                 if slot not in accounts:
                     accounts[slot] = self._l10n_br_find_account(company, slot)
                 if accounts[slot]:
