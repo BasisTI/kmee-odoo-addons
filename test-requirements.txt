@@ -1,4 +1,6 @@
-odoo-addon-l10n_br_hr==18.0.*
+# 18.0.1.8.0.3 removed cnpj_cpf from hr.employee, which breaks the l10n_br_hr_payroll demo
+# and tests/common.py. Go back to 18.0.* when the fork migrates.
+odoo-addon-l10n_br_hr==18.0.1.8.0.2
 odoo==18.0.*
 # oca-ci (Ubuntu 22.04) ships cryptography 3.4.8 + pyOpenSSL 21.0.0, the pair Odoo 18
 # supports. l10n_br_nfe now requires brazil_fiscal_client -> requests-pkcs12, which lets pip
