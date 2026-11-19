@@ -1,5 +1,18 @@
-odoo-addon-l10n_br_hr==18.0.*
+# From 18.0.1.8.0.2 on (checked: .2 and .3) l10n_br_hr dropped cnpj_cpf from hr.employee, which
+# breaks the l10n_br_hr_payroll demo and tests/common.py. 18.0.1.6.0.1 is the one the last
+# green 18.0 run (2026-11-17) used. Go back to 18.0.* when the fork migrates.
+odoo-addon-l10n_br_hr==18.0.1.6.0.1
 odoo==18.0.*
+# Last green 18.0 run (2026-11-17, f47d072e) had these l10n_br_* wheels; the newer ones
+# (fiscal 11.2.x, account 4.0.4, nfe 7.12, ...) are suspected of the project_hr_expense demo
+# ParseError (taxes incompatible with the fiscal country). Remove once the cause is confirmed.
+odoo-addon-l10n_br_fiscal==18.0.11.0.0.1
+odoo-addon-l10n_br_fiscal_certificate==18.0.2.2.0
+odoo-addon-l10n_br_fiscal_edi==18.0.3.8.1.1
+odoo-addon-l10n_br_account==18.0.4.0.0
+odoo-addon-l10n_br_nfe==18.0.7.11.0
+odoo-addon-l10n_br_sale==18.0.2.0.0
+odoo-addon-l10n_br_stock_account==18.0.1.4.0.2
 # oca-ci (Ubuntu 22.04) ships cryptography 3.4.8 + pyOpenSSL 21.0.0, the pair Odoo 18
 # supports. l10n_br_nfe now requires brazil_fiscal_client -> requests-pkcs12, which lets pip
 # upgrade cryptography to 50.x; pyOpenSSL 21 then fails to import and
