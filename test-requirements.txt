@@ -1,6 +1,7 @@
-# 18.0.1.8.0.3 removed cnpj_cpf from hr.employee, which breaks the l10n_br_hr_payroll demo
-# and tests/common.py. Go back to 18.0.* when the fork migrates.
-odoo-addon-l10n_br_hr==18.0.1.8.0.2
+# From 18.0.1.8.0.2 on (checked: .2 and .3) l10n_br_hr dropped cnpj_cpf from hr.employee, which
+# breaks the l10n_br_hr_payroll demo and tests/common.py. 18.0.1.6.0.1 is the one the last
+# green 18.0 run (2026-11-17) used. Go back to 18.0.* when the fork migrates.
+odoo-addon-l10n_br_hr==18.0.1.6.0.1
 odoo==18.0.*
 # Last green 18.0 run (2026-11-17, f47d072e) had these l10n_br_* wheels; the newer ones
 # (fiscal 11.2.x, account 4.0.4, nfe 7.12, ...) are suspected of the project_hr_expense demo
