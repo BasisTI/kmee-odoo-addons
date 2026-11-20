@@ -198,7 +198,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
     def test_culpa_reciproca_recalcula_os_encargos_sobre_o_devido(self):
         emp, contract = self._contrato("excesso culpa recíproca", 4000.00)
         segunda = self._segunda_parcela(emp, contract)
-        self.assertAlmostEqualMoney(self._g(segunda, "INSS_13"), 368.60)
+        self.assertAlmostEqualMoney(self._g(segunda, "INSS_13"), 368.58)
         resc = self._rescisao(
             emp,
             contract,
@@ -213,7 +213,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
             l10n_br_aviso_previo="indenizado",
         )
         self.assertAlmostEqualMoney(self._g(resc, "DECIMO_DEVIDO"), 2166.67)
-        self.assertAlmostEqualMoney(self._g(ref, "INSS_13"), 170.69)
+        self.assertAlmostEqualMoney(self._g(ref, "INSS_13"), 170.68)
         self.assertEqual(
             (
                 self._g(resc, "DECIMO_RESCISAO")
@@ -228,7 +228,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
         retido = self._g(segunda, "INSS_13") + self._g(segunda, "IRRF_13")
         devido = self._g(ref, "INSS_13") + self._g(ref, "IRRF_13")
         self.assertAlmostEqualMoney(self._devolucao(resc), retido - devido)
-        self.assertGreaterEqual(self._devolucao(resc), 197.91)
+        self.assertGreaterEqual(self._devolucao(resc), 197.90)
         # Encargos do ano: o retido mais o desta rescisão, menos o que volta,
         # igualam os de uma rescisão sem 13º pago.
         self.assertEqual(self._g(resc, "INSS_13"), 0.0)
@@ -479,7 +479,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
         br = self._br(resc)
         # Devolução exata para um desconto de 4.984,45 (13º mantido: 3.015,55).
         self.assertEqual(
-            resc._l10n_br_creditos_13(br, contract, emp, 4984.45, 0.0), (671.04, 545.72)
+            resc._l10n_br_creditos_13(br, contract, emp, 4984.45, 0.0), (671.05, 545.72)
         )
         # Com o desconto que o líquido comporta, a devolução é exata por imposto.
         desconto = self._g(resc, "DESCONTO_13_EXCESSO")
@@ -514,7 +514,7 @@ class TestDecimoExcessoRescisao(VacationCommon):
         resc = self._rescisao(emp, contract, date(2026, 12, 22), "justa_causa")
         br = self._br(resc)
         self.assertEqual(
-            resc._l10n_br_creditos_13(br, contract, emp, 3710.21, 0.0)[0], 404.78
+            resc._l10n_br_creditos_13(br, contract, emp, 3710.21, 0.0)[0], 404.77
         )
         self.assertAlmostEqualMoney(
             self._g(resc, "DEVOLUCAO_INSS_13"), self._inss_exato(resc, integral)

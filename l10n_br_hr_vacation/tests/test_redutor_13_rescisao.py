@@ -42,19 +42,19 @@ class TestRedutorDecimoTerceiro(VacationCommon):
         Redutor máximo da faixa = 312,89 > imposto -> imposto zero.
         """
         payslip = self._payslip_13(4500.00, 2026)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 431.51)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 431.50)
         self.assertEqual(self._get_line_total(payslip, "IRRF_13"), 0.0)
 
     def test_13_de_6000_redutor_parcial_em_2026(self):
         """13º bruto de R$6.000: 564,85 - 179,75 = R$385,10."""
         payslip = self._payslip_13(6000.00, 2026)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 641.51)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 385.10)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 641.50)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 385.11)
 
     def test_13_de_8000_sem_redutor_em_2026(self):
         """13º bruto acima de R$7.350: corte seco -> R$1.037,85."""
         payslip = self._payslip_13(8000.00, 2026)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 1037.85)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 1037.86)
 
     def test_13_de_4500_em_2025_sem_redutor(self):
         """Competência 12/2025: sem redutor, mas COM desconto simplificado.
@@ -66,7 +66,7 @@ class TestRedutorDecimoTerceiro(VacationCommon):
         simplificado e retinha os 238,10, retenção a maior de R$37,71.
         """
         payslip = self._payslip_13(4500.00, 2025)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 439.60)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 439.58)
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 200.39)
 
     def test_base_do_redutor_do_13_e_o_bruto_do_13(self):
@@ -121,12 +121,12 @@ class TestRedutorRescisao(VacationCommon):
     def test_saldo_salario_com_redutor_parcial_em_2026(self):
         """Saldo de R$6.000: IRRF de R$385,10 (564,85 - 179,75)."""
         payslip = self._rescisao(6000.00, date(2026, 6, 30))
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 385.10)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 385.11)
 
     def test_rescisao_2025_sem_redutor(self):
         """Rescisão em 2025: comportamento antigo preservado."""
         payslip = self._rescisao(6000.00, date(2025, 6, 30))
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 562.63)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 562.64)
 
 
 @tagged("post_install", "-at_install")

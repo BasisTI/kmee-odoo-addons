@@ -71,16 +71,16 @@ class TestCalcINSSPuro(BaseCase):
 
     def test_faixa3_3000(self):
         """R$3.000: faixas 1+2+3."""
-        self.assertMoney(calc_inss(3000.00), 258.82)
+        self.assertMoney(calc_inss(3000.00), 258.81)
 
     def test_teto_exato_7786_02(self):
-        self.assertMoney(calc_inss(7786.02), 908.86)
+        self.assertMoney(calc_inss(7786.02), 908.85)
 
     def test_acima_teto_10000(self):
-        self.assertMoney(calc_inss(10000.00), 908.86)
+        self.assertMoney(calc_inss(10000.00), 908.85)
 
     def test_acima_teto_50000(self):
-        self.assertMoney(calc_inss(50000.00), 908.86)
+        self.assertMoney(calc_inss(50000.00), 908.85)
 
     def test_salario_zero(self):
         self.assertMoney(calc_inss(0.00), 0.00)
@@ -89,7 +89,7 @@ class TestCalcINSSPuro(BaseCase):
         """Centavo adicional não deve causar erro de arredondamento."""
         result = calc_inss(1412.01)
         self.assertGreaterEqual(result, 105.90)
-        self.assertLess(result, 908.86)
+        self.assertLess(result, 908.85)
 
 
 class TestCalcIRRFPuro(BaseCase):

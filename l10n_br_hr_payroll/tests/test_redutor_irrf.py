@@ -142,7 +142,7 @@ class TestRedutorIrrfFolha2026(PayrollCommon):
         Redutor da 1ª faixa (até 5.000) = 312,89, limitado ao imposto → 200,39.
         """
         payslip = self._irrf_2026(4500.00)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 431.51)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 431.50)
         self.assertEqual(self._get_line_total(payslip, "IRRF"), 0.0)
 
     def test_5000_limite_da_isencao_zerado(self):
@@ -158,8 +158,8 @@ class TestRedutorIrrfFolha2026(PayrollCommon):
         Redutor = 978,62 − 0,133145 × 6.000 = 179,75.
         """
         payslip = self._irrf_2026(6000.00)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 641.51)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 385.10)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 641.50)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 385.11)
 
     def test_8000_sem_redutor(self):
         """R$ 8.000 (> 7.350): corte seco, imposto integral de R$ 1.037,85.
@@ -167,8 +167,8 @@ class TestRedutorIrrfFolha2026(PayrollCommon):
         INSS = 921,51 → base legal 7.078,49 → 27,5% − 908,73 = 1.037,85.
         """
         payslip = self._irrf_2026(8000.00)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 921.51)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 1037.85)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 921.50)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 1037.86)
 
     def test_redutor_nao_gera_irrf_negativo(self):
         """O IRRF nunca fica negativo por conta do redutor."""
@@ -204,7 +204,7 @@ class TestRedutorIrrfCompetenciaAnterior(PayrollCommon):
         Simplificado: 3.892,80 → 200,39 (mais favorável) e é o valor retido.
         """
         payslip = self._irrf(4500.00, 2025)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 439.60)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 439.58)
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 200.39)
 
     def test_2025_tabela_de_redutor_vazia(self):

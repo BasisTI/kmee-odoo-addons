@@ -153,17 +153,17 @@ class TestINSSArredondamento(BaseCase):
     def test_faixa3_parcial_39_998(self):
         """R$3.000: faixa 3 parcial = 333.32 × 12% = 39.9984.
 
-        round_money(39.9984) = 40.00 (arredondamento correto).
-        Total = 105.90 + 112.9212 + 39.9984 = 258.8196 → 258.82.
+        Cada faixa é truncada em centavos e as faixas são somadas (TG-158):
+        105.90 + 112.92 + 39.99 = 258.81.
         """
-        self.assertMoney(calc_inss(3000.00), 258.82)
+        self.assertMoney(calc_inss(3000.00), 258.81)
 
     def test_centavo_acima_faixa1(self):
         """R$1.412,01: 1 centavo acima da faixa 1.
 
         Faixa 1: 1412 × 7.5% = 105.90
-        Faixa 2: 0.01 × 9% = 0.0009
-        Total = 105.9009 → 105.90.
+        Faixa 2: 0.01 × 9% = 0.0009 → 0.00 (truncado)
+        Total = 105.90.
         """
         self.assertMoney(calc_inss(1412.01), 105.90)
 
@@ -171,9 +171,9 @@ class TestINSSArredondamento(BaseCase):
         """R$2.666,69: 1 centavo acima da faixa 2.
 
         Faixa 1: 1412 × 7.5% = 105.90
-        Faixa 2: 1254.68 × 9% = 112.9212
-        Faixa 3: 0.01 × 12% = 0.0012
-        Total = 218.8224 → 218.82.
+        Faixa 2: 1254.68 × 9% = 112.9212 → 112.92
+        Faixa 3: 0.01 × 12% = 0.0012 → 0.00 (truncado)
+        Total = 218.82.
         """
         self.assertMoney(calc_inss(2666.69), 218.82)
 
@@ -181,10 +181,10 @@ class TestINSSArredondamento(BaseCase):
         """R$4.000,04: 1 centavo acima da faixa 3.
 
         Faixa 1: 1412 × 7.5% = 105.90
-        Faixa 2: 1254.68 × 9% = 112.9212
+        Faixa 2: 1254.68 × 9% = 112.9212 → 112.92
         Faixa 3: 1333.35 × 12% = 160.002
-        Faixa 4: 0.01 × 14% = 0.0014
-        Total = 378.8246 → 378.82.
+        Faixa 4: 0.01 × 14% = 0.0014 → 0.00 (truncado)
+        Total = 378.82.
         """
         result = calc_inss(4000.04)
         self.assertMoney(result, 378.82)
@@ -194,7 +194,7 @@ class TestINSSArredondamento(BaseCase):
         # R$ 3.333,33 → faixas progressivas com frações
         result = calc_inss(3333.33)
         self.assertGreater(result, 0.0)
-        self.assertLessEqual(result, 908.86)
+        self.assertLessEqual(result, 908.85)
         # Verifica que resultado tem exatamente 2 decimais
         self.assertEqual(result, round_money(result))
 

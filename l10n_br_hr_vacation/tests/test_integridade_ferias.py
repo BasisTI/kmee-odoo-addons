@@ -77,7 +77,7 @@ class TestIntegridadeFerias(TestFeriasFolhaMensal):
         recibo = self._recibo(emp, contract, F_INI, F_FIM, 10)
         self.assertAlmostEqualMoney(self._sal(mensal), 2400)
         recibo.compute_sheet()  # agora o recibo tem GROSS e INSS
-        self.assertAlmostEqualMoney(self._get_line_total(mensal, "INSS"), 248.60)
+        self.assertAlmostEqualMoney(self._get_line_total(mensal, "INSS"), 248.58)
 
     def test_a_recibo_tardio_com_mensal_confirmado_e_recusado(self):
         emp, contract = self._contrato()
@@ -121,7 +121,7 @@ class TestIntegridadeFerias(TestFeriasFolhaMensal):
         mensal = self._mensal(emp, contract)
         sem_inss_do_recibo = self._get_line_total(mensal, "INSS")
         recibo.compute_sheet()
-        self.assertAlmostEqualMoney(self._get_line_total(mensal, "INSS"), 248.60)
+        self.assertAlmostEqualMoney(self._get_line_total(mensal, "INSS"), 248.58)
         self.assertNotAlmostEqual(
             self._get_line_total(mensal, "INSS"), sem_inss_do_recibo, places=2
         )
