@@ -7,6 +7,7 @@ Admissão em 15/01/2023, salário 3.000,00, períodos aquisitivos a partir de 20
 dias (projeção até 02/02/2026). O período de 20/01/2025 a 19/01/2026 se completa
 na projeção e precisa da própria alocação.
 """
+import re
 from datetime import date
 
 from odoo.exceptions import UserError
@@ -70,7 +71,7 @@ class TestFeriasPeriodoDeslocado(VacationCommon):
     def test_deslocado_so_com_a_alocacao_do_periodo_anterior_recusa(self):
         emp, contract = self._contrato()
         self._alocacao(emp, ANTERIOR)
-        self._recusa(emp, contract, "15/01/2025 a 14/01/2026")
+        self._recusa(emp, contract, "20/01/2025 a 19/01/2026")
 
     def test_deslocado_com_a_alocacao_do_periodo_devido_calcula(self):
         for anterior, periodo in (
@@ -149,7 +150,7 @@ class TestFeriasPeriodoDeslocado(VacationCommon):
 
     # ---- 3. trava da alocação usada ------------------------------------------
 
-    def test_alocacao_usada_por_rescisao_confirmada_recusa_vinculo_e_arquivo(self):
+    def test_alocacao_usada_por_rescisao_confirmada_recusa_empregado_e_tipo(self):
         emp, contract = self._contrato()
         outro = self._create_employee()
         aloc = self._alocacao(emp, DEVIDO)
@@ -161,7 +162,6 @@ class TestFeriasPeriodoDeslocado(VacationCommon):
         for vals in (
             {"employee_id": outro.id},
             {"holiday_status_id": outro_tipo.id},
-            {"active": False},
         ):
             with self.assertRaisesRegex(UserError, "rescisão confirmada"):
                 with self.env.cr.savepoint():
@@ -198,3 +198,69 @@ class TestFeriasPeriodoDeslocado(VacationCommon):
         with self.assertRaisesRegex(UserError, "rescisão confirmada"):
             with self.env.cr.savepoint():
                 alheia.write({"employee_id": emp.id})
+
+    # ---- r2: a recusa indica a alocação que, criada, faz a rescisão calcular ---
+
+    def _datas_da_recusa(self, emp, contract, desligamento=DESLIGAMENTO):
+        with self.assertRaises(UserError) as cm, self.env.cr.savepoint():
+            self._rescisao(emp, contract, desligamento)
+        achou = re.search(
+            r"período aquisitivo de (\d\d)/(\d\d)/(\d{4}) a (\d\d)/(\d\d)/(\d{4})",
+            cm.exception.args[0],
+        )
+        self.assertTrue(achou, cm.exception.args[0])
+        d1, m1, a1, d2, m2, a2 = (int(g) for g in achou.groups())
+        return (date(a1, m1, d1), date(a2, m2, d2))
+
+    def test_recusa_indica_a_alocacao_do_periodo_deslocado_e_ela_resolve(self):
+        emp, contract = self._contrato()
+        self._alocacao(emp, ANTERIOR)
+        periodo = self._datas_da_recusa(emp, contract)
+        self.assertEqual(periodo, DEVIDO)
+        self._alocacao(emp, periodo)
+        slip = self._rescisao(emp, contract)
+        self.assertEqual(self._get_line_total(slip, "FERIAS_VENCIDAS"), 6000.0)
+
+    def test_recusa_indica_a_alocacao_com_admissao_em_29_de_fevereiro(self):
+        emp = self._create_employee()
+        contract = self._create_contract(
+            emp, wage=SALARIO, date_start=date(2024, 2, 29)
+        )
+        self._alocacao(emp, (date(2024, 2, 29), date(2025, 2, 28)))
+        desligamento = date(2026, 1, 26)
+        periodo = self._datas_da_recusa(emp, contract, desligamento)
+        self.assertEqual(periodo, (date(2025, 3, 1), date(2026, 2, 28)))
+        self._alocacao(emp, periodo)
+        slip = self._rescisao(emp, contract, desligamento)
+        self.assertEqual(self._get_line_total(slip, "FERIAS_VENCIDAS"), 6000.0)
+
+    def test_recusa_sem_alocacao_indica_o_aniversario_de_admissao(self):
+        emp, contract = self._contrato()
+        self.assertEqual(
+            self._datas_da_recusa(emp, contract),
+            (date(2025, 1, 15), date(2026, 1, 14)),
+        )
+
+    def test_recusa_depois_de_varios_anos_indica_o_ultimo_periodo(self):
+        emp, contract = self._contrato()
+        self._alocacao(emp, (date(2023, 1, 20), date(2024, 1, 19)))
+        periodo = self._datas_da_recusa(emp, contract)
+        self.assertEqual(periodo, DEVIDO)
+
+    def test_mensagens_nao_falam_em_arquivar(self):
+        emp, contract = self._contrato()
+        self._alocacao(emp, (date(2025, 1, 15), date(2026, 1, 14)))
+        self._alocacao(emp, DEVIDO)
+        with self.assertRaises(UserError) as cm, self.env.cr.savepoint():
+            self._rescisao(emp, contract)
+        self.assertNotIn("arquiv", cm.exception.args[0].lower())
+
+    def test_gravar_o_mesmo_empregado_e_tipo_na_alocacao_paga_passa(self):
+        emp, contract = self._contrato()
+        aloc = self._alocacao(emp, DEVIDO)
+        slip = self._rescisao(emp, contract)
+        slip.action_payslip_done()
+        aloc.write(
+            {"employee_id": emp.id, "holiday_status_id": self.leave_type_ferias.id}
+        )
+        self.assertEqual(aloc.employee_id, emp)

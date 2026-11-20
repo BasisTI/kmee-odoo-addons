@@ -122,6 +122,28 @@ class HrLeaveAllocation(models.Model):
             lambda a: a.date_to > limite
         )
 
+    @api.model
+    def _l10n_br_periodo_a_criar(self, employee, referencia, aniversario):
+        """TG-160: ``(inicio, fim)`` da alocação que a rescisão pede quando falta
+        a do período que fecha até ``referencia``.
+
+        Com alocação de Férias validada, o período começa no dia seguinte ao fim
+        da última e dura um ano a partir daí, contado da data-base (sem
+        acumular o recuo do ``relativedelta`` em 29/02); se passaram vários
+        anos, vale o último que se completa até ``referencia``. Sem alocação, o
+        aniversário de admissão (``aniversario``)."""
+        anteriores = self._l10n_br_ferias_validadas_ate(employee, referencia)
+        if not anteriores:
+            return aniversario
+        base = max(anteriores.mapped("date_to")) + relativedelta(days=1)
+        anos = 1
+        while base + relativedelta(years=anos + 1, days=-1) <= referencia:
+            anos += 1
+        fim = base + relativedelta(years=anos, days=-1)
+        if fim > referencia:
+            return aniversario
+        return base + relativedelta(years=anos - 1), fim
+
     def _l10n_br_sobrepostas(self):
         """TG-160: os pares de alocações deste conjunto com períodos que se
         sobrepõem. Períodos consecutivos (``date_to`` de um na véspera do
@@ -156,11 +178,17 @@ class HrLeaveAllocation(models.Model):
 
     def write(self, vals):
         sai_de_validada = "state" in vals and vals["state"] != "validate"
-        # TG-160: trocar o empregado, o tipo ou arquivar a alocação paga tira o
-        # período da rescisão confirmada tanto quanto mexer nos dias.
-        muda_vinculo = {"employee_id", "holiday_status_id"} & set(vals) or vals.get(
-            "active"
-        ) is False
+        # TG-160: trocar o empregado ou o tipo da alocação paga tira o período da
+        # rescisão confirmada tanto quanto mexer nos dias; gravar o mesmo valor
+        # não troca nada.
+        muda_vinculo = any(
+            ("employee_id" in vals and vals["employee_id"] != alloc.employee_id.id)
+            or (
+                "holiday_status_id" in vals
+                and vals["holiday_status_id"] != alloc.holiday_status_id.id
+            )
+            for alloc in self
+        )
         if ({"number_of_days"} & set(vals) or sai_de_validada or muda_vinculo) and not {
             "date_from",
             "date_to",
@@ -240,8 +268,9 @@ class HrLeaveAllocation(models.Model):
                         "O período aquisitivo foi pago pela rescisão confirmada "
                         "%(rescisoes)s (férias vencidas ou do período que se "
                         "completa no aviso prévio indenizado): as datas, as "
-                        "faltas, os dias e o estado definem o valor pago. Volte a rescisão "
-                        "para rascunho antes de alterá-las.",
+                        "faltas, os dias, o estado, o empregado e o tipo definem o "
+                        "valor pago. Volte a rescisão para rascunho antes de "
+                        "alterá-las.",
                         rescisoes=", ".join(
                             usadas.mapped(lambda r: r.number or r.name)
                         ),

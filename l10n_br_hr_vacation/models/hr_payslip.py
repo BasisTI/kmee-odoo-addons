@@ -756,7 +756,7 @@ class HrPayslip(models.Model):
                         "Rescisão: holerite %(holerite)s, empregado %(empregado)s: "
                         "há alocações de Férias validadas com o mesmo período "
                         "aquisitivo: %(pares)s. A rescisão pagaria o período mais "
-                        "de uma vez. Recuse ou arquive a alocação duplicada e "
+                        "de uma vez. Recuse a alocação duplicada e "
                         "calcule de novo.",
                         holerite=slip.number or slip.name or slip.display_name,
                         empregado=slip.employee_id.name,
@@ -787,6 +787,11 @@ class HrPayslip(models.Model):
             # anterior termina antes e não vale.
             if Alocacao._l10n_br_do_periodo_que_fecha(slip.employee_id, referencia):
                 continue
+            # O período a criar segue a última alocação validada (dia seguinte
+            # ao fim dela, sem sobrepor); sem alocação, o aniversário.
+            inicio, fim = Alocacao._l10n_br_periodo_a_criar(
+                slip.employee_id, referencia, (inicio, fim)
+            )
             projetado = fim > slip.date_to
             recusas.append(
                 _(
