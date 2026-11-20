@@ -191,8 +191,11 @@ class TestFeriasProjecaoAviso(VacationCommon):
         indicação não se sobrepõe a ela (TG-165): termina na véspera."""
         emp, contract = self._contrato()
         self._alocacao(emp, date(2025, 2, 5), date(2026, 2, 4))
+        # savepoint: a recusa desfaz o holerite, que senão ficaria no período e
+        # a validação de holerites sobrepostos (outro addon) barraria o próximo
         with self.assertRaisesRegex(UserError, "15/01/2025 a 04/02/2025"):
-            self._rescisao(emp, contract, date(2025, 12, 31))
+            with self.env.cr.savepoint():
+                self._rescisao(emp, contract, date(2025, 12, 31))
         self._alocacao(emp, date(2025, 1, 15), date(2025, 2, 4))
         self._rescisao(emp, contract, date(2025, 12, 31))
 

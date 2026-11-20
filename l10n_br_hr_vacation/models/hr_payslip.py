@@ -833,6 +833,20 @@ class HrPayslip(models.Model):
                     if projetado
                     else _("antes do desligamento"),
                 )
+                + (
+                    _(
+                        " Atenção: este período é parcial (termina na véspera da "
+                        "alocação validada de %(seguinte_inicio)s a "
+                        "%(seguinte_fim)s, id %(seguinte_id)s). Depois de criá-lo, "
+                        "ajuste os dias de direito dessa alocação ou dos dois "
+                        "períodos, para não somar mais de um ano de direito.",
+                        seguinte_inicio=seguinte.date_from.strftime("%d/%m/%Y"),
+                        seguinte_fim=seguinte.date_to.strftime("%d/%m/%Y"),
+                        seguinte_id=seguinte.id,
+                    )
+                    if seguinte
+                    else ""
+                )
             )
         if recusas:
             raise UserError("\n".join(recusas))
@@ -1030,6 +1044,17 @@ class HrPayslip(models.Model):
             alloc = rec.l10n_br_ferias_allocation_id
             if not alloc or not alloc.date_to or not rec.date_from:
                 continue
+            if alloc.l10n_br_periodo_perdido:
+                raise ValidationError(
+                    _(
+                        "O período aquisitivo de %(inicio)s a %(fim)s está marcado "
+                        "como perdido (CLT art. 133): não tem férias a gozar nem a "
+                        "pagar. Escolha outro período ou, se a marca foi um erro, "
+                        "desmarque a alocação.",
+                        inicio=fields.Date.to_string(alloc.date_from),
+                        fim=fields.Date.to_string(alloc.date_to),
+                    )
+                )
             if alloc.date_to >= rec.date_from:
                 raise ValidationError(
                     _(

@@ -100,12 +100,46 @@ class HrLeaveAllocation(models.Model):
         )
 
     @api.model
+    def _l10n_br_inicio_do_vinculo(self, employee, contrato):
+        """TG-165: início do vínculo do ``contrato`` (fonte única do vínculo).
+
+        É o ``_get_first_contract_date(no_gap=True)`` do ``hr_contract``: contratos
+        com intervalo de menos de 4 dias entre eles são o mesmo vínculo (troca de
+        contrato não é readmissão); o intervalo maior separa os vínculos. Só
+        contam os contratos que começam até o início de ``contrato`` (um contrato
+        posterior, de outro vínculo, não interfere) e os cancelados ficam fora."""
+        if not contrato or not contrato.date_start:
+            return False
+        inicio = employee.with_context(
+            before_date=contrato.date_start
+        )._get_first_contract_date(no_gap=True)
+        return inicio or contrato.date_start
+
+    @api.model
+    def _l10n_br_inicios_de_vinculo(self, employee):
+        """TG-165: ordenadas, as datas de início de cada vínculo do empregado
+        (a mesma fonte, ``_l10n_br_inicio_do_vinculo``, para cada contrato)."""
+        contratos = employee.sudo().contract_ids.filtered(
+            lambda c: c.state != "cancel" and c.date_start
+        )
+        return sorted({self._l10n_br_inicio_do_vinculo(employee, c) for c in contratos})
+
+    @api.model
+    def _l10n_br_vinculo_de(self, inicios, data):
+        """Início do vínculo a que ``data`` pertence (``False`` antes do primeiro:
+        dado sem contrato, como o de um vínculo anterior sem registro)."""
+        anteriores = [i for i in inicios if i <= data]
+        return anteriores[-1] if anteriores else False
+
+    @api.model
     def _l10n_br_ferias_do_vinculo(self, employee, referencia, contrato=None):
         """TG-165: alocações de Férias validadas do empregado que começam até
         ``referencia`` (a data projetada da rescisão), inclusive as que terminam
-        depois dela. Com ``contrato``, só as do vínculo atual (``date_from`` na
-        data de admissão ou depois): numa readmissão, as do vínculo anterior não
-        entram em indicação, exigência, sobreposição nem pagamento."""
+        depois dela. Com ``contrato``, só as do vínculo atual (``date_from`` no
+        início do vínculo ou depois, ``_l10n_br_inicio_do_vinculo``): numa
+        readmissão, as do vínculo anterior não entram em indicação, exigência,
+        sobreposição nem pagamento; numa troca de contrato sem intervalo, as do
+        contrato anterior continuam valendo."""
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
         )
@@ -118,8 +152,9 @@ class HrLeaveAllocation(models.Model):
             ("date_to", "!=", False),
             ("date_from", "<=", referencia),
         ]
-        if contrato and contrato.date_start:
-            dominio.append(("date_from", ">=", contrato.date_start))
+        inicio = self._l10n_br_inicio_do_vinculo(employee, contrato)
+        if inicio:
+            dominio.append(("date_from", ">=", inicio))
         return self.search(dominio)
 
     @api.model
@@ -263,12 +298,39 @@ class HrLeaveAllocation(models.Model):
                     )
                 )
             self._l10n_br_recusar_se_usada_em_rescisao(vals)
+        if vals.get("l10n_br_periodo_perdido"):
+            self._l10n_br_recusar_marca_com_recibo()
         res = super().write(vals)
         if {"state", "date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(
             vals
         ):
             self._l10n_br_reconferir_notas()
         return res
+
+    def _l10n_br_recusar_marca_com_recibo(self):
+        """TG-165: o período perdido não se goza nem se paga: não se marca a
+        alocação que já tem recibo de férias (rascunho ou confirmado)."""
+        recibos = (
+            self.env["hr.payslip"]
+            .sudo()
+            .search(
+                [
+                    ("l10n_br_ferias_allocation_id", "in", self.ids),
+                    ("state", "!=", "cancel"),
+                ]
+            )
+        )
+        if recibos:
+            raise UserError(
+                _(
+                    "A alocação já tem recibo de férias (%(recibos)s): um período "
+                    "perdido (CLT art. 133) não se paga. Cancele o recibo antes "
+                    "de marcar a alocação.",
+                    recibos=", ".join(
+                        r.number or r.name or r.display_name for r in recibos
+                    ),
+                )
+            )
 
     def _l10n_br_recusar_se_usada_em_rescisao(self, vals):
         """TG-147: o período que uma rescisão confirmada pagou (vencido ou o que
@@ -330,13 +392,16 @@ class HrLeaveAllocation(models.Model):
     # real, o vencido primeiro (férias em dobro) e depois o do concessivo.
 
     @api.model
-    def _l10n_br_alocacoes_ferias(self, employee):
+    def _l10n_br_alocacoes_ferias(self, employee, data=None):
+        """Alocações de Férias validadas do empregado. Com ``data``, só as do
+        vínculo a que ela pertence (TG-165): a ausência de um vínculo não debita
+        a alocação do anterior."""
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
         )
         if not vacation_type or not employee:
             return self.browse()
-        return (
+        alocacoes = (
             self.sudo()
             .with_context(active_test=False)
             .search(
@@ -349,6 +414,13 @@ class HrLeaveAllocation(models.Model):
                 order="date_to, id",
             )
         )
+        if data:
+            inicios = self._l10n_br_inicios_de_vinculo(employee)
+            vinculo = self._l10n_br_vinculo_de(inicios, data)
+            alocacoes = alocacoes.filtered(
+                lambda a: self._l10n_br_vinculo_de(inicios, a.date_from) == vinculo
+            )
+        return alocacoes
 
     @api.model
     def _l10n_br_periodo_do_recibo(self, employee, datas):
@@ -459,7 +531,7 @@ class HrLeaveAllocation(models.Model):
         return alocacoes.browse()
 
     @api.model
-    def _l10n_br_distribuir(self, alocacoes, ausencias):
+    def _l10n_br_distribuir(self, alocacoes, ausencias, inicios=None):
         """Debita, em ordem e em dias corridos, cada ausência num ÚNICO período.
 
         Sem transbordo: o que passa do saldo do período fica como excesso (a
@@ -473,6 +545,25 @@ class HrLeaveAllocation(models.Model):
             nenhum tem saldo); dias sem saldo (``{id: dias}``); saldo do período
             antes da ausência (``{id: dias}``).
         """
+        if inicios:
+            # TG-165: cada vínculo (readmissão) distribui as suas ausências nas
+            # suas alocações; a ausência do vínculo novo não debita a do antigo.
+            vinculo = self._l10n_br_vinculo_de
+            restante, destino, excesso, saldo_antes = {}, {}, {}, {}
+            for chave_vinculo in {vinculo(inicios, a.date_from) for a in alocacoes} | {
+                vinculo(inicios, t[1]) for t in ausencias
+            }:
+                partes = self._l10n_br_distribuir(
+                    alocacoes.filtered(
+                        lambda a: vinculo(inicios, a.date_from) == chave_vinculo
+                    ),
+                    [t for t in ausencias if vinculo(inicios, t[1]) == chave_vinculo],
+                )
+                for acumulado, parte in zip(
+                    (restante, destino, excesso, saldo_antes), partes
+                ):
+                    acumulado.update(parte)
+            return restante, destino, excesso, saldo_antes
         restante = self._l10n_br_saldo_corridos(alocacoes)
         horizontes = {
             a: a._l10n_br_horizonte() for a in alocacoes
@@ -521,16 +612,18 @@ class HrLeaveAllocation(models.Model):
             ausencias += [(c, i, f, do_recibo.get(i, 0)) for c, i, f in extras]
             ausencias.sort(key=lambda t: (t[1], t[0]))
         _restante, destino, excesso, saldo = self._l10n_br_distribuir(
-            alocacoes, ausencias
+            alocacoes, ausencias, self._l10n_br_inicios_de_vinculo(employee)
         )
         return {c: (destino[c], excesso[c], saldo[c]) for c in destino}
 
     @api.model
     def _l10n_br_outro_periodo_com_saldo(self, employee, alloc, data, excluir=()):
         """Há outro período, completo em ``data`` e dentro do horizonte, com saldo?"""
-        alocacoes = self._l10n_br_alocacoes_ferias(employee)
+        alocacoes = self._l10n_br_alocacoes_ferias(employee, data)
         ausencias = self._l10n_br_ausencias_ferias(employee, excluir=excluir)
-        restante = self._l10n_br_distribuir(alocacoes, ausencias)[0]
+        restante = self._l10n_br_distribuir(
+            alocacoes, ausencias, self._l10n_br_inicios_de_vinculo(employee)
+        )[0]
         return any(
             a != alloc
             and a.date_to < data
