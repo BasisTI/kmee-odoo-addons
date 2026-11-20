@@ -115,12 +115,29 @@ período não é pago em dobro.
 A alocação de Férias é a única fonte do período: a rescisão **recusa o cálculo**
 se não houver alocação validada do último período aquisitivo completo até a data
 projetada (a mensagem traz o empregado, o holerite e as datas do período a
-criar; no cálculo em lote, junta todos os recusados). Vale a alocação cujo fim
-cai entre o início do período devido e a data projetada, o que cobre o período
+criar; no cálculo em lote, junta todos os recusados). Vale a alocação que
+termina no último ano até a data projetada, o que cobre o período
 reiniciado no retorno ao serviço (CLT art. 133 § 2º). Crie e valide a
 alocação, e calcule de novo. Com a rescisão confirmada, as datas, as faltas, os
-dias e o estado (recusar) da alocação que ela pagou não podem ser alterados:
-volte a rescisão para rascunho.
+dias, o estado (recusar), o empregado e o tipo da alocação que ela pagou não
+podem ser alterados (gravar o mesmo valor não conta): volte a rescisão para
+rascunho.
+
+As datas que a recusa indica seguem a última alocação de Férias validada do
+empregado (o dia seguinte ao fim dela e um ano a partir daí), o que vale também
+para os períodos fora do aniversário de admissão e para admissão em 29/02; sem
+nenhuma alocação, o aniversário de admissão.
+
+**Limite:** o módulo não modela o período aquisitivo perdido (CLT art. 133):
+quem teve o período perdido por afastamento precisa registrar a alocação dele
+com as datas do período inteiro.
+
+Mesmo com os períodos fora do aniversário de admissão, a alocação do período
+anterior não vale pelo que se completa na projeção (só a que termina no último
+ano até a data projetada). A rescisão também **recusa** duas alocações de
+Férias validadas com períodos que se sobrepõem (pagariam o período mais de uma
+vez): a mensagem lista as alocações; recuse a duplicada. Períodos
+consecutivos, um começando no dia seguinte ao fim do outro, não se sobrepõem.
 
 * **Término antecipado do contrato a prazo:** informe o ``Termo do Contrato a
   Prazo``. Pelo empregador, a rescisão paga a indenização do art. 479 (metade

@@ -36,11 +36,23 @@ class TestFgtsRescisaoLacunas(VacationCommon):
                 ("employee_id", "=", emp.id),
                 ("holiday_status_id", "=", self.leave_type_ferias.id),
                 ("state", "=", "validate"),
-                ("date_to", ">=", inicio),
+                ("date_to", ">", ate - relativedelta(years=1)),
                 ("date_to", "<=", ate),
             ]
         )
         if not existe:
+            # TG-160: sem sobrepor a alocação anterior (a do recibo de férias
+            # termina em 01/01/2026, um dia depois do aniversário).
+            anteriores = self.env["hr.leave.allocation"].search(
+                [
+                    ("employee_id", "=", emp.id),
+                    ("holiday_status_id", "=", self.leave_type_ferias.id),
+                    ("state", "=", "validate"),
+                    ("date_to", ">=", inicio),
+                ]
+            )
+            for anterior in anteriores:
+                inicio = max(inicio, anterior.date_to + timedelta(days=1))
             self.env["hr.leave.allocation"].create(
                 {
                     "employee_id": emp.id,
@@ -49,6 +61,33 @@ class TestFgtsRescisaoLacunas(VacationCommon):
                     "date_to": fim,
                 }
             ).action_validate()
+
+    def _alocacao_do_recibo(self, emp):
+        """Alocação do período de 2025 do recibo de férias. TG-160: a rescisão
+        recusa duas alocações do mesmo período, então reaproveita a que o
+        ``_alocacao_do_periodo`` já criou."""
+        Alloc = self.env["hr.leave.allocation"]
+        alloc = Alloc.search(
+            [
+                ("employee_id", "=", emp.id),
+                ("holiday_status_id", "=", self.leave_type_ferias.id),
+                ("state", "=", "validate"),
+                ("date_from", "<=", date(2026, 1, 1)),
+                ("date_to", ">=", date(2025, 1, 2)),
+            ],
+            limit=1,
+        )
+        if not alloc:
+            alloc = Alloc.create(
+                {
+                    "employee_id": emp.id,
+                    "holiday_status_id": self.leave_type_ferias.id,
+                    "date_from": date(2025, 1, 2),
+                    "date_to": date(2026, 1, 1),
+                }
+            )
+            alloc.action_validate()
+        return alloc
 
     def _contrato(self, nome="FGTS lacunas", wage=2500.00):
         emp = self._create_employee(nome)
@@ -157,15 +196,7 @@ class TestFgtsRescisaoLacunas(VacationCommon):
 
     def test_recibo_de_ferias_do_mes_entra_na_base(self):
         emp, contract = self._contrato()
-        alloc = self.env["hr.leave.allocation"].create(
-            {
-                "employee_id": emp.id,
-                "holiday_status_id": self.leave_type_ferias.id,
-                "date_from": date(2025, 1, 2),
-                "date_to": date(2026, 1, 1),
-            }
-        )
-        alloc.action_validate()
+        alloc = self._alocacao_do_recibo(emp)
         recibo = self._holerite(
             emp,
             contract,
@@ -323,15 +354,7 @@ class TestFgtsRescisaoLacunas(VacationCommon):
     # --- r2: uma fonte só para os holerites da base da multa -----------------
 
     def _recibo(self, emp, contract, de, ate, dias):
-        alloc = self.env["hr.leave.allocation"].create(
-            {
-                "employee_id": emp.id,
-                "holiday_status_id": self.leave_type_ferias.id,
-                "date_from": date(2025, 1, 2),
-                "date_to": date(2026, 1, 1),
-            }
-        )
-        alloc.action_validate()
+        alloc = self._alocacao_do_recibo(emp)
         return self._holerite(
             emp,
             contract,
