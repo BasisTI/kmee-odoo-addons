@@ -130,20 +130,28 @@ class ESocialS2299(models.Model):
         return self.ind_pagto_api or "N", self.dt_proj_fim_api
 
     def _pens_alim(self):
-        """``pensAlim``: sempre 0 (sem retenção de FGTS para pensão alimentícia).
+        """``pensAlim``/``percAliment``/``vrAlim``: retenção sobre o saldo do FGTS.
 
         Leiaute S-1.3, ``evtDeslig.xsd``, infoDeslig/pensAlim, e MOS S-1.3
-        (S-2299, item 5, p. 281-282): o grupo informa a retenção da pensão
-        sobre o **saldo do FGTS**, obrigatório e exclusivo para o celetista
-        (``tpRegTrab`` = 1 no S-2200, que o módulo declara para todo vínculo).
-        A pensão que a folha desconta do empregado
+        (S-2299, item 5, p. 281-282): 0 sem retenção, 1 percentual, 2 valor,
+        3 percentual e valor. A fonte é o cadastro do empregado
+        (``l10n_br_pensao_fgts_percentual``/``_valor``, decisão judicial
+        própria). A pensão que a folha desconta
         (``l10n_br_pensao_percentual``/``l10n_br_pensao_alimenticia``) é sobre a
-        remuneração, outra base, e não entra aqui. Enquanto o cadastro não tiver
-        um campo próprio de retenção sobre o saldo do FGTS, a declaração é 0, o
-        mesmo que o TRCT deixa em branco no campo 29 (decisão TG-137#P1).
+        remuneração, outra base, e não entra aqui (TG-137#P1).
         """
         self.ensure_one()
-        return {"pens_alim": 0}
+        emp = self.employee_id
+        perc = emp.l10n_br_pensao_fgts_percentual
+        valor = emp.l10n_br_pensao_fgts_valor
+        if not perc and not valor:
+            return {"pens_alim": 0}
+        dados = {"pens_alim": (1 if perc else 0) + (2 if valor else 0)}
+        if perc:
+            dados["perc_aliment"] = "%.2f" % perc
+        if valor:
+            dados["vr_alim"] = "%.2f" % valor
+        return dados
 
     def _data_aviso_previo(self):
         """``dtAvPrv``: data de concessão do aviso prévio, quando a folha a tem.

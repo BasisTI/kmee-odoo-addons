@@ -21,6 +21,11 @@
                                 invisible="not l10n_br_molestia_grave"
                             />
                         </group>
+                        <group string="Pens&#227;o sobre o FGTS">
+                            <field name="l10n_br_pensao_fgts_percentual" />
+                            <field name="l10n_br_pensao_fgts_valor" />
+                            <field name="l10n_br_pensao_fgts_origem" />
+                        </group>
                         <group string="Sal&#225;rio Fam&#237;lia">
                             <field name="l10n_br_num_filhos_sf" />
                             <field name="l10n_br_filhos_invalidos_sf" />

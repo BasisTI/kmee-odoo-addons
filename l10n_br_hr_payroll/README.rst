@@ -295,6 +295,15 @@ Noturno" aceita valores maiores que 0 e até 100. Só a regra salarial padrão d
 adicional noturno lê esse percentual: regra personalizada usa a própria fórmula
 e o ignora.
 
+**Pensão alimentícia sobre o FGTS**
+
+Na aba *Folha de Pagamento* do empregado, o grupo *Pensão sobre o FGTS* guarda a
+retenção sobre o saldo do FGTS fixada por decisão judicial própria: percentual,
+valor fixo (um, outro ou ambos) e a origem (vara e processo). É outra base que a
+pensão da folha e não entra no cálculo da rescisão. O S-2299 declara ``pensAlim``
+0 (sem dado), 1 (percentual), 2 (valor) ou 3 (ambos) com ``percAliment`` e
+``vrAlim``, e o TRCT mostra o campo 29.
+
 Bug Tracker
 ===========
 

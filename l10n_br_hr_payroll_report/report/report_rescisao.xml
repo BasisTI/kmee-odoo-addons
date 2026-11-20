@@ -218,6 +218,10 @@
                                         t-if="t['contrato']['pensao_fgts']"
                                         t-esc="'%.2f' % t['contrato']['pensao_fgts']"
                                     />
+                                    <span
+                                        t-if="t['contrato']['pensao_fgts_valor']"
+                                        t-esc="' R$ %.2f' % t['contrato']['pensao_fgts_valor']"
+                                    />
                                 </td>
                                 <td colspan="2">
                                     <strong>30 Categoria do trabalhador:</strong>

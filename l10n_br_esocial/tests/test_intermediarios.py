@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 from lxml import etree
 
-from odoo.exceptions import UserError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests.common import TransactionCase
 from odoo.tools import mute_logger
 
@@ -1606,6 +1606,62 @@ class TestS2299(TestESocialIntermediarioBase):
         self.assertEqual(info.findtext("{*}pensAlim"), "0")
         self.assertIsNone(info.find("{*}percAliment"))
         self.assertIsNone(info.find("{*}vrAlim"))
+
+    def test_s2299_pensao_fgts_percentual_valor_e_ambos(self):
+        """TG-146: a retenção sobre o FGTS (campos próprios) vira pensAlim 1/2/3."""
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        casos = (
+            (12.5, 0.0, 1, "12.50", None),
+            (0.0, 300.0, 2, None, "300.00"),
+            (10.0, 250.5, 3, "10.00", "250.50"),
+        )
+        for perc, valor, tipo, p_xml, v_xml in casos:
+            with self.subTest(perc=perc, valor=valor):
+                self.employee.write(
+                    {
+                        "l10n_br_pensao_fgts_percentual": perc,
+                        "l10n_br_pensao_fgts_valor": valor,
+                    }
+                )
+                data = s2299._to_esociallib_dict()
+                self.assertEqual(data["pens_alim"], tipo)
+                self.assertEqual(data.get("perc_aliment"), p_xml)
+                self.assertEqual(data.get("vr_alim"), v_xml)
+
+    def test_s2299_pensao_fgts_xml_valido_no_xsd(self):
+        if not HAS_ESOCIALLIB:
+            self.skipTest("esociallib não instalada")
+        s2299 = self._s2299_rescisao(payslip_id=False)
+        casos = (
+            (0.0, 0.0, "0", None, None),
+            (12.5, 0.0, "1", "12.50", None),
+            (0.0, 300.0, "2", None, "300.00"),
+            (10.0, 250.5, "3", "10.00", "250.50"),
+        )
+        for perc, valor, tipo, p_xml, v_xml in casos:
+            with self.subTest(tipo=tipo):
+                self.employee.write(
+                    {
+                        "l10n_br_pensao_fgts_percentual": perc,
+                        "l10n_br_pensao_fgts_valor": valor,
+                    }
+                )
+                with mute_logger(self.LOG_BASE):
+                    xml = s2299._gerar_xml()
+                info = etree.fromstring(xml.encode()).find(".//{*}infoDeslig")
+                self.assertEqual(info.findtext("{*}pensAlim"), tipo)
+                self.assertEqual(info.findtext("{*}percAliment"), p_xml)
+                self.assertEqual(info.findtext("{*}vrAlim"), v_xml)
+
+    def test_pensao_fgts_limites_do_cadastro(self):
+        for campo, valor in (
+            ("l10n_br_pensao_fgts_percentual", 100.01),
+            ("l10n_br_pensao_fgts_percentual", -1.0),
+            ("l10n_br_pensao_fgts_valor", -0.01),
+        ):
+            with self.subTest(campo=campo, valor=valor):
+                with self.assertRaises(ValidationError):
+                    self.employee.write({campo: valor})
 
     def _com_data_aviso(self, data):
         classe = self.env.registry["hr.payslip"]

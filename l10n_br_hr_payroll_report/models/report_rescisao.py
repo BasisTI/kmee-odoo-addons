@@ -303,9 +303,10 @@ class ReportTermoRescisao(models.AbstractModel):
             "afastamento": slip.date_to,
             "codigo_afastamento": codigo or (TEXTO_ACORDO if tipo == "acordo" else ""),
             "pensao_trct": slip.employee_id.l10n_br_pensao_percentual,
-            # O cadastro só tem um percentual de pensão; o do saque do FGTS
-            # (campo 29) é decisão judicial própria e fica em branco.
-            "pensao_fgts": 0.0,
+            # Campo 29: retenção sobre o saldo do FGTS, decisão judicial própria
+            # (campos do cadastro distintos da pensão da folha, campo 28).
+            "pensao_fgts": slip.employee_id.l10n_br_pensao_fgts_percentual,
+            "pensao_fgts_valor": slip.employee_id.l10n_br_pensao_fgts_valor,
             "categoria": CATEGORIAS_TRABALHADOR.get(
                 slip.employee_id.l10n_br_tipo_contrato, ""
             ),

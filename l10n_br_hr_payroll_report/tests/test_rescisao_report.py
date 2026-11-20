@@ -573,6 +573,25 @@ class TestRescisaoReport(PayrollCommon):
         payslip.compute_sheet()
         return payslip
 
+    def test_trct_campo_29_pensao_sobre_o_fgts(self):
+        """TG-146: campo 29 do TRCT vem dos campos próprios da retenção sobre o
+        FGTS, não da pensão da folha (campo 28)."""
+        payslip = self._rescisao_sem_justa_causa()
+        contrato = self._trct(payslip)["contrato"]
+        self.assertEqual(contrato["pensao_fgts"], 0.0)
+        self.assertEqual(contrato["pensao_fgts_valor"], 0.0)
+        payslip.employee_id.write(
+            {
+                "l10n_br_pensao_percentual": 20.0,
+                "l10n_br_pensao_fgts_percentual": 8.5,
+                "l10n_br_pensao_fgts_valor": 150.0,
+            }
+        )
+        contrato = self._trct(payslip)["contrato"]
+        self.assertEqual(contrato["pensao_trct"], 20.0)
+        self.assertEqual(contrato["pensao_fgts"], 8.5)
+        self.assertEqual(contrato["pensao_fgts_valor"], 150.0)
+
     def _detalhe(self, trct, campo):
         return {c: a for c, _r, _v, a in trct["verbas"]}[campo]
 
