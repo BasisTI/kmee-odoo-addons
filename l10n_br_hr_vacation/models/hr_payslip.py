@@ -744,6 +744,37 @@ class HrPayslip(models.Model):
             if not (vacation_type and admissao and slip.date_to):
                 continue
             referencia = slip._l10n_br_data_projetada_rescisao()
+            Alocacao = self.env["hr.leave.allocation"].sudo()
+            # TG-160: duas alocações do mesmo período pagariam as férias em
+            # dobro; só o RH sabe qual vale, então a rescisão recusa e lista.
+            sobrepostas = Alocacao._l10n_br_ferias_validadas_ate(
+                slip.employee_id, referencia
+            )._l10n_br_sobrepostas()
+            if sobrepostas:
+                recusas.append(
+                    _(
+                        "Rescisão: holerite %(holerite)s, empregado %(empregado)s: "
+                        "há alocações de Férias validadas com o mesmo período "
+                        "aquisitivo: %(pares)s. A rescisão pagaria o período mais "
+                        "de uma vez. Recuse ou arquive a alocação duplicada e "
+                        "calcule de novo.",
+                        holerite=slip.number or slip.name or slip.display_name,
+                        empregado=slip.employee_id.name,
+                        pares="; ".join(
+                            "%s a %s (id %s) e %s a %s (id %s)"
+                            % (
+                                a.date_from.strftime("%d/%m/%Y"),
+                                a.date_to.strftime("%d/%m/%Y"),
+                                a.id,
+                                b.date_from.strftime("%d/%m/%Y"),
+                                b.date_to.strftime("%d/%m/%Y"),
+                                b.id,
+                            )
+                            for a, b in sobrepostas
+                        ),
+                    )
+                )
+                continue
             anos = relativedelta(referencia + timedelta(days=1), admissao).years
             if anos < 1:
                 continue
@@ -751,22 +782,10 @@ class HrPayslip(models.Model):
             fim = admissao + relativedelta(years=anos) - relativedelta(days=1)
             # Art. 133 § 2º: o período reiniciado no retorno ao serviço, ou
             # deslocado por afastamento, termina depois (ou antes) do
-            # aniversário: vale qualquer alocação cujo fim caia entre o início
-            # do período devido e a data projetada (a do período anterior
-            # termina antes do início).
-            if (
-                self.env["hr.leave.allocation"]
-                .sudo()
-                .search_count(
-                    [
-                        ("employee_id", "=", slip.employee_id.id),
-                        ("holiday_status_id", "=", vacation_type.id),
-                        ("state", "=", "validate"),
-                        ("date_to", ">=", inicio),
-                        ("date_to", "<=", referencia),
-                    ]
-                )
-            ):
+            # aniversário: vale a alocação que termina no último ano até a data
+            # projetada (``_l10n_br_do_periodo_que_fecha``); a do período
+            # anterior termina antes e não vale.
+            if Alocacao._l10n_br_do_periodo_que_fecha(slip.employee_id, referencia):
                 continue
             projetado = fim > slip.date_to
             recusas.append(
@@ -1876,14 +1895,8 @@ class HrPayslip(models.Model):
         )
         if not vacation_type:
             return []
-        allocations = self.env["hr.leave.allocation"].search(
-            [
-                ("employee_id", "=", self.employee_id.id),
-                ("holiday_status_id", "=", vacation_type.id),
-                ("state", "=", "validate"),
-                ("date_to", "!=", False),
-                ("date_to", "<=", self._l10n_br_data_projetada_rescisao()),
-            ]
+        allocations = self.env["hr.leave.allocation"]._l10n_br_ferias_validadas_ate(
+            self.employee_id, self._l10n_br_data_projetada_rescisao()
         )
         resultado = []
         for alloc in allocations:

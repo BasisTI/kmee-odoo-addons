@@ -91,6 +91,50 @@ class HrLeaveAllocation(models.Model):
             years=L10N_BR_ANOS_PRESCRICAO
         )
 
+    @api.model
+    def _l10n_br_ferias_validadas_ate(self, employee, referencia):
+        """TG-160: alocações de Férias validadas do empregado que terminam até
+        ``referencia`` (a data projetada da rescisão): as que a rescisão paga."""
+        vacation_type = self.env.ref(
+            "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
+        )
+        if not vacation_type:
+            return self.browse()
+        return self.search(
+            [
+                ("employee_id", "=", employee.id),
+                ("holiday_status_id", "=", vacation_type.id),
+                ("state", "=", "validate"),
+                ("date_to", "!=", False),
+                ("date_to", "<=", referencia),
+            ]
+        )
+
+    @api.model
+    def _l10n_br_do_periodo_que_fecha(self, employee, referencia):
+        """TG-160: a alocação do período aquisitivo que se completa até
+        ``referencia`` (fonte única da exigência da rescisão, TG-147): a que
+        termina no último ano, ``referencia - 1 ano < date_to <= referencia``.
+        Vale para o calendário alinhado ao aniversário e para o deslocado; a do
+        período anterior termina antes de ``referencia - 1 ano``."""
+        limite = referencia - relativedelta(years=1)
+        return self._l10n_br_ferias_validadas_ate(employee, referencia).filtered(
+            lambda a: a.date_to > limite
+        )
+
+    def _l10n_br_sobrepostas(self):
+        """TG-160: os pares de alocações deste conjunto com períodos que se
+        sobrepõem. Períodos consecutivos (``date_to`` de um na véspera do
+        ``date_from`` do outro) não se sobrepõem."""
+        ordenadas = self.filtered("date_from").sorted(lambda a: (a.date_from, a.id))
+        pares = []
+        for i, a in enumerate(ordenadas):
+            for b in ordenadas[i + 1 :]:
+                if b.date_from > a.date_to:
+                    continue
+                pares.append((a, b))
+        return pares
+
     def _l10n_br_reconferir_notas(self):
         """Alocação de Férias criada, validada, recusada, alterada ou excluída
         muda o débito das ausências do empregado: reconfere os avisos e notas."""
@@ -112,7 +156,12 @@ class HrLeaveAllocation(models.Model):
 
     def write(self, vals):
         sai_de_validada = "state" in vals and vals["state"] != "validate"
-        if ({"number_of_days"} & set(vals) or sai_de_validada) and not {
+        # TG-160: trocar o empregado, o tipo ou arquivar a alocação paga tira o
+        # período da rescisão confirmada tanto quanto mexer nos dias.
+        muda_vinculo = {"employee_id", "holiday_status_id"} & set(vals) or vals.get(
+            "active"
+        ) is False
+        if ({"number_of_days"} & set(vals) or sai_de_validada or muda_vinculo) and not {
             "date_from",
             "date_to",
             "l10n_br_faltas_periodo_aquisitivo",
@@ -157,16 +206,23 @@ class HrLeaveAllocation(models.Model):
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
         )
-        for alloc in self.filtered(lambda a: a.holiday_status_id == vacation_type):
+        novo_tipo = vals.get("holiday_status_id")
+        for alloc in self.filtered(
+            lambda a: vacation_type
+            and (a.holiday_status_id == vacation_type or novo_tipo == vacation_type.id)
+        ):
             datas = [alloc.date_to]
             if vals.get("date_to"):
                 datas.append(fields.Date.to_date(vals["date_to"]))
+            empregados = alloc.employee_id.ids
+            if vals.get("employee_id"):
+                empregados.append(vals["employee_id"])
             rescisoes = (
                 self.env["hr.payslip"]
                 .sudo()
                 .search(
                     [
-                        ("employee_id", "=", alloc.employee_id.id),
+                        ("employee_id", "in", empregados),
                         ("struct_id.code", "=", "RESCISAO"),
                         ("state", "=", "done"),
                         ("l10n_br_fora_de_vigor", "=", False),
