@@ -86,15 +86,24 @@ def migrate(cr, version):
         novo = _valor_novo(arquivo, xmlid)
         antigo = (novo or "").replace(chamada_nova, CHAMADA_ANTIGA)
         if novo is None or _normaliza(formula) != _normaliza(antigo):
+            if verba == "momento":
+                efeito = (
+                    "informe a verba: tools.br.adicionais_fixos(contract, "
+                    "'momento') é o adicional cheio da remuneração do momento "
+                    "(sem média), que é o valor que a chamada antiga já dava."
+                )
+            else:
+                efeito = (
+                    "a chamada sem verba passa a valer o adicional vigente, sem "
+                    "média; troque por tools.br.adicionais_fixos(contract, "
+                    "'%s') para a média do período aquisitivo (art. 142 § 6º)." % verba
+                )
             _logger.warning(
-                "TG-133: %s (%s) está personalizada e não foi atualizada: a "
-                "chamada tools.br.adicionais_fixos(contract) passa a valer o "
-                "adicional vigente (sem média). Troque por "
-                "tools.br.adicionais_fixos(contract, '%s') para a média do "
-                "art. 142 § 6º.",
+                "TG-133: %s (%s) está diferente da fórmula esperada pela 1.12.0 e "
+                "não foi atualizada: %s",
                 regra.code,
                 xmlid,
-                verba,
+                efeito,
             )
             continue
         regra.amount_python_compute = novo
