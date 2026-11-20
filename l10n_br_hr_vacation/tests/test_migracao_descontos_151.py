@@ -60,6 +60,10 @@ class TestMigracaoDescontos151(VacationCommon):
                 self.assertEqual(
                     sum(xmlid in saida for saida in logs.output), 1, (xmlid, logs)
                 )
+        for saida in logs_1_11.output:
+            self.assertIn("está personalizada", saida)
+        for saida in logs_1_12.output:
+            self.assertIn("diferente da fórmula esperada pela 1.12.0", saida)
         return logs_1_11.output + logs_1_12.output
 
     def test_formulas_antigas_sao_as_da_1_10_e_da_1_11(self):
@@ -131,8 +135,11 @@ class TestMigracaoDescontos151(VacationCommon):
         self.assertNotEqual(ajustada, v10)
         regra = self._regra("hr_rule_desconto_art_480")
         regra.amount_python_compute = ajustada
-        with self.assertLogs("mig_151_18.0.1.17.0", "WARNING"):
+        with self.assertLogs("mig_151_18.0.1.17.0", "WARNING") as logs:
             self._migra("18.0.1.17.0", "18.0.1.16.0")
+        self.assertEqual(len(logs.output), 1)
+        self.assertIn("hr_rule_desconto_art_480", logs.output[0])
+        self.assertIn("está personalizada e não foi atualizada", logs.output[0])
         self.assertEqual(regra.amount_python_compute, ajustada)
 
     def test_aviso_da_1_12_nao_fala_em_media_para_a_verba_momento(self):
@@ -147,8 +154,8 @@ class TestMigracaoDescontos151(VacationCommon):
     def test_aviso_da_1_12_diz_a_janela_de_cada_verba(self):
         """13º: ano civil; férias: período aquisitivo (art. 142 § 6º)."""
         for xmlid, janela in (
-            ("hr_rule_decimo_bruto", "o ano civil"),
-            ("hr_rule_ferias", "o período aquisitivo"),
+            ("hr_rule_decimo_bruto", "no ano civil"),
+            ("hr_rule_ferias", "no período aquisitivo"),
         ):
             regra = self._regra(xmlid)
             regra.amount_python_compute = (
@@ -158,5 +165,5 @@ class TestMigracaoDescontos151(VacationCommon):
                 self._migra("18.0.1.12.0", "18.0.1.11.0")
             saidas = [x for x in logs.output if xmlid in x]
             self.assertEqual(len(saidas), 1, xmlid)
-            self.assertIn(f"média do adicional em {janela}", saidas[0])
+            self.assertIn(f"média do adicional {janela}", saidas[0])
             self.assertEqual(regra.amount_python_compute[:12], "result = 1.0")

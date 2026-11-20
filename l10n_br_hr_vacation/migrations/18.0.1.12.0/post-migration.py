@@ -93,11 +93,11 @@ def migrate(cr, version):
                     "(sem média), que é o valor que a chamada antiga já dava."
                 )
             else:
-                janela = "o ano civil" if verba == "13" else "o período aquisitivo"
+                janela = "no ano civil" if verba == "13" else "no período aquisitivo"
                 efeito = (
                     "a chamada sem verba passa a valer o adicional vigente, sem "
                     "média; troque por tools.br.adicionais_fixos(contract, "
-                    "'%s') para a média do adicional em %s (art. 142 § 6º)."
+                    "'%s') para a média do adicional %s (art. 142 § 6º)."
                     % (verba, janela)
                 )
             _logger.warning(
