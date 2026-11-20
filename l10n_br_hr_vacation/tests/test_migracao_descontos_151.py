@@ -49,8 +49,18 @@ class TestMigracaoDescontos151(VacationCommon):
 
     def _sobe_ate_a_1_16(self):
         """As migrações que existiam antes da TG-151, na ordem do upgrade."""
-        self._migra("18.0.1.11.0", "18.0.1.10.0")
-        self._migra("18.0.1.12.0", "18.0.1.11.0")
+        with self.assertLogs("mig_151_18.0.1.11.0", "WARNING") as logs_1_11:
+            self._migra("18.0.1.11.0", "18.0.1.10.0")
+        with self.assertLogs("mig_151_18.0.1.12.0", "WARNING") as logs_1_12:
+            self._migra("18.0.1.12.0", "18.0.1.11.0")
+        # Cada migração antiga pula as 3 regras da 1.10.0 e diz qual.
+        for logs, quantas in ((logs_1_11, 3), (logs_1_12, 3)):
+            self.assertEqual(len(logs.output), quantas)
+            for xmlid in XMLIDS:
+                self.assertEqual(
+                    sum(xmlid in saida for saida in logs.output), 1, (xmlid, logs)
+                )
+        return logs_1_11.output + logs_1_12.output
 
     def test_formulas_antigas_sao_as_da_1_10_e_da_1_11(self):
         v10 = self._formulas_antigas(0)
@@ -129,7 +139,24 @@ class TestMigracaoDescontos151(VacationCommon):
         self._grava(self._formulas_antigas(0))
         with self.assertLogs("mig_151_18.0.1.12.0", "WARNING") as logs:
             self._migra("18.0.1.12.0", "18.0.1.11.0")
+        self.assertEqual(len(logs.output), 3)
         for saida in logs.output:
-            if "DESCONTO" in saida:
-                self.assertNotIn("para a média", saida)
-                self.assertIn("'momento'", saida)
+            self.assertNotIn("para a média", saida)
+            self.assertIn("'momento'", saida)
+
+    def test_aviso_da_1_12_diz_a_janela_de_cada_verba(self):
+        """13º: ano civil; férias: período aquisitivo (art. 142 § 6º)."""
+        for xmlid, janela in (
+            ("hr_rule_decimo_bruto", "o ano civil"),
+            ("hr_rule_ferias", "o período aquisitivo"),
+        ):
+            regra = self._regra(xmlid)
+            regra.amount_python_compute = (
+                "result = 1.0  # tools.br.adicionais_fixos(contract)"
+            )
+            with self.assertLogs("mig_151_18.0.1.12.0", "WARNING") as logs:
+                self._migra("18.0.1.12.0", "18.0.1.11.0")
+            saidas = [x for x in logs.output if xmlid in x]
+            self.assertEqual(len(saidas), 1, xmlid)
+            self.assertIn(f"média do adicional em {janela}", saidas[0])
+            self.assertEqual(regra.amount_python_compute[:12], "result = 1.0")
