@@ -187,11 +187,14 @@ class TestFeriasProjecaoAviso(VacationCommon):
             self.assertEqual(slip.l10n_br_avos_ferias, 1, (inicio, fim))
 
     def test_alocacao_que_termina_depois_da_projecao_nao_vale(self):
-        """O período deslocado só vale se completa até a data projetada."""
+        """O período deslocado só vale se completa até a data projetada. A
+        indicação não se sobrepõe a ela (TG-165): termina na véspera."""
         emp, contract = self._contrato()
         self._alocacao(emp, date(2025, 2, 5), date(2026, 2, 4))
-        with self.assertRaisesRegex(UserError, "15/01/2025 a 14/01/2026"):
+        with self.assertRaisesRegex(UserError, "15/01/2025 a 04/02/2025"):
             self._rescisao(emp, contract, date(2025, 12, 31))
+        self._alocacao(emp, date(2025, 1, 15), date(2025, 2, 4))
+        self._rescisao(emp, contract, date(2025, 12, 31))
 
     def test_recusa_diz_o_empregado_e_o_holerite_e_o_lote_junta_todas(self):
         """A recusa nomeia o empregado e o holerite; no lote, junta os recusados."""

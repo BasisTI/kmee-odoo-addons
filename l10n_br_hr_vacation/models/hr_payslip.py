@@ -747,8 +747,10 @@ class HrPayslip(models.Model):
             Alocacao = self.env["hr.leave.allocation"].sudo()
             # TG-160: duas alocações do mesmo período pagariam as férias em
             # dobro; só o RH sabe qual vale, então a rescisão recusa e lista.
-            sobrepostas = Alocacao._l10n_br_ferias_validadas_ate(
-                slip.employee_id, referencia
+            # TG-165: só o vínculo atual (readmissão) e também as que terminam
+            # depois da referência.
+            sobrepostas = Alocacao._l10n_br_ferias_do_vinculo(
+                slip.employee_id, referencia, slip.contract_id
             )._l10n_br_sobrepostas()
             if sobrepostas:
                 recusas.append(
@@ -785,13 +787,33 @@ class HrPayslip(models.Model):
             # aniversário: vale a alocação que termina no último ano até a data
             # projetada (``_l10n_br_do_periodo_que_fecha``); a do período
             # anterior termina antes e não vale.
-            if Alocacao._l10n_br_do_periodo_que_fecha(slip.employee_id, referencia):
+            if Alocacao._l10n_br_do_periodo_que_fecha(
+                slip.employee_id, referencia, slip.contract_id
+            ):
                 continue
             # O período a criar segue a última alocação validada (dia seguinte
             # ao fim dela, sem sobrepor); sem alocação, o aniversário.
-            inicio, fim = Alocacao._l10n_br_periodo_a_criar(
-                slip.employee_id, referencia, (inicio, fim)
+            inicio, fim, seguinte = Alocacao._l10n_br_periodo_a_criar(
+                slip.employee_id, referencia, (inicio, fim), slip.contract_id
             )
+            if seguinte and fim < inicio:
+                recusas.append(
+                    _(
+                        "Rescisão: holerite %(holerite)s, empregado %(empregado)s: "
+                        "falta a alocação de Férias do período que se completa "
+                        "até %(referencia)s, mas a alocação validada de "
+                        "%(inicio)s a %(fim)s (id %(id)s) já ocupa o período e "
+                        "termina depois dessa data. Ajuste as datas dela (ou "
+                        "recuse-a) e crie a alocação do período que falta.",
+                        holerite=slip.number or slip.name or slip.display_name,
+                        empregado=slip.employee_id.name,
+                        referencia=referencia.strftime("%d/%m/%Y"),
+                        inicio=seguinte.date_from.strftime("%d/%m/%Y"),
+                        fim=seguinte.date_to.strftime("%d/%m/%Y"),
+                        id=seguinte.id,
+                    )
+                )
+                continue
             projetado = fim > slip.date_to
             recusas.append(
                 _(
@@ -1901,10 +1923,13 @@ class HrPayslip(models.Model):
         if not vacation_type:
             return []
         allocations = self.env["hr.leave.allocation"]._l10n_br_ferias_validadas_ate(
-            self.employee_id, self._l10n_br_data_projetada_rescisao()
+            self.employee_id,
+            self._l10n_br_data_projetada_rescisao(),
+            self.contract_id,
         )
         resultado = []
-        for alloc in allocations:
+        # TG-165: o período perdido (art. 133) não gera férias vencidas.
+        for alloc in allocations.filtered(lambda a: not a.l10n_br_periodo_perdido):
             pagos = self.env["hr.payslip"].search(
                 [
                     ("l10n_br_ferias_allocation_id", "=", alloc.id),

@@ -162,9 +162,21 @@ empregado (o dia seguinte ao fim dela e um ano a partir daí), o que vale també
 para os períodos fora do aniversário de admissão e para admissão em 29/02; sem
 nenhuma alocação, o aniversário de admissão.
 
-**Limite:** o módulo não modela o período aquisitivo perdido (CLT art. 133):
-quem teve o período perdido por afastamento precisa registrar a alocação dele
-com as datas do período inteiro.
+**Período perdido (CLT art. 133):** crie a alocação de Férias com as datas do
+período aquisitivo, valide-a e marque ``Período Perdido (CLT art. 133)``. A
+rescisão a aceita como período fechado, mas não paga férias vencidas nem o terço
+dele, e nenhuma ausência de férias a debita. O módulo não confere as hipóteses
+do artigo: quem marca é o RH. Com a rescisão ou o recibo confirmados, a marca não
+pode ser alterada.
+
+**Readmissão:** a rescisão olha só as alocações do contrato dela (``date_from``
+na data de admissão ou depois); as do vínculo anterior não entram na indicação,
+na exigência, na sobreposição nem no pagamento das férias vencidas.
+
+**Alocação além da data projetada:** a conferência de sobreposição inclui as
+alocações validadas que terminam depois da data projetada. Se uma delas começa
+dentro do período a criar, a indicação termina na véspera dela; se não sobra
+período criável, a recusa nomeia a alocação e pede o ajuste das datas dela.
 
 Mesmo com os períodos fora do aniversário de admissão, a alocação do período
 anterior não vale pelo que se completa na projeção (só a que termina no último

@@ -28,6 +28,14 @@ class HrLeaveAllocation(models.Model):
         default=0,
         help="Faltas injustificadas no período aquisitivo (CLT art. 130)",
     )
+    l10n_br_periodo_perdido = fields.Boolean(
+        string="Período Perdido (CLT art. 133)",
+        default=False,
+        help="TG-165: o empregado perdeu o direito às férias deste período "
+        "aquisitivo (CLT art. 133). A alocação registra o período, sem saldo: "
+        "a rescisão a aceita como período fechado, mas não paga férias vencidas "
+        "nem o terço dele, e nenhuma ausência de férias a debita.",
+    )
 
     @api.model_create_multi
     def create(self, vals_list):
@@ -92,57 +100,87 @@ class HrLeaveAllocation(models.Model):
         )
 
     @api.model
-    def _l10n_br_ferias_validadas_ate(self, employee, referencia):
-        """TG-160: alocações de Férias validadas do empregado que terminam até
-        ``referencia`` (a data projetada da rescisão): as que a rescisão paga."""
+    def _l10n_br_ferias_do_vinculo(self, employee, referencia, contrato=None):
+        """TG-165: alocações de Férias validadas do empregado que começam até
+        ``referencia`` (a data projetada da rescisão), inclusive as que terminam
+        depois dela. Com ``contrato``, só as do vínculo atual (``date_from`` na
+        data de admissão ou depois): numa readmissão, as do vínculo anterior não
+        entram em indicação, exigência, sobreposição nem pagamento."""
         vacation_type = self.env.ref(
             "l10n_br_hr_vacation.leave_type_ferias", raise_if_not_found=False
         )
         if not vacation_type:
             return self.browse()
-        return self.search(
-            [
-                ("employee_id", "=", employee.id),
-                ("holiday_status_id", "=", vacation_type.id),
-                ("state", "=", "validate"),
-                ("date_to", "!=", False),
-                ("date_to", "<=", referencia),
-            ]
+        dominio = [
+            ("employee_id", "=", employee.id),
+            ("holiday_status_id", "=", vacation_type.id),
+            ("state", "=", "validate"),
+            ("date_to", "!=", False),
+            ("date_from", "<=", referencia),
+        ]
+        if contrato and contrato.date_start:
+            dominio.append(("date_from", ">=", contrato.date_start))
+        return self.search(dominio)
+
+    @api.model
+    def _l10n_br_ferias_validadas_ate(self, employee, referencia, contrato=None):
+        """TG-160: alocações de Férias validadas do empregado que terminam até
+        ``referencia`` (a data projetada da rescisão): as que a rescisão paga."""
+        return self._l10n_br_ferias_do_vinculo(employee, referencia, contrato).filtered(
+            lambda a: a.date_to <= referencia
         )
 
     @api.model
-    def _l10n_br_do_periodo_que_fecha(self, employee, referencia):
+    def _l10n_br_do_periodo_que_fecha(self, employee, referencia, contrato=None):
         """TG-160: a alocação do período aquisitivo que se completa até
         ``referencia`` (fonte única da exigência da rescisão, TG-147): a que
         termina no último ano, ``referencia - 1 ano < date_to <= referencia``.
         Vale para o calendário alinhado ao aniversário e para o deslocado; a do
         período anterior termina antes de ``referencia - 1 ano``."""
         limite = referencia - relativedelta(years=1)
-        return self._l10n_br_ferias_validadas_ate(employee, referencia).filtered(
-            lambda a: a.date_to > limite
-        )
+        return self._l10n_br_ferias_validadas_ate(
+            employee, referencia, contrato
+        ).filtered(lambda a: a.date_to > limite)
 
     @api.model
-    def _l10n_br_periodo_a_criar(self, employee, referencia, aniversario):
-        """TG-160: ``(inicio, fim)`` da alocação que a rescisão pede quando falta
-        a do período que fecha até ``referencia``.
+    def _l10n_br_periodo_a_criar(
+        self, employee, referencia, aniversario, contrato=None
+    ):
+        """TG-160: ``(inicio, fim, seguinte)`` da alocação que a rescisão pede
+        quando falta a do período que fecha até ``referencia``.
 
         Com alocação de Férias validada, o período começa no dia seguinte ao fim
         da última e dura um ano a partir daí, contado da data-base (sem
         acumular o recuo do ``relativedelta`` em 29/02); se passaram vários
         anos, vale o último que se completa até ``referencia``. Sem alocação, o
-        aniversário de admissão (``aniversario``)."""
-        anteriores = self._l10n_br_ferias_validadas_ate(employee, referencia)
-        if not anteriores:
-            return aniversario
-        base = max(anteriores.mapped("date_to")) + relativedelta(days=1)
-        anos = 1
-        while base + relativedelta(years=anos + 1, days=-1) <= referencia:
-            anos += 1
-        fim = base + relativedelta(years=anos, days=-1)
-        if fim > referencia:
-            return aniversario
-        return base + relativedelta(years=anos - 1), fim
+        aniversário de admissão (``aniversario``).
+
+        TG-165: se uma alocação validada que termina depois de ``referencia``
+        começa dentro do período, ele termina na véspera dela (``seguinte``);
+        se não sobra janela criável (o fim não cai depois de
+        ``referencia - 1 ano``, ou vem antes do início), ``fim`` fica antes de
+        ``inicio`` e quem chama recusa pedindo o ajuste de ``seguinte``."""
+        anteriores = self._l10n_br_ferias_validadas_ate(employee, referencia, contrato)
+        inicio, fim = aniversario
+        if anteriores:
+            base = max(anteriores.mapped("date_to")) + relativedelta(days=1)
+            anos = 1
+            while base + relativedelta(years=anos + 1, days=-1) <= referencia:
+                anos += 1
+            fim_base = base + relativedelta(years=anos, days=-1)
+            if fim_base <= referencia:
+                inicio, fim = base + relativedelta(years=anos - 1), fim_base
+        seguintes = self._l10n_br_ferias_do_vinculo(
+            employee, referencia, contrato
+        ).filtered(lambda a: a.date_to > referencia and a.date_to >= inicio)
+        seguintes = seguintes.filtered(lambda a: a.date_from <= fim)
+        if not seguintes:
+            return inicio, fim, self.browse()
+        seguinte = seguintes.sorted(lambda a: (a.date_from, a.id))[0]
+        fim = seguinte.date_from - relativedelta(days=1)
+        if fim <= referencia - relativedelta(years=1):
+            fim = inicio - relativedelta(days=1)
+        return inicio, fim, seguinte
 
     def _l10n_br_sobrepostas(self):
         """TG-160: os pares de alocações deste conjunto com períodos que se
@@ -193,11 +231,17 @@ class HrLeaveAllocation(models.Model):
             "date_from",
             "date_to",
             "l10n_br_faltas_periodo_aquisitivo",
+            "l10n_br_periodo_perdido",
         } & set(vals):
             self.filtered(
                 lambda a: a.state == "validate"
             )._l10n_br_recusar_se_usada_em_rescisao(vals)
-        if {"date_from", "date_to", "l10n_br_faltas_periodo_aquisitivo"} & set(vals):
+        if {
+            "date_from",
+            "date_to",
+            "l10n_br_faltas_periodo_aquisitivo",
+            "l10n_br_periodo_perdido",
+        } & set(vals):
             confirmados = (
                 self.env["hr.payslip"]
                 .sudo()
@@ -390,7 +434,13 @@ class HrLeaveAllocation(models.Model):
         )
         for recibo in recibos:
             abono[recibo.l10n_br_ferias_allocation_id.id] += recibo.l10n_br_dias_abono
-        return {alloc: alloc.number_of_days - abono[alloc.id] for alloc in alocacoes}
+        # TG-165: período perdido (art. 133) não tem saldo de férias a debitar.
+        return {
+            alloc: 0
+            if alloc.l10n_br_periodo_perdido
+            else alloc.number_of_days - abono[alloc.id]
+            for alloc in alocacoes
+        }
 
     @api.model
     def _l10n_br_destino(self, alocacoes, restante, data, horizontes=None):
