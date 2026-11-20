@@ -55,8 +55,10 @@ def calc_inss(salario_bruto, faixas):
     Returns:
         Valor do desconto de INSS em R$ (positivo = desconto).
     """
-    base = Decimal(str(salario_bruto))
     centavo = Decimal("0.01")
+    # A base vem de somas/subtrações de float (ex.: 1405.9999999999998); sem
+    # quantizar, a truncagem por faixa perderia R$ 0,01 (TG-158 r2).
+    base = Decimal(str(salario_bruto)).quantize(centavo, rounding=ROUND_HALF_UP)
     result = Decimal(0)
     base_anterior = Decimal(0)
     for limite, aliquota in faixas:
