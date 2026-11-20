@@ -32,5 +32,7 @@ from . import test_ferias_dobro_periodo_debitado
 from . import test_ferias_periodo_deslocado
 from . import test_ferias_projecao_aviso
 from . import test_aprendiz_fgts_inss
+from . import test_ferias_readmissao_art133
+from . import test_ferias_vinculo_art133_r2
 from . import test_migracao_aprendiz_149
 from . import test_migracao_descontos_151

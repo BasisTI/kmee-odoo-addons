@@ -16,6 +16,15 @@ class HrEmployeeBase(models.AbstractModel):
         Allocation = self.env["hr.leave.allocation"]
         originais = Allocation._l10n_br_estender_concessivo(employees)
         try:
-            return super()._get_consumed_leaves(leave_types, *args, **kwargs)
+            consumidos, extra = super()._get_consumed_leaves(
+                leave_types, *args, **kwargs
+            )
         finally:
             Allocation._l10n_br_restaurar_concessivo(originais)
+        # TG-165: o período perdido (CLT art. 133) não tem dias para gozar: sai
+        # do saldo exibido e da validação da ausência.
+        for por_tipo in list(consumidos.values()):
+            for por_alocacao in list(por_tipo.values()):
+                for alloc in [a for a in por_alocacao if a.l10n_br_periodo_perdido]:
+                    del por_alocacao[alloc]
+        return consumidos, extra

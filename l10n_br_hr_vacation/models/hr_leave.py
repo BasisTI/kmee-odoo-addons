@@ -238,7 +238,7 @@ class HrLeave(models.Model):
         Allocation = self.env["hr.leave.allocation"]
         for leave in self.filtered(lambda lv: lv._l10n_br_ferias_ativa()):
             completos = Allocation._l10n_br_alocacoes_ferias(
-                leave.employee_id
+                leave.employee_id, leave.request_date_from
             ).filtered(lambda a: a.date_to < leave.request_date_from)
             if completos and all(
                 a._l10n_br_horizonte() < leave.request_date_from for a in completos
@@ -288,7 +288,7 @@ class HrLeave(models.Model):
             )
         completos = (
             self.env["hr.leave.allocation"]
-            ._l10n_br_alocacoes_ferias(leave.employee_id)
+            ._l10n_br_alocacoes_ferias(leave.employee_id, leave.request_date_from)
             .filtered(lambda a: a.date_to < leave.request_date_from)
         )
         if completos and all(
