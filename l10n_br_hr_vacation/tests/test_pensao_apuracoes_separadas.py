@@ -87,12 +87,12 @@ class TestPensaoFerias(VacationCommon):
         payslip = self._ferias(emp, contract)
 
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "GROSS"), 8000.00)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 908.86)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 908.85)
         self.assertAlmostEqualMoney(
             self._get_line_total(payslip, "PENSAO_ALIMENTICIA"), 1600.00
         )
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "BASE_IRRF"), 5491.14)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 614.06)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "BASE_IRRF"), 5491.15)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 614.07)
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "NET"), 4877.08)
 
     def test_pensao_percentual_reduz_o_irrf_das_ferias(self):
@@ -206,15 +206,15 @@ class TestPensaoDecimoTerceiro(VacationCommon):
         contract = self._create_contract(emp, wage=6000.00, date_start=date(2024, 1, 1))
         payslip = self._decimo(emp, contract)
 
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 658.82)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS_13"), 658.81)
         self.assertAlmostEqualMoney(
             self._get_line_total(payslip, "PENSAO_ALIMENTICIA_13"), 1200.00
         )
         self.assertAlmostEqualMoney(
-            self._get_line_total(payslip, "BASE_IRRF_13"), 4141.18
+            self._get_line_total(payslip, "BASE_IRRF_13"), 4141.19
         )
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF_13"), 269.00)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "NET"), 3872.18)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "NET"), 3872.19)
 
     def test_pensao_fixa_nao_entra_no_13(self):
         """Parcela fixa é mensal: nem retida nem deduzida da base do 13º."""
@@ -319,8 +319,8 @@ class TestPensaoRescisao(VacationCommon):
         # remuneração do mês; na rescisão não há folha mensal).
         self.assertAlmostEqualMoney(g(payslip, "PENSAO_ALIMENTICIA"), 1100.00)
         self.assertAlmostEqualMoney(g(payslip, "PENSAO_ALIMENTICIA_13"), 300.00)
-        self.assertAlmostEqualMoney(g(payslip, "BASE_IRRF"), 4241.18)
-        self.assertAlmostEqualMoney(g(payslip, "BASE_IRRF_13"), 2441.18)
+        self.assertAlmostEqualMoney(g(payslip, "BASE_IRRF"), 4241.19)
+        self.assertAlmostEqualMoney(g(payslip, "BASE_IRRF_13"), 2441.19)
         self.assertAlmostEqualMoney(g(payslip, "IRRF"), 291.50)
         self.assertAlmostEqualMoney(g(payslip, "IRRF_13"), 13.20)
 
@@ -401,8 +401,8 @@ class TestDescontoSimplificadoApuracoesSeparadas(VacationCommon):
         payslip.compute_sheet()
 
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "GROSS"), 3466.67)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 314.82)
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "BASE_IRRF"), 3151.85)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "INSS"), 314.81)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "BASE_IRRF"), 3151.86)
         self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 53.84)
 
     def test_simplificado_zera_o_irrf_do_13(self):
@@ -452,4 +452,4 @@ class TestDescontoSimplificadoApuracoesSeparadas(VacationCommon):
             }
         )
         payslip.compute_sheet()
-        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 1054.06)
+        self.assertAlmostEqualMoney(self._get_line_total(payslip, "IRRF"), 1054.07)

@@ -9,7 +9,7 @@ independentemente com pytest puro (sem banco de dados).
 Injetadas no contexto das regras salariais via `tools.br.*`.
 """
 from datetime import timedelta
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_DOWN, ROUND_HALF_UP, Decimal
 
 from dateutil.relativedelta import relativedelta
 
@@ -35,6 +35,11 @@ def round_money(value, places=2):
 # ── INSS - Tabela Progressiva ─────────────────────────────────────────
 
 
+# Ponto de arredondamento do INSS (TG-158#P1, confirmado contra a folha real):
+# cada faixa é truncada em centavos e as faixas são somadas.
+INSS_ARREDONDAMENTO = ROUND_DOWN
+
+
 def calc_inss(salario_bruto, faixas):
     """Calcula o INSS progressivo conforme as faixas vigentes.
 
@@ -50,16 +55,19 @@ def calc_inss(salario_bruto, faixas):
     Returns:
         Valor do desconto de INSS em R$ (positivo = desconto).
     """
-    result = 0.0
-    base_anterior = 0.0
+    base = Decimal(str(salario_bruto))
+    centavo = Decimal("0.01")
+    result = Decimal(0)
+    base_anterior = Decimal(0)
     for limite, aliquota in faixas:
-        if salario_bruto > base_anterior:
-            base_faixa = min(salario_bruto, limite) - base_anterior
-            result += base_faixa * aliquota
+        limite = Decimal(str(limite))
+        if base > base_anterior:
+            valor = (min(base, limite) - base_anterior) * Decimal(str(aliquota))
+            result += valor.quantize(centavo, rounding=INSS_ARREDONDAMENTO)
             base_anterior = limite
         else:
             break
-    return round_money(result)
+    return float(result)
 
 
 def calc_irrf(base_irrf, faixas):

@@ -20,7 +20,7 @@ class TestINSSProgressivo(PayrollCommon):
       Faixa 2: R$ 1.412,01 – 2.666,68  →  9,0%
       Faixa 3: R$ 2.666,69 – 4.000,03  → 12,0%
       Faixa 4: R$ 4.000,04 – 7.786,02  → 14,0%
-      Teto: R$ 908,86
+      Teto: R$ 908,85
     """
 
     def test_inss_salario_minimo_faixa1(self):
@@ -53,7 +53,7 @@ class TestINSSProgressivo(PayrollCommon):
         contract = self._create_contract(emp, wage=3000.00)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        self.assertAlmostEqualMoney(inss, 258.82)
+        self.assertAlmostEqualMoney(inss, 258.81)
 
     def test_inss_faixa4_parcial(self):
         """R$5.000,00: distribui por todas as 4 faixas."""
@@ -61,31 +61,31 @@ class TestINSSProgressivo(PayrollCommon):
         contract = self._create_contract(emp, wage=5000.00)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        self.assertAlmostEqualMoney(inss, 518.82)
+        self.assertAlmostEqualMoney(inss, 518.81)
 
     def test_inss_exatamente_no_teto(self):
-        """R$7.786,02: teto exato da contribuição INSS 2024 (R$908,86)."""
+        """R$7.786,02: teto exato da contribuição INSS 2024 (R$908,85)."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=7786.02)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        self.assertAlmostEqualMoney(inss, 908.86)
+        self.assertAlmostEqualMoney(inss, 908.85)
 
     def test_inss_acima_do_teto(self):
-        """R$10.000,00: acima do teto → INSS máximo de R$908,86."""
+        """R$10.000,00: acima do teto → INSS máximo de R$908,85."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=10000.00)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        self.assertAlmostEqualMoney(inss, 908.86)
+        self.assertAlmostEqualMoney(inss, 908.85)
 
     def test_inss_muito_acima_do_teto(self):
-        """R$50.000,00: altíssimo salário → INSS limitado a R$908,86."""
+        """R$50.000,00: altíssimo salário → INSS limitado a R$908,85."""
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=50000.00)
         payslip = self._create_payslip(emp, contract)
         inss = self._get_line_total(payslip, "INSS")
-        self.assertAlmostEqualMoney(inss, 908.86)
+        self.assertAlmostEqualMoney(inss, 908.85)
 
 
 class TestINSSRegimes(PayrollCommon):

@@ -132,8 +132,8 @@ class TestFeriasFolhaMensal(VacationCommon):
         mensal = self._create_payslip(emp, contract, NOV_INI, NOV_FIM)
         self.assertAlmostEqualMoney(self._get_line_total(recibo, "GROSS"), 1600)
         self.assertAlmostEqualMoney(self._inss(recibo), 120)
-        self.assertAlmostEqualMoney(self._inss(mensal), 248.60)
-        self.assertAlmostEqualMoney(self._inss(recibo) + self._inss(mensal), 368.60)
+        self.assertAlmostEqualMoney(self._inss(mensal), 248.58)
+        self.assertAlmostEqualMoney(self._inss(recibo) + self._inss(mensal), 368.58)
 
     def test_inss_mes_inteiro_em_ferias_nao_retem_no_mensal(self):
         """M02: o INSS todo foi retido no recibo; o mensal não retém nada."""

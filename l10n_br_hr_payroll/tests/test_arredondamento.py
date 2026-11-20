@@ -153,10 +153,10 @@ class TestINSSArredondamento(BaseCase):
     def test_faixa3_parcial_39_998(self):
         """R$3.000: faixa 3 parcial = 333.32 × 12% = 39.9984.
 
-        round_money(39.9984) = 40.00 (arredondamento correto).
-        Total = 105.90 + 112.9212 + 39.9984 = 258.8196 → 258.82.
+        O total é truncado, não arredondado por faixa.
+        Total = 105.90 + 112.9212 + 39.9984 = 258.8196 → 258.81 (truncado, TG-158).
         """
-        self.assertMoney(calc_inss(3000.00), 258.82)
+        self.assertMoney(calc_inss(3000.00), 258.81)
 
     def test_centavo_acima_faixa1(self):
         """R$1.412,01: 1 centavo acima da faixa 1.
@@ -194,7 +194,7 @@ class TestINSSArredondamento(BaseCase):
         # R$ 3.333,33 → faixas progressivas com frações
         result = calc_inss(3333.33)
         self.assertGreater(result, 0.0)
-        self.assertLessEqual(result, 908.86)
+        self.assertLessEqual(result, 908.85)
         # Verifica que resultado tem exatamente 2 decimais
         self.assertEqual(result, round_money(result))
 
