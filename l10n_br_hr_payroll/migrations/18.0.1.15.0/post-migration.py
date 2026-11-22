@@ -25,19 +25,30 @@ from odoo.tools import file_open
 
 _logger = logging.getLogger(__name__)
 
-LINHA_ANTIGA = "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()"
+LINHA_ANTIGA = (
+    "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()"
+)
 LINHA_NOVA = "salario_hora = contract._l10n_br_salario_hora()"
 REGRAS_DE_HORA = ("hr_rule_he_50", "hr_rule_he_100", "hr_rule_adicional_noturno")
 
 ANTIGAS = {
-    ("hr_rule_salario_base", "amount_python_compute"): """
+    (
+        "hr_rule_salario_base",
+        "amount_python_compute",
+    ): """
 dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
 result = tools.br.round_money(contract.wage * dias / 30)
 """,
-    ("hr_rule_faltas", "condition_python"): """
+    (
+        "hr_rule_faltas",
+        "condition_python",
+    ): """
 result = payslip.l10n_br_faltas_injustificadas > 0
 """,
-    ("hr_rule_desc_dsr", "amount_python_compute"): """
+    (
+        "hr_rule_desc_dsr",
+        "amount_python_compute",
+    ): """
 result = tools.br.round_money((contract.wage / 30) * tools.br.semanas_com_falta(contract))
 """,
 }

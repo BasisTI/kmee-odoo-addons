@@ -79,9 +79,9 @@ class TestDsrHorista(BaseDsrReflexo):
         cal = self._calendario()
         slip = self._horista(cal)
         horas = sum(
-            slip.worked_days_line_ids.filtered(
-                lambda w: w.code == "WORK100"
-            ).mapped("number_of_hours")
+            slip.worked_days_line_ids.filtered(lambda w: w.code == "WORK100").mapped(
+                "number_of_hours"
+            )
         )
         self.assertAlmostEqualMoney(
             self._get_line_total(slip, "SALARIO_BASE"), round(horas * VALOR_HORA, 2)
@@ -91,9 +91,7 @@ class TestDsrHorista(BaseDsrReflexo):
         cal = self._calendario()
         self._feriado(cal)
         sem = self._horista(cal, l10n_br_horas_pagas=168.0)
-        com = self._horista(
-            cal, l10n_br_horas_pagas=168.0, faltas=[date(2026, 10, 6)]
-        )
+        com = self._horista(cal, l10n_br_horas_pagas=168.0, faltas=[date(2026, 10, 6)])
         dsr = self._get_line_total(com, "DSR_HORISTA")
         self.assertEqual(dsr, self._get_line_total(sem, "DSR_HORISTA"))
         self.assertAlmostEqualMoney(
@@ -165,9 +163,9 @@ class TestMigracaoHorista(BaseDsrReflexo):
             "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()\n"
             "result = tools.br.round_money(salario_hora * 1.5 * payslip.l10n_br_horas_extras_50)"  # noqa: B950
         )
-        ref("l10n_br_hr_payroll.hr_rule_faltas").condition_python = (
-            "result = payslip.l10n_br_faltas_injustificadas > 0"
-        )
+        ref(
+            "l10n_br_hr_payroll.hr_rule_faltas"
+        ).condition_python = "result = payslip.l10n_br_faltas_injustificadas > 0"
         ref("l10n_br_hr_payroll.structure_clt").rule_ids = [
             (3, ref("l10n_br_hr_payroll.hr_rule_dsr_horista").id)
         ]
