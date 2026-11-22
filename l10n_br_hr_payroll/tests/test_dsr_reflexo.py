@@ -29,6 +29,14 @@ class TestDiasDsrPuro(TransactionCase):
         # Outubro/2026: 31 dias, domingos 4, 11, 18 e 25.
         self.assertEqual(dias_dsr(2026, 10), (27, 4))
 
+    def test_mes_de_cinco_domingos(self):
+        # Novembro/2026: domingos 1, 8, 15, 22 e 29; 30 dias: 25 úteis (TG-159).
+        self.assertEqual(dias_dsr(2026, 11), (25, 5))
+        self.assertEqual(calc_dsr_reflexo(500.0, 25, 5), 100.0)
+
+    def test_mes_de_cinco_domingos_com_feriado(self):
+        self.assertEqual(dias_dsr(2026, 11, {date(2026, 11, 2)}), (24, 6))
+
     def test_feriado_vira_repouso(self):
         self.assertEqual(dias_dsr(2026, 10, {FERIADO}), (26, 5))
 
@@ -255,6 +263,59 @@ class TestDsrReflexoHolerite(BaseDsrReflexo):
         # FGTS = 8% da base, que inclui o reflexo.
         self.assertAlmostEqualMoney(
             self._get_line_total(slip, "FGTS"), round((sem + dsr) * 0.08, 2)
+        )
+
+    def test_dsr_reflete_toda_hora_extra_da_categoria_he_tg159(self):
+        """Súmula 172: hora extra de CCT (60%, 70%, 75%) integra o DSR como a de 50%/100%.
+
+        Uma regra na categoria ``HE`` entra no DSR_HE sem código fixo e continua
+        entrando no bruto (a categoria é filha de ``ALW``).
+        """
+        categoria = self.env.ref("l10n_br_hr_payroll.hr_salary_rule_category_he")
+        regra = self.env["hr.salary.rule"].create(
+            {
+                "name": "Hora Extra 60% (CCT)",
+                "code": "HE_60",
+                "sequence": 6,
+                "category_id": categoria.id,
+                "condition_select": "none",
+                "amount_select": "fix",
+                "quantity": "1",
+                "amount_fix": 200.0,
+            }
+        )
+        self.structure_clt.rule_ids = [(4, regra.id)]
+        cal = self._calendario()
+        self._feriado(cal)
+        slip = self._holerite(cal, l10n_br_horas_extras_50=10.0)
+        he = self._get_line_total(slip, "HE_50") + self._get_line_total(slip, "HE_60")
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "HE_60"), 200.0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "DSR_HE"), round(he / 26 * 5, 2)
+        )
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "GROSS"),
+            3500.00 + he + self._get_line_total(slip, "DSR_HE"),
+        )
+
+    def test_so_hora_extra_de_cct_gera_dsr_tg159(self):
+        categoria = self.env.ref("l10n_br_hr_payroll.hr_salary_rule_category_he")
+        regra = self.env["hr.salary.rule"].create(
+            {
+                "name": "Hora Extra 70% (CCT)",
+                "code": "HE_70",
+                "sequence": 6,
+                "category_id": categoria.id,
+                "condition_select": "none",
+                "amount_select": "fix",
+                "quantity": "1",
+                "amount_fix": 130.0,
+            }
+        )
+        self.structure_clt.rule_ids = [(4, regra.id)]
+        slip = self._holerite(self._calendario())
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "DSR_HE"), round(130.0 / 27 * 4, 2)
         )
 
     def test_sem_horas_nao_gera_reflexo(self):

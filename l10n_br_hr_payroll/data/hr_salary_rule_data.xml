@@ -71,7 +71,7 @@ result = tools.br.round_money(contract.wage * tools.br.dias_maternidade(contract
         <field name="name">Hora Extra 50%</field>
         <field name="sequence" eval="5" />
         <field name="code">HE_50</field>
-        <field name="category_id" ref="hr_salary_rule_category_alw" />
+        <field name="category_id" ref="hr_salary_rule_category_he" />
         <field name="condition_select">python</field>
         <field name="condition_python">
 result = payslip.l10n_br_horas_extras_50 > 0
@@ -88,7 +88,7 @@ result = tools.br.round_money(salario_hora * 1.5 * payslip.l10n_br_horas_extras_
         <field name="name">Hora Extra 100%</field>
         <field name="sequence" eval="6" />
         <field name="code">HE_100</field>
-        <field name="category_id" ref="hr_salary_rule_category_alw" />
+        <field name="category_id" ref="hr_salary_rule_category_he" />
         <field name="condition_select">python</field>
         <field name="condition_python">
 result = payslip.l10n_br_horas_extras_100 > 0
@@ -108,15 +108,15 @@ result = tools.br.round_money(salario_hora * 2.0 * payslip.l10n_br_horas_extras_
         <field name="category_id" ref="hr_salary_rule_category_alw" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = (HE_50 + HE_100) > 0
+result = categories.HE > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.dsr_reflexo(HE_50 + HE_100)
+result = tools.br.dsr_reflexo(categories.HE)
         </field>
         <field
             name="note"
-        >Reflexo das horas extras no repouso semanal remunerado (Lei 605/49, art. 7º, a; Súmula 172 do TST): valor das horas extras do mês ÷ dias úteis × domingos e feriados. Os feriados vêm das ausências globais do calendário do contrato.</field>
+        >Reflexo das horas extras no repouso semanal remunerado (Lei 605/49, art. 7º, a; Súmula 172 do TST): valor das horas extras do mês (toda regra da categoria HE, qualquer percentual) ÷ dias úteis × domingos e feriados. Os feriados vêm das ausências globais do calendário do contrato.</field>
     </record>
 
     <!-- 10. Adicional Noturno -->
