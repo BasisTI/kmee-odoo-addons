@@ -7,7 +7,10 @@ Os dados são ``noupdate="1"``: o ``-u`` não os troca em banco instalado. Aqui:
 - cria a categoria ``HE`` (filha de ``ALW``) se não existir;
 - ``HE_50`` e ``HE_100`` passam para ela só se ainda estão em ``ALW``;
 - ``DSR_HE`` passa a ler ``categories.HE`` só se a condição e a fórmula gravadas
-  forem exatamente as da 1.13.0 (regra personalizada fica como está, com aviso).
+  forem exatamente as da 1.13.0 **e** ``HE_50`` e ``HE_100`` estão (ou ficaram) na
+  categoria ``HE``. Se alguma delas está numa categoria personalizada, a fórmula
+  nova não a veria e o DSR sumiria sem aviso: a ``DSR_HE`` fica como está, com
+  WARNING (ajuste a categoria da regra ou a fórmula à mão).
 
 Idempotente; holerite já calculado não muda, o em rascunho recalcula.
 """
@@ -48,14 +51,25 @@ def migrate(cr, version):
                 "noupdate": True,
             }
         )
+    fora_da_categoria = []
     for xmlid in ("hr_rule_he_50", "hr_rule_he_100"):
         regra = env.ref(f"l10n_br_hr_payroll.{xmlid}", False)
         if regra and regra.category_id == alw:
             regra.category_id = he
+        if regra and regra.category_id != he:
+            fora_da_categoria.append(regra.code)
     dsr = env.ref("l10n_br_hr_payroll.hr_rule_dsr_he", False)
     if not dsr:
         return
     if _normaliza(dsr.condition_python) == CONDICAO_NOVA:
+        return
+    if fora_da_categoria:
+        _logger.warning(
+            "TG-159: %s em categoria personalizada: DSR_HE NÃO foi trocada (a fórmula "
+            "nova não veria essas regras); mova-as para a categoria HE e troque a "
+            "fórmula por categories.HE",
+            ", ".join(fora_da_categoria),
+        )
         return
     if (
         dsr.condition_select == "python"

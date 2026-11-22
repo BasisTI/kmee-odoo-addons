@@ -240,6 +240,44 @@ class TestS1200XML(TransactionCase):
         self.assertIn("AVISO_SEM_RUBRICA", s1200.avisos)
         self.assertNotIn("MULTA_FGTS", s1200.avisos)
 
+    def _linha_he(self, payslip, xmlid, valor):
+        regra = self.env.ref(f"l10n_br_hr_payroll.{xmlid}")
+        return self.env["hr.payslip.line"].create(
+            {
+                "slip_id": payslip.id,
+                "salary_rule_id": regra.id,
+                "name": regra.name,
+                "code": regra.code,
+                "employee_id": self.employee.id,
+                "contract_id": self.contract.id,
+                "quantity": 1,
+                "amount": valor,
+                "rate": 100,
+            }
+        )
+
+    def test_s1200_hora_extra_sem_rubrica_avisa_pela_categoria_filha_tg159(self):
+        """TG-159: HE_50/HE_100 estão na categoria HE (filha de ALW); sem
+        rubrica eSocial elas continuam fora do XML mas o aviso não some."""
+        payslip = self._create_payslip_with_lines([5000.0])
+        for xmlid in ("hr_rule_he_50", "hr_rule_he_100"):
+            self._linha_he(payslip, xmlid, 300.0)
+        s1200 = self._create_s1200(payslip_ids=[payslip.id])
+        with mute_logger(
+            "odoo.addons.l10n_br_esocial.models.intermediarios.s1200_remuneracao"
+        ):
+            s1200._build_itens_remun()
+        self.assertIn("HE_50", s1200.avisos or "")
+        self.assertIn("HE_100", s1200.avisos or "")
+
+    def test_s2299_hora_extra_sem_rubrica_avisa_pela_categoria_filha_tg159(self):
+        payslip = self._create_payslip_with_lines([5000.0])
+        self._linha_he(payslip, "hr_rule_he_50", 300.0)
+        s2299 = self.env["l10n_br.esocial.s2299"].new({"dt_deslig": "2026-10-20"})
+        sem_config = []
+        s2299._itens_verbas(payslip, sem_config)
+        self.assertTrue(any("HE_50" in aviso for aviso in sem_config), sem_config)
+
     def test_s1200_provento_negativo_nao_vira_positivo(self):
         """TG-137 (5): vrRubr não tem sinal (TS_vrRubr: maior que 0); provento
         negativo fica fora e avisa, em vez de sair como positivo."""

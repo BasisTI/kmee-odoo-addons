@@ -136,6 +136,19 @@ percentual constante, e não uma parcela variável (CLT art. 142, § 5º; Súmul
 e 139 do TST). No saldo de salário o adicional acompanha os dias de salário e
 desconta o que o holerite mensal do mesmo período já pagou.
 
+**DSR sobre toda hora extra**
+
+O ``DSR_HE`` reflete o valor de TODA regra da categoria *Horas Extras* (``HE``,
+filha de *Provento*), qualquer que seja o percentual (Súmula 172 do TST): além de
+``HE_50`` e ``HE_100``, uma regra própria de hora extra de CCT (60%, 70%, 75%) entra
+no reflexo só por estar nessa categoria, sem mexer na fórmula. A categoria é filha de
+Provento, então o valor segue entrando no bruto e nas bases. Em bancos instalados a
+migração da 18.0.1.14.0 move ``HE_50`` e ``HE_100`` para a categoria e troca o
+``DSR_HE`` só se ele estiver como na versão anterior; regra personalizada fica como
+está, com aviso no log. O ``DSR_HE`` tem sequência 7 e só soma o que já foi calculado:
+uma regra de hora extra com sequência **maior que 7** fica fora do reflexo, sem aviso;
+dê a ela sequência menor que 7.
+
 **Desconto de DSR por falta**
 
 A falta injustificada faz perder o repouso da semana em que ocorreu (Lei 605/49,

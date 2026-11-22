@@ -40,7 +40,9 @@ no reflexo só por estar nessa categoria, sem mexer na fórmula. A categoria é 
 Provento, então o valor segue entrando no bruto e nas bases. Em bancos instalados a
 migração da 18.0.1.14.0 move ``HE_50`` e ``HE_100`` para a categoria e troca o
 ``DSR_HE`` só se ele estiver como na versão anterior; regra personalizada fica como
-está, com aviso no log.
+está, com aviso no log. O ``DSR_HE`` tem sequência 7 e só soma o que já foi calculado:
+uma regra de hora extra com sequência **maior que 7** fica fora do reflexo, sem aviso;
+dê a ela sequência menor que 7.
 
 **Desconto de DSR por falta**
 
