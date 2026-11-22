@@ -9,7 +9,7 @@ from lxml import etree
 from odoo import _, api, fields, models
 from odoo.exceptions import UserError
 
-from .s1200_remuneracao import CATEGORIAS_DECLARAVEIS, CODIGOS_FORA_DAS_VERBAS
+from .s1200_remuneracao import CODIGOS_FORA_DAS_VERBAS, categoria_declaravel
 
 # Situações do evento que contam como declarado (ver ``hr_payslip.py``).
 EVENTO_VIGENTE = ("draft", "validated", "pending", "sent", "success")
@@ -343,7 +343,7 @@ class ESocialS2299(models.Model):
                 not rule.l10n_br_esocial_nat_rubr_id
                 or not rule.l10n_br_esocial_cod_rubr
             ):
-                if rule.category_id.code in CATEGORIAS_DECLARAVEIS:
+                if categoria_declaravel(rule.category_id):
                     sem_config.append(
                         _(
                             "Regra '%(regra)s' (%(code)s) com valor %(valor).2f "

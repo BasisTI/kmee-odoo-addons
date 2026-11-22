@@ -9,6 +9,17 @@
         <field name="name">Provento</field>
         <field name="code">ALW</field>
     </record>
+    <!--
+        Horas extras (TG-159): subcategoria de Provento. O DSR_HE reflete tudo o
+        que está nesta categoria (Súmula 172 do TST: toda hora extra habitual
+        integra o repouso, qualquer que seja o percentual), não só HE_50 e
+        HE_100. Como o pai é ALW, o valor segue entrando no bruto e nas bases.
+    -->
+    <record id="hr_salary_rule_category_he" model="hr.salary.rule.category">
+        <field name="name">Horas Extras</field>
+        <field name="code">HE</field>
+        <field name="parent_id" ref="hr_salary_rule_category_alw" />
+    </record>
     <record id="hr_salary_rule_category_gross" model="hr.salary.rule.category">
         <field name="name">Remuneração Bruta</field>
         <field name="code">GROSS</field>

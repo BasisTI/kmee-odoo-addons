@@ -14,6 +14,22 @@ _logger = logging.getLogger(__name__)
 # (GROSS, NET), informativas, encargos do empregador e provisões não são
 # rubricas do S-1200 e não geram aviso.
 CATEGORIAS_DECLARAVEIS = ("BASIC", "ALW", "DED", "PROV_INDENIZ", "PROV_TRIB_IRRF")
+
+
+def categoria_declaravel(categoria):
+    """A categoria, ou algum ancestral, está em ``CATEGORIAS_DECLARAVEIS``.
+
+    Subcategoria (ex.: ``HE``, filha de ``ALW``, TG-159) herda a natureza do pai:
+    testar só o código da categoria da regra calaria o aviso de rubrica não
+    configurada a cada subcategoria nova.
+    """
+    while categoria:
+        if categoria.code in CATEGORIAS_DECLARAVEIS:
+            return True
+        categoria = categoria.parent_id
+    return False
+
+
 # Regras que o holerite calcula mas que não são verba paga ao trabalhador: a
 # multa do FGTS vai à conta vinculada (FGTS Digital), não ao líquido, e não tem
 # natureza de rubrica no leiaute (a 6101 é a indenização paga ao empregado).
@@ -137,7 +153,7 @@ class ESocialS1200(models.Model):
                     or not rule.l10n_br_esocial_cod_rubr
                 ):
                     if (
-                        rule.category_id.code in CATEGORIAS_DECLARAVEIS
+                        categoria_declaravel(rule.category_id)
                         and rule.code not in CODIGOS_FORA_DAS_VERBAS
                     ):
                         sem_config.setdefault(rule, []).append(line.total)
