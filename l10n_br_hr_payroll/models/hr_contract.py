@@ -45,6 +45,19 @@ class HrContract(models.Model):
         "Maior que 0 e até 100. Só a regra salarial padrão lê este campo: regra "
         "personalizada do adicional noturno usa a própria fórmula e o ignora.",
     )
+    l10n_br_unidade_salario = fields.Selection(
+        selection=[("mes", "Mês"), ("hora", "Hora")],
+        string="Unidade do Salário",
+        default="mes",
+        required=True,
+        help="Unidade em que o salário do contrato é ajustado. Mês: o Salário "
+        "é mensal (padrão). Hora (horista): o Salário é o VALOR DA HORA e o "
+        "holerite paga as horas trabalhadas no mês; o repouso semanal "
+        "remunerado é calculado pela regra DSR_HORISTA (Lei 605/49, art. 7º, "
+        "b). No eSocial é a unidade do salário fixo (undSalFixo: 1 = hora, "
+        "5 = mês). Férias, 13º e rescisão do horista ainda não são calculados "
+        "e o sistema recusa o cálculo.",
+    )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
         help="Adicional de periculosidade (30% do salário base)",
@@ -60,6 +73,23 @@ class HrContract(models.Model):
         ],
         string="Grau de Insalubridade",
     )
+
+    def _l10n_br_horista(self):
+        """``True`` se o salário do contrato é por hora (valor da hora)."""
+        self.ensure_one()
+        return self.l10n_br_unidade_salario == "hora"
+
+    def _l10n_br_und_sal_fixo(self):
+        """``undSalFixo`` do eSocial: 1 = por hora, 5 = mensal."""
+        self.ensure_one()
+        return 1 if self._l10n_br_horista() else 5
+
+    def _l10n_br_salario_hora(self):
+        """Salário-hora: o próprio salário do horista; senão salário ÷ divisor."""
+        self.ensure_one()
+        if self._l10n_br_horista():
+            return self.wage
+        return self.wage / self._l10n_br_divisor_horas_mensais()
 
     # Divisor mensal padrão CLT (44h semanais × 5): usado como fallback
     # quando o contrato não tem calendário de trabalho configurado.

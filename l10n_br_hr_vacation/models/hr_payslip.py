@@ -851,7 +851,39 @@ class HrPayslip(models.Model):
         if recusas:
             raise UserError("\n".join(recusas))
 
+    _L10N_BR_ESTRUTURAS_SEM_HORISTA = (
+        "FERIAS",
+        "13_1PARCELA",
+        "13_2PARCELA",
+        "13_SALARIO",
+        "RESCISAO",
+    )
+
+    def _l10n_br_exigir_sem_horista(self):
+        """Férias, 13º e rescisão do horista não são calculados (TG-166).
+
+        Essas regras leem o salário do contrato como mensal; com a unidade
+        Hora ele é o valor da hora e o holerite sairia com valor errado, sem
+        aviso. Recusa até a regra do horista existir.
+        """
+        horistas = self.filtered(
+            lambda s: s.struct_id.code in self._L10N_BR_ESTRUTURAS_SEM_HORISTA
+            and s.contract_id
+            and s.contract_id._l10n_br_horista()
+        )
+        if horistas:
+            raise UserError(
+                _(
+                    "Férias, 13º salário e rescisão de contrato com salário por "
+                    "hora (horista) ainda não são calculados: o salário do "
+                    "contrato é o valor da hora e o holerite sairia com valor "
+                    "errado. Holerites: %(nomes)s.",
+                    nomes=", ".join(horistas.mapped(lambda r: r.number or r.name)),
+                )
+            )
+
     def compute_sheet(self):
+        self._l10n_br_exigir_sem_horista()
         confirmados = self.filtered(lambda slip: slip.state == "done")
         if confirmados:
             raise UserError(

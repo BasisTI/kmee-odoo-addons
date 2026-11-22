@@ -648,6 +648,17 @@ def calc_dsr_reflexo(valor, dias_uteis, dias_repouso):
     return round_money(valor / dias_uteis * dias_repouso)
 
 
+def calc_dsr_horista(horas, valor_hora, dias_uteis, dias_repouso):
+    """Repouso semanal remunerado do horista (Lei 605/49, art. 7º, b).
+
+    ``horas ÷ dias úteis × dias de repouso × valor-hora``. Sem hora ou sem dia
+    útil, zero.
+    """
+    if not horas or not valor_hora or dias_uteis <= 0:
+        return 0.0
+    return round_money(horas / dias_uteis * dias_repouso * valor_hora)
+
+
 def calc_ferias_dias(faltas):
     """Retorna dias de férias conforme faltas injustificadas (CLT art. 130).
 

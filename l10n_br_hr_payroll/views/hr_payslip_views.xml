@@ -11,6 +11,7 @@
                         <group string="Horas Extras">
                             <field name="l10n_br_horas_extras_50" />
                             <field name="l10n_br_horas_extras_100" />
+                            <field name="l10n_br_horas_pagas" />
                         </group>
                         <group string="Adicional Noturno">
                             <field name="l10n_br_horas_noturnas" />

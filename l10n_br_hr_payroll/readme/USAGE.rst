@@ -211,3 +211,19 @@ valor fixo (um, outro ou ambos) e a origem (vara e processo). É outra base que 
 pensão da folha e não entra no cálculo da rescisão. O S-2299 declara ``pensAlim``
 0 (sem dado), 1 (percentual), 2 (valor) ou 3 (ambos) com ``percAliment`` e
 ``vrAlim``, e o TRCT mostra o campo 29.
+
+**Horista (repouso semanal remunerado)**
+
+No contrato, a *Unidade do Salário* ``Hora`` faz do Salário o **valor da hora**
+(no eSocial, ``undSalFixo`` 1; ``Mês`` é 5). No holerite, as *Horas Pagas
+(Horista)* são as horas normais trabalhadas no mês (vazio: as horas
+trabalhadas do período, tipo WORK100); as horas extras continuam em campo
+próprio. O salário é horas × valor da hora e a regra ``DSR_HORISTA`` paga o
+repouso: horas ÷ dias úteis × (domingos e feriados) × valor da hora (Lei
+605/49, art. 7º, b), com os mesmos feriados do ``DSR_HE``. O reflexo de hora
+extra e de adicional noturno segue em ``DSR_HE`` e ``DSR_NOTURNO``. A falta
+com data perde o repouso de um dia por semana (``DESC_DSR``); o horista não
+tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º e
+rescisão do contrato por hora ainda não são calculados: o sistema recusa o
+cálculo com mensagem clara. Banco já instalado: a migração 18.0.1.15.0 ajusta
+as regras que não foram personalizadas.

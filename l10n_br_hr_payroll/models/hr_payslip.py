@@ -27,6 +27,13 @@ class HrPayslip(models.Model):
         string="Horas Extras 100%",
         help="Horas extras em domingos/feriados",
     )
+    l10n_br_horas_pagas = fields.Float(
+        string="Horas Pagas (Horista)",
+        help="Horas normais trabalhadas no mês pelo horista (sem as horas "
+        "extras, que têm campo próprio). Vazio: soma das horas trabalhadas do "
+        "período (tipo WORK100). Só vale para contrato com unidade de salário "
+        "Hora.",
+    )
     l10n_br_horas_noturnas = fields.Float(
         string="Horas Noturnas",
         help="Horas de relógio trabalhadas entre 22h e 05h (60 minutos cada), "
@@ -726,6 +733,30 @@ class HrPayslip(models.Model):
             competencia.year, competencia.month, self._l10n_br_feriados_competencia()
         )
 
+    def _l10n_br_horas_do_horista(self):
+        """Horas normais pagas ao horista no mês (0 para quem não é horista)."""
+        self.ensure_one()
+        if not self.contract_id or not self.contract_id._l10n_br_horista():
+            return 0.0
+        if self.l10n_br_horas_pagas:
+            return self.l10n_br_horas_pagas
+        return sum(
+            self.worked_days_line_ids.filtered(lambda w: w.code == "WORK100").mapped(
+                "number_of_hours"
+            )
+        )
+
+    def _l10n_br_dsr_horista(self):
+        """Repouso do horista: horas ÷ dias úteis × repouso × valor-hora."""
+        self.ensure_one()
+        uteis, repouso = self._l10n_br_dias_dsr_competencia()
+        return salary_rules_br.calc_dsr_horista(
+            self._l10n_br_horas_do_horista(),
+            self.contract_id._l10n_br_salario_hora(),
+            uteis,
+            repouso,
+        )
+
     def _l10n_br_adicionais_fixos_vigentes(self, contract, dias=30):
         """Periculosidade e insalubridade VIGENTES no contrato, por ``dias``.
 
@@ -1157,6 +1188,9 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Horista (TG-166): horas pagas e repouso semanal remunerado.
+            horas_horista=self._l10n_br_horas_do_horista,
+            dsr_horista=self._l10n_br_dsr_horista,
             # Reflexo no DSR de horas extras e adicional noturno (TG-86).
             dsr_reflexo=dsr_reflexo,
             # Repousos perdidos por falta: um por semana com falta (TG-84).

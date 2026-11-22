@@ -278,7 +278,7 @@ class ESocialS2200(models.Model):
         # Salary
         if contract.wage:
             data["vr_sal_fx"] = str(contract.wage)
-            data["und_sal_fixo"] = 5  # Mensal
+            data["und_sal_fixo"] = contract._l10n_br_und_sal_fixo()  # 1 hora, 5 mês
 
         # CBO
         cbo = getattr(employee, "job_id", None)

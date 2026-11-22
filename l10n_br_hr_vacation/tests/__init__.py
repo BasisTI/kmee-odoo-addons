@@ -36,3 +36,4 @@ from . import test_ferias_readmissao_art133
 from . import test_ferias_vinculo_art133_r2
 from . import test_migracao_aprendiz_149
 from . import test_migracao_descontos_151
+from . import test_horista_recusa
