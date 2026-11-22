@@ -16,6 +16,7 @@ from . import test_encargos_patronais
 from . import test_proporcionalidade
 from . import test_dsr_semana
 from . import test_dsr_reflexo
+from . import test_dsr_he_migracao
 from . import test_salario_maternidade
 from . import test_adicionais_fixos_bases
 from . import test_estorno
