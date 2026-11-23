@@ -15,7 +15,10 @@ class TestHoristaRecusa(VacationCommon):
         contract = self._create_contract(emp, wage=20.0, structure=estrutura)
         if horista:
             contract.write(
-                {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": 20.0}
+                {
+                    "salary_unit": self._unidade_salario("1").id,
+                    "l10n_br_valor_hora": 20.0,
+                }
             )
         return self.env["hr.payslip"].create(
             {

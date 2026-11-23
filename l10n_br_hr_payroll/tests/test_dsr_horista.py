@@ -5,7 +5,7 @@
 import importlib.util
 from datetime import date
 
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 from odoo.tests import tagged
 from odoo.tools import file_path, mute_logger
 
@@ -33,7 +33,10 @@ class TestDsrHorista(BaseDsrReflexo):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3500.0)
         contract.write(
-            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+            {
+                "salary_unit": self._unidade_salario("1").id,
+                "l10n_br_valor_hora": VALOR_HORA,
+            }
         )
         if calendario:
             contract.resource_calendar_id = calendario
@@ -145,17 +148,74 @@ class TestDsrHorista(BaseDsrReflexo):
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 5)
         self.assertEqual(contract._l10n_br_vr_sal_fixo(), 3500.0)
         contract.write(
-            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+            {
+                "salary_unit": self._unidade_salario("1").id,
+                "l10n_br_valor_hora": VALOR_HORA,
+            }
         )
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 1)
         self.assertEqual(contract._l10n_br_vr_sal_fixo(), VALOR_HORA)
         self.assertEqual(contract._l10n_br_salario_hora(), VALOR_HORA)
 
+    def test_und_sal_fixo_vem_do_codigo_da_unidade(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.0)
+        # sem unidade (banco antigo): mensal
+        self.assertFalse(contract.salary_unit)
+        self.assertEqual(contract._l10n_br_und_sal_fixo(), 5)
+        for codigo in ("2", "3", "4", "5", "6", "7"):
+            contract.salary_unit = self._unidade_salario(codigo)
+            self.assertEqual(contract._l10n_br_und_sal_fixo(), int(codigo))
+            self.assertFalse(contract._l10n_br_horista())
+            self.assertFalse(contract.l10n_br_is_horista)
+        contract.write(
+            {"salary_unit": self._unidade_salario("1").id, "l10n_br_valor_hora": 20.0}
+        )
+        self.assertTrue(contract._l10n_br_horista())
+        self.assertTrue(contract.l10n_br_is_horista)
+        self.assertEqual(contract._l10n_br_und_sal_fixo(), 1)
+
+    def test_unidade_nao_calculada_recusa_o_holerite(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.0)
+        for codigo in ("2", "3", "4", "6"):
+            contract.salary_unit = self._unidade_salario(codigo)
+            with self.assertRaises(UserError):
+                self._create_payslip(emp, contract)
+
+    def test_unidade_mensal_nao_aplicavel_ou_vazia_calcula_como_mes(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.0)
+        referencia = self._get_line_total(
+            self._create_payslip(emp, contract), "SALARIO_BASE"
+        )
+        for codigo in ("5", "7", False):
+            contract.salary_unit = (
+                self._unidade_salario(codigo)
+                if codigo
+                else self.env["hr.contract.salary.unit"]
+            )
+            slip = self._create_payslip(emp, contract)
+            self.assertEqual(self._get_line_total(slip, "SALARIO_BASE"), referencia)
+            self.assertEqual(contract.wage, 3500.0)
+
+    def test_form_do_contrato_mostra_unidade_valor_hora_e_wage_readonly(self):
+        arch = self.env["hr.contract"].get_view(view_type="form")["arch"]
+        self.assertIn('name="salary_unit"', arch)
+        self.assertIn('name="l10n_br_valor_hora"', arch)
+        # o valor da hora fica fora da div "wage" que a view da OCA substitui
+        div_wage = arch[arch.index('name="wage"') :].split("</div>")[0]
+        self.assertNotIn("l10n_br_valor_hora", div_wage)
+        self.assertRegex(arch, r'<field name="wage"[^>]*readonly="l10n_br_is_horista"')
+
     def test_wage_do_horista_e_o_mensal_de_referencia(self):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=1.0)
         contract.write(
-            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+            {
+                "salary_unit": self._unidade_salario("1").id,
+                "l10n_br_valor_hora": VALOR_HORA,
+            }
         )
         divisor = contract._l10n_br_divisor_horas_mensais()
         self.assertAlmostEqualMoney(contract.wage, VALOR_HORA * divisor)
@@ -166,7 +226,7 @@ class TestDsrHorista(BaseDsrReflexo):
         contract.l10n_br_valor_hora = 30.0
         self.assertAlmostEqualMoney(contract.wage, 30.0 * divisor)
         # o mensalista fica como está
-        contract.l10n_br_unidade_salario = "mes"
+        contract.salary_unit = self._unidade_salario("5")
         contract.wage = 3500.0
         self.assertEqual(contract.wage, 3500.0)
 
@@ -177,7 +237,7 @@ class TestDsrHorista(BaseDsrReflexo):
                 "name": "Horista",
                 "employee_id": emp.id,
                 "wage": 1.0,
-                "l10n_br_unidade_salario": "hora",
+                "salary_unit": self._unidade_salario("1").id,
                 "l10n_br_valor_hora": VALOR_HORA,
                 "date_start": "2024-01-01",
                 "state": "open",
@@ -192,7 +252,7 @@ class TestDsrHorista(BaseDsrReflexo):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3500.0)
         with self.assertRaises(ValidationError):
-            contract.l10n_br_unidade_salario = "hora"
+            contract.salary_unit = self._unidade_salario("1")
 
     def test_periculosidade_do_horista_sobre_o_mensal_de_referencia(self):
         cal = self._calendario()

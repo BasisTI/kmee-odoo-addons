@@ -8,7 +8,9 @@ from .test_beneficios import TestValeTransporteDiario
 class TestHoristaVT(TestValeTransporteDiario):
     def test_desc_vt_do_horista(self):
         emp, contract = self._contrato(wage=3500.0, diario=10.0)
-        contract.write({"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": 20.0})
+        contract.write(
+            {"salary_unit": self._unidade_salario("1").id, "l10n_br_valor_hora": 20.0}
+        )
         # o Salário do horista é o mensal de referência (valor da hora × divisor)
         self.assertGreater(contract.wage, 3500.0)
         payslip = self._create_payslip_benefit(emp, contract)

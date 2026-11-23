@@ -97,9 +97,7 @@
                                         t-esc="o.contract_id.wage"
                                         t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                     />
-                                    <t
-                                        t-if="o.contract_id.l10n_br_unidade_salario == 'hora'"
-                                    >
+                                    <t t-if="o.contract_id.l10n_br_is_horista">
                                         (horista, valor da hora
                                         <span
                                         t-esc="o.contract_id.l10n_br_valor_hora"

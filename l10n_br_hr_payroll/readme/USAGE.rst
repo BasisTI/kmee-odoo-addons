@@ -214,13 +214,20 @@ pensão da folha e não entra no cálculo da rescisão. O S-2299 declara ``pensA
 
 **Horista (repouso semanal remunerado)**
 
-No contrato, a *Unidade do Salário* ``Hora`` faz do **Valor da Hora** o dado
-do horista (no eSocial, ``undSalFixo`` 1 com ``vrSalFx`` igual ao valor da
-hora; ``Mês`` é 5). O *Salário* do contrato continua mensal: no horista é o
-**mensal de referência** (valor da hora × horas do mês da jornada do contrato,
-por exemplo 220), calculado e só leitura. Vale-transporte, periculosidade,
-VA/VR e as demais regras que leem o Salário usam esse mensal de referência
-(não as horas pagas do mês).
+A unidade do salário vem de um campo só, a *Unidade do Salário* (``salary_unit``)
+do ``l10n_br_hr_contract``, e o código dela é o ``undSalFixo`` do eSocial.
+*Hourly* (código 1) faz do contrato um horista: o **Valor da Hora** é o dado do
+horista (no eSocial, ``undSalFixo`` 1 com ``vrSalFx`` igual ao valor da hora).
+O *Salário* do contrato continua mensal: no horista é o **mensal de
+referência** (valor da hora × horas do mês da jornada do contrato, por exemplo
+220), calculado e só leitura. Vale-transporte, periculosidade, VA/VR e as
+demais regras que leem o Salário usam esse mensal de referência (não as horas
+pagas do mês).
+
+*Monthly* (5), *Não aplicável* (7) e o contrato sem unidade (bancos antigos)
+são calculados como mensais. *Daily* (2), *Weekly* (3), *Biweekly* (4) e
+*Task* (6) ainda não são calculados: o holerite é recusado com uma mensagem,
+em vez de sair como mês. No contrato horista, o Valor da Hora é obrigatório.
 
 No holerite, as *Horas Pagas (Horista)* são as horas normais trabalhadas no
 mês (vazio: as horas trabalhadas do período, tipo WORK100, menos a jornada

@@ -45,28 +45,29 @@ class HrContract(models.Model):
         "Maior que 0 e até 100. Só a regra salarial padrão lê este campo: regra "
         "personalizada do adicional noturno usa a própria fórmula e o ignora.",
     )
-    l10n_br_unidade_salario = fields.Selection(
-        selection=[("mes", "Mês"), ("hora", "Hora")],
-        string="Unidade do Salário",
-        default="mes",
-        required=True,
-        help="Unidade em que o salário do contrato é ajustado. Mês: o Salário "
-        "é mensal (padrão). Hora (horista): o ajuste é o Valor da Hora e o "
-        "Salário passa a ser o mensal de referência (valor da hora × horas do "
-        "mês do contrato), só leitura; o holerite paga as horas trabalhadas e "
-        "o repouso semanal remunerado pela regra DSR_HORISTA (Lei 605/49, "
-        "art. 7º, b). Vale-transporte, periculosidade, VA/VR e as demais "
-        "regras que leem o Salário usam o mensal de referência. No eSocial é a "
-        "unidade do salário fixo (undSalFixo: 1 = hora, com o valor da hora; "
-        "5 = mês). Férias, 13º e rescisão do horista ainda não são calculados "
-        "e o sistema recusa o cálculo.",
+    l10n_br_is_horista = fields.Boolean(
+        string="Horista",
+        compute="_compute_l10n_br_is_horista",
+        help="Marcado quando a Unidade do Salário (campo ``salary_unit`` do "
+        "l10n_br_hr_contract, undSalFixo do eSocial) é Hourly (código 1). Serve "
+        "às views e aos relatórios.",
     )
     l10n_br_valor_hora = fields.Monetary(
         string="Valor da Hora",
         currency_field="currency_id",
-        help="Valor da hora do horista (unidade do salário Hora). Fonte do "
-        "salário, das horas extras, do adicional noturno e do repouso do "
-        "horista, e do vrSalFx do eSocial. Vazio para o mensalista.",
+        help="Valor da hora do horista: contrato com a Unidade do Salário "
+        "Hourly (código 1). Nessa unidade o Salário do contrato passa a ser o "
+        "mensal de referência (valor da hora × horas do mês do contrato), só "
+        "leitura; o holerite paga as horas trabalhadas e o repouso semanal "
+        "remunerado pela regra DSR_HORISTA (Lei 605/49, art. 7º, b). "
+        "Vale-transporte, periculosidade, VA/VR e as demais regras que leem o "
+        "Salário usam o mensal de referência. É a fonte do salário, das horas "
+        "extras, do adicional noturno e do repouso do horista, e do vrSalFx do "
+        "eSocial (undSalFixo 1). Vazio para o mensalista.\n\n"
+        "Unidades Monthly (5), Não aplicável (7) ou sem unidade: salário "
+        "mensal. Daily, Weekly, Biweekly e Task ainda não são calculadas: o "
+        "holerite é recusado. Férias, 13º e rescisão do horista também não "
+        "são calculados e o sistema recusa o cálculo.",
     )
     wage = fields.Monetary(
         compute="_compute_wage_horista",
@@ -89,15 +90,45 @@ class HrContract(models.Model):
         string="Grau de Insalubridade",
     )
 
+    # Códigos do ``salary_unit`` (undSalFixo do eSocial, tabela 14).
+    _L10N_BR_UNIDADE_HORA = "1"
+    _L10N_BR_UNIDADE_MES = "5"
+    # Unidades que a folha ainda não calcula: o holerite é recusado.
+    _L10N_BR_UNIDADES_NAO_CALCULADAS = {
+        "2": "Daily",
+        "3": "Weekly",
+        "4": "Biweekly",
+        "6": "Task",
+    }
+
+    def _l10n_br_codigo_unidade(self):
+        """Código do ``salary_unit``; sem unidade (banco antigo): mensal."""
+        self.ensure_one()
+        return self.salary_unit.code or self._L10N_BR_UNIDADE_MES
+
     def _l10n_br_horista(self):
         """``True`` se o salário do contrato é por hora (valor da hora)."""
         self.ensure_one()
-        return self.l10n_br_unidade_salario == "hora"
+        return self._l10n_br_codigo_unidade() == self._L10N_BR_UNIDADE_HORA
+
+    @api.depends("salary_unit", "salary_unit.code")
+    def _compute_l10n_br_is_horista(self):
+        for rec in self:
+            rec.l10n_br_is_horista = rec.salary_unit.code == rec._L10N_BR_UNIDADE_HORA
 
     def _l10n_br_und_sal_fixo(self):
-        """``undSalFixo`` do eSocial: 1 = por hora, 5 = mensal."""
+        """``undSalFixo`` do eSocial: o código do ``salary_unit`` (sem: 5)."""
         self.ensure_one()
-        return 1 if self._l10n_br_horista() else 5
+        codigo = self._l10n_br_codigo_unidade()
+        return int(codigo) if codigo.isdigit() else int(self._L10N_BR_UNIDADE_MES)
+
+    def _l10n_br_unidade_do_vals(self, vals):
+        """``True``/``False`` se ``vals`` põe/tira a unidade Hora; ``None`` se
+        ``vals`` não mexe na unidade."""
+        if "salary_unit" not in vals:
+            return None
+        unidade = self.env["hr.contract.salary.unit"].browse(vals["salary_unit"] or [])
+        return unidade.code == self._L10N_BR_UNIDADE_HORA
 
     def _l10n_br_salario_hora(self):
         """Salário-hora: o próprio salário do horista; senão salário ÷ divisor."""
@@ -156,7 +187,8 @@ class HrContract(models.Model):
         return horas_semanais * 5.0
 
     @api.depends(
-        "l10n_br_unidade_salario",
+        "salary_unit",
+        "salary_unit.code",
         "l10n_br_valor_hora",
         "resource_calendar_id",
         "resource_calendar_id.attendance_ids",
@@ -170,7 +202,7 @@ class HrContract(models.Model):
         Para o mensalista o valor digitado fica como está.
         """
         for rec in self:
-            if rec.l10n_br_unidade_salario == "hora":
+            if rec._l10n_br_horista():
                 rec.wage = round(
                     rec.l10n_br_valor_hora * rec._l10n_br_divisor_horas_mensais(), 2
                 )
@@ -181,10 +213,10 @@ class HrContract(models.Model):
     def create(self, vals_list):
         # O mensal do horista é calculado: o ``wage`` informado é ignorado.
         for vals in vals_list:
-            if vals.get("l10n_br_unidade_salario") == "hora":
+            if self._l10n_br_unidade_do_vals(vals):
                 vals["wage"] = 0.0
         records = super().create(vals_list)
-        for rec in records.filtered(lambda c: c.l10n_br_unidade_salario == "hora"):
+        for rec in records.filtered(lambda c: c._l10n_br_horista()):
             rec._l10n_br_atualiza_wage_horista()
         return records
 
@@ -205,11 +237,11 @@ class HrContract(models.Model):
         """
         if "wage" not in vals:
             return vals
-        unidade = vals.get("l10n_br_unidade_salario")
-        if unidade:
-            horistas = self if unidade == "hora" else self.browse()
+        vira_hora = self._l10n_br_unidade_do_vals(vals)
+        if vira_hora is None:
+            horistas = self.filtered(lambda c: c._l10n_br_horista())
         else:
-            horistas = self.filtered(lambda c: c.l10n_br_unidade_salario == "hora")
+            horistas = self if vira_hora else self.browse()
         if not horistas:
             return vals
         resto = self - horistas
@@ -217,10 +249,10 @@ class HrContract(models.Model):
             resto.write({"wage": vals["wage"]})
         return {k: v for k, v in vals.items() if k != "wage"}
 
-    @api.constrains("l10n_br_unidade_salario", "l10n_br_valor_hora")
+    @api.constrains("salary_unit", "l10n_br_valor_hora")
     def _check_valor_hora_horista(self):
         for rec in self:
-            if rec.l10n_br_unidade_salario == "hora" and rec.l10n_br_valor_hora <= 0:
+            if rec._l10n_br_horista() and rec.l10n_br_valor_hora <= 0:
                 raise ValidationError(
                     _("Informe o Valor da Hora (maior que zero) do contrato horista.")
                 )

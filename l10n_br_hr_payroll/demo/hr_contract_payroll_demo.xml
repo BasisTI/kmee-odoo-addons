@@ -65,7 +65,7 @@
         <field name="labor_bond_type_id" ref="l10n_br_hr_contract.labor_bond_type_10" />
         <field name="admission_type_id" ref="l10n_br_hr_contract.admission_type_1" />
         <field name="welfare_policy">rgps</field>
-        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_5" />
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="weekly_hours">44</field>
         <field name="monthly_hours">220</field>
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
@@ -85,7 +85,7 @@
         <field name="labor_bond_type_id" ref="l10n_br_hr_contract.labor_bond_type_10" />
         <field name="admission_type_id" ref="l10n_br_hr_contract.admission_type_1" />
         <field name="welfare_policy">rgps</field>
-        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_5" />
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="weekly_hours">44</field>
         <field name="monthly_hours">220</field>
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />

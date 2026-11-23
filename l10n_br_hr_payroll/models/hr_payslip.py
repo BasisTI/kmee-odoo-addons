@@ -223,6 +223,43 @@ class HrPayslip(models.Model):
             else:
                 rec.l10n_br_horas_noturnas_computadas = rec.l10n_br_horas_noturnas
 
+    def _l10n_br_exigir_unidade_calculada(self):
+        """Recusa o holerite de contrato com unidade de salário não calculada.
+
+        Daily (2), Weekly (3), Biweekly (4) e Task (6) não têm regra na folha:
+        calculá-las como mês pagaria valor errado em silêncio. Mensal (5), Não
+        aplicável (7) e contrato sem unidade seguem como mensal; Hourly (1) é o
+        horista, que precisa do Valor da Hora.
+        """
+        recusados = self.filtered(
+            lambda s: s.contract_id
+            and s.contract_id._l10n_br_codigo_unidade()
+            in s.contract_id._L10N_BR_UNIDADES_NAO_CALCULADAS
+        )
+        if recusados:
+            raise UserError(
+                _(
+                    "A folha ainda não calcula contrato com a Unidade do Salário "
+                    "diária, semanal, quinzenal ou por tarefa: calculá-lo como "
+                    "mensal pagaria valor errado. Use Monthly (mensal) ou "
+                    "Hourly (horista). Holerites: %(nomes)s.",
+                    nomes=", ".join(recusados.mapped(lambda r: r.number or r.name)),
+                )
+            )
+        sem_valor = self.filtered(
+            lambda s: s.contract_id
+            and s.contract_id._l10n_br_horista()
+            and s.contract_id.l10n_br_valor_hora <= 0
+        )
+        if sem_valor:
+            raise UserError(
+                _(
+                    "O contrato tem a Unidade do Salário Hourly (horista), mas "
+                    "não tem o Valor da Hora. Holerites: %(nomes)s.",
+                    nomes=", ".join(sem_valor.mapped(lambda r: r.number or r.name)),
+                )
+            )
+
     def compute_sheet(self):
         """Ensure worked_days_line_ids are populated before computing rules.
 
@@ -232,6 +269,7 @@ class HrPayslip(models.Model):
         created programmatically (tests, demo, API), worked_days are empty.
         This override fills them in if missing.
         """
+        self._l10n_br_exigir_unidade_calculada()
         for payslip in self:
             if not payslip.worked_days_line_ids:
                 contracts = payslip._get_employee_contracts()
