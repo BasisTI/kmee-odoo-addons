@@ -163,11 +163,9 @@ class TestDsrHorista(BaseDsrReflexo):
         # sem unidade (banco antigo): mensal
         self.assertFalse(contract.salary_unit)
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 5)
-        for codigo in ("2", "3", "4", "5", "6", "7"):
-            contract.salary_unit = self._unidade_salario(codigo)
-            self.assertEqual(contract._l10n_br_und_sal_fixo(), int(codigo))
-            self.assertFalse(contract._l10n_br_horista())
-            self.assertFalse(contract.l10n_br_is_horista)
+        self.assertFalse(contract.l10n_br_is_horista)
+        contract.salary_unit = self._unidade_salario("5")
+        self.assertEqual(contract._l10n_br_und_sal_fixo(), 5)
         contract.write(
             {"salary_unit": self._unidade_salario("1").id, "l10n_br_valor_hora": 20.0}
         )
@@ -175,21 +173,50 @@ class TestDsrHorista(BaseDsrReflexo):
         self.assertTrue(contract.l10n_br_is_horista)
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 1)
 
-    def test_unidade_nao_calculada_recusa_o_holerite(self):
+    def test_unidade_nao_suportada_recusa_holerite_e_esocial(self):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3500.0)
-        for codigo in ("2", "3", "4", "6"):
+        for codigo in ("2", "3", "4", "6", "7"):
             contract.salary_unit = self._unidade_salario(codigo)
-            with self.assertRaises(UserError):
+            with self.assertRaises(UserError) as erro:
                 self._create_payslip(emp, contract)
+            # a mensagem diz quem corrigir
+            self.assertIn(emp.name, str(erro.exception))
+            self.assertIn(contract.display_name, str(erro.exception))
+            # eSocial (S-2200, S-2206 e tsv_mixin leem este método)
+            with self.assertRaises(UserError):
+                contract._l10n_br_und_sal_fixo()
 
-    def test_unidade_mensal_nao_aplicavel_ou_vazia_calcula_como_mes(self):
+    def test_lote_com_um_contrato_nao_suportado_lista_quem_corrigir(self):
+        emp = self._create_employee("Func Certo")
+        bom = self._create_contract(emp, wage=3500.0)
+        emp2 = self._create_employee("Func Errado")
+        ruim = self._create_contract(emp2, wage=3500.0)
+        ruim.salary_unit = self._unidade_salario("3")
+        slips = self.env["hr.payslip"]
+        for e, c in ((emp, bom), (emp2, ruim)):
+            slips |= self.env["hr.payslip"].create(
+                {
+                    "name": "x",
+                    "employee_id": e.id,
+                    "contract_id": c.id,
+                    "struct_id": c.struct_id.id,
+                    "date_from": date(2026, 10, 1),
+                    "date_to": date(2026, 10, 31),
+                }
+            )
+        with self.assertRaises(UserError) as erro:
+            slips.compute_sheet()
+        self.assertIn(emp2.name, str(erro.exception))
+        self.assertNotIn(emp.name, str(erro.exception))
+
+    def test_unidade_mensal_ou_vazia_calcula_como_mes(self):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3500.0)
         referencia = self._get_line_total(
             self._create_payslip(emp, contract), "SALARIO_BASE"
         )
-        for codigo in ("5", "7", False):
+        for codigo in ("5", False):
             contract.salary_unit = (
                 self._unidade_salario(codigo)
                 if codigo
@@ -198,6 +225,40 @@ class TestDsrHorista(BaseDsrReflexo):
             slip = self._create_payslip(emp, contract)
             self.assertEqual(self._get_line_total(slip, "SALARIO_BASE"), referencia)
             self.assertEqual(contract.wage, 3500.0)
+
+    def test_hourly_sem_valor_hora_mantem_o_wage(self):
+        """Hourly gravado sem valor da hora (banco antigo): o wage não zera."""
+        emp = self._create_employee()
+        cal = self._calendario()
+        contract = self._create_contract(emp, wage=3500.0)
+        contract.resource_calendar_id = cal
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE hr_contract SET salary_unit=%s WHERE id=%s",
+            (self._unidade_salario("1").id, contract.id),
+        )
+        self.env.invalidate_all()
+        self.assertTrue(contract._l10n_br_horista())
+        # gravar a jornada do calendário compartilhado, trocar o calendário
+        cal.attendance_ids[:1].hour_to = cal.attendance_ids[:1].hour_to - 1
+        self.env.flush_all()
+        self.env.invalidate_all()
+        self.assertEqual(contract.wage, 3500.0)
+        contract.resource_calendar_id = self._calendario()
+        self.env.flush_all()
+        self.assertEqual(contract.wage, 3500.0)
+        # voltar a Monthly preserva o mensal
+        contract.salary_unit = self._unidade_salario("5")
+        self.assertEqual(contract.wage, 3500.0)
+        # o holerite do Hourly sem valor da hora continua recusado
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE hr_contract SET salary_unit=%s WHERE id=%s",
+            (self._unidade_salario("1").id, contract.id),
+        )
+        self.env.invalidate_all()
+        with self.assertRaises(UserError):
+            self._create_payslip(emp, contract)
 
     def test_form_do_contrato_mostra_unidade_valor_hora_e_wage_readonly(self):
         arch = self.env["hr.contract"].get_view(view_type="form")["arch"]
@@ -298,6 +359,37 @@ class TestDsrHorista(BaseDsrReflexo):
             round((cal.hours_per_day or 8.0) * VALOR_HORA, 2),
         )
 
+    def _calendario_noturno(self):
+        """Segunda 22h-24h e terça 0h-6h: um turno só, que cruza a meia-noite."""
+        cal = self._calendario()
+        cal.attendance_ids.unlink()
+        cal.write(
+            {
+                "attendance_ids": [
+                    (
+                        0,
+                        0,
+                        {"name": "Noite", "dayofweek": d, "hour_from": i, "hour_to": f},
+                    )
+                    for d, i, f in (("0", 22.0, 24.0), ("1", 0.0, 6.0))
+                ]
+            }
+        )
+        return cal
+
+    def test_falta_no_turno_noturno_usa_o_fuso_do_calendario(self):
+        # segunda 22h-24h e terça 0h-6h, fuso do calendário em America/Sao_Paulo
+        cal = self._calendario_noturno()
+        base = self._get_line_total(self._horista(cal), "SALARIO_BASE")
+        seg = self._horista(cal, faltas=[date(2026, 10, 5)])
+        ter = self._horista(cal, faltas=[date(2026, 10, 6)])
+        self.assertAlmostEqualMoney(
+            base - self._get_line_total(seg, "SALARIO_BASE"), 2.0 * VALOR_HORA
+        )
+        self.assertAlmostEqualMoney(
+            base - self._get_line_total(ter, "SALARIO_BASE"), 6.0 * VALOR_HORA
+        )
+
     def test_feriado_no_domingo_nao_conta_em_dobro(self):
         cal = self._calendario()
         self._feriado(cal, dia=date(2026, 10, 4))
@@ -321,6 +413,29 @@ class TestMigracaoHorista(BaseDsrReflexo):
         spec.loader.exec_module(modulo)
         with mute_logger("post_migration_tg166"):
             modulo.migrate(self.env.cr, "18.0.1.14.0")
+
+    def test_migracao_avisa_hourly_sem_valor_hora_sem_alterar_dado(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.0)
+        self.env.flush_all()
+        self.env.cr.execute(
+            "UPDATE hr_contract SET salary_unit=%s WHERE id=%s",
+            (self._unidade_salario("1").id, contract.id),
+        )
+        self.env.invalidate_all()
+        caminho = file_path(
+            "l10n_br_hr_payroll/migrations/18.0.1.15.0/post-migration.py"
+        )
+        spec = importlib.util.spec_from_file_location("post_migration_tg166", caminho)
+        modulo = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(modulo)
+        with self.assertLogs("post_migration_tg166", "WARNING") as logs:
+            modulo.migrate(self.env.cr, "18.0.1.14.0")
+        aviso = "\n".join(logs.output)
+        self.assertIn("Hourly", aviso)
+        self.assertIn(str(contract.id), aviso)
+        self.env.invalidate_all()
+        self.assertEqual(contract.wage, 3500.0)
 
     def _estado_1_14(self):
         """Fórmulas como o XML da 18.0.1.14.0 (9de402dd) as grava, com comentários."""

@@ -112,3 +112,22 @@ def migrate(cr, version):
     clt = env.ref("l10n_br_hr_payroll.structure_clt", False)
     if dsr and clt and dsr not in clt.rule_ids:
         clt.rule_ids = [(4, dsr.id)]
+    # Hourly sem valor da hora (banco com o código 1 da OCA): não altera dado,
+    # só avisa; o holerite desses contratos é recusado até informar o valor.
+    cr.execute(
+        """
+        SELECT c.id FROM hr_contract c
+          JOIN hr_contract_salary_unit u ON u.id = c.salary_unit
+         WHERE u.code = '1' AND COALESCE(c.l10n_br_valor_hora, 0) <= 0
+         ORDER BY c.id
+        """
+    )
+    ids = [r[0] for r in cr.fetchall()]
+    if ids:
+        _logger.warning(
+            "TG-166: %d contrato(s) com a Unidade do Salário Hourly (código 1) e "
+            "sem Valor da Hora; o Salário foi mantido, mas o holerite é recusado "
+            "até informar o valor da hora. Contratos: %s",
+            len(ids),
+            ids,
+        )

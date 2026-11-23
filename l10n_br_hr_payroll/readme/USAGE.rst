@@ -224,10 +224,23 @@ referência** (valor da hora × horas do mês da jornada do contrato, por exempl
 demais regras que leem o Salário usam esse mensal de referência (não as horas
 pagas do mês).
 
-*Monthly* (5), *Não aplicável* (7) e o contrato sem unidade (bancos antigos)
-são calculados como mensais. *Daily* (2), *Weekly* (3), *Biweekly* (4) e
-*Task* (6) ainda não são calculados: o holerite é recusado com uma mensagem,
-em vez de sair como mês. No contrato horista, o Valor da Hora é obrigatório.
+Só *Hourly* (1), *Monthly* (5) e o contrato sem unidade (bancos antigos,
+calculado como mensal) são suportados. *Daily* (2), *Weekly* (3), *Biweekly*
+(4), *Task* (6) e *Não aplicável* (7) são recusados com uma mensagem, no
+holerite e na geração do S-2200, do S-2206 e dos eventos de trabalhador sem vínculo (``undSalFixo``): o
+mês seria pago em silêncio, e o eSocial exigiria ``dscSalVar`` (6 e 7) e
+``vrSalFx`` zero (7). A mensagem lista os contratos e os funcionários a
+corrigir. Como a recusa está no cálculo do holerite, **um contrato assim
+recusa o lote inteiro** e também as operações em cascata que recalculam
+holerites abertos (mudar a convenção coletiva ou um benefício, por exemplo,
+quando há holerite aberto de um contrato com unidade não suportada). No
+contrato horista, o Valor da Hora é obrigatório; o contrato Hourly de um banco
+antigo, sem valor da hora, mantém o Salário gravado (a migração avisa no log
+quais são) e o holerite dele é recusado até informar o valor.
+
+Limite: o parâmetro ``payroll.prevent_compute_on_confirm`` não reavalia a
+unidade na confirmação; um holerite calculado antes da troca da unidade para
+uma não suportada é confirmado sem recusa (só o recálculo recusa).
 
 No holerite, as *Horas Pagas (Horista)* são as horas normais trabalhadas no
 mês (vazio: as horas trabalhadas do período, tipo WORK100, menos a jornada

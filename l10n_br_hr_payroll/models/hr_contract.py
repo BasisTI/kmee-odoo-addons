@@ -2,7 +2,7 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
 
 from .res_company import SIMPLES_ANEXO
 
@@ -93,13 +93,11 @@ class HrContract(models.Model):
     # Códigos do ``salary_unit`` (undSalFixo do eSocial, tabela 14).
     _L10N_BR_UNIDADE_HORA = "1"
     _L10N_BR_UNIDADE_MES = "5"
-    # Unidades que a folha ainda não calcula: o holerite é recusado.
-    _L10N_BR_UNIDADES_NAO_CALCULADAS = {
-        "2": "Daily",
-        "3": "Weekly",
-        "4": "Biweekly",
-        "6": "Task",
-    }
+    # Unidades suportadas: Hourly (1), Monthly (5) e contrato sem unidade (= mensal).
+    # As demais (2 Daily, 3 Weekly, 4 Biweekly, 6 Task, 7 Não aplicável) são
+    # recusadas no holerite e no eSocial: calculá-las como mês pagaria valor
+    # errado, e o eSocial exige dscSalVar (6 e 7) e vrSalFx 0 (7).
+    _L10N_BR_UNIDADES_SUPORTADAS = {"1", "5"}
 
     def _l10n_br_codigo_unidade(self):
         """Código do ``salary_unit``; sem unidade (banco antigo): mensal."""
@@ -116,11 +114,32 @@ class HrContract(models.Model):
         for rec in self:
             rec.l10n_br_is_horista = rec.salary_unit.code == rec._L10N_BR_UNIDADE_HORA
 
-    def _l10n_br_und_sal_fixo(self):
-        """``undSalFixo`` do eSocial: o código do ``salary_unit`` (sem: 5)."""
+    def _l10n_br_unidade_suportada(self):
         self.ensure_one()
-        codigo = self._l10n_br_codigo_unidade()
-        return int(codigo) if codigo.isdigit() else int(self._L10N_BR_UNIDADE_MES)
+        return self._l10n_br_codigo_unidade() in self._L10N_BR_UNIDADES_SUPORTADAS
+
+    def _l10n_br_exigir_unidade_suportada(self):
+        """``UserError`` se algum contrato tem unidade do salário não suportada."""
+        invalidos = self.filtered(lambda c: not c._l10n_br_unidade_suportada())
+        if invalidos:
+            raise UserError(
+                _(
+                    "A Unidade do Salário só pode ser Hourly (horista) ou Monthly "
+                    "(mensal) por enquanto; diária, semanal, quinzenal, por "
+                    "tarefa e não aplicável ainda não são suportadas. Corrija "
+                    "o contrato: %(contratos)s.",
+                    contratos=", ".join(
+                        "%s (%s)" % (c.display_name, c.employee_id.name or "-")
+                        for c in invalidos
+                    ),
+                )
+            )
+
+    def _l10n_br_und_sal_fixo(self):
+        """``undSalFixo`` do eSocial: o código do ``salary_unit`` (1 ou 5)."""
+        self.ensure_one()
+        self._l10n_br_exigir_unidade_suportada()
+        return int(self._l10n_br_codigo_unidade())
 
     def _l10n_br_unidade_do_vals(self, vals):
         """``True``/``False`` se ``vals`` põe/tira a unidade Hora; ``None`` se
@@ -202,11 +221,13 @@ class HrContract(models.Model):
         Para o mensalista o valor digitado fica como está.
         """
         for rec in self:
-            if rec._l10n_br_horista():
+            if rec._l10n_br_horista() and rec.l10n_br_valor_hora > 0:
                 rec.wage = round(
                     rec.l10n_br_valor_hora * rec._l10n_br_divisor_horas_mensais(), 2
                 )
             else:
+                # Mensalista, ou Hourly ainda sem valor da hora: o ``wage``
+                # gravado fica (nunca zera o mensal em silêncio).
                 rec.wage = rec.wage
 
     @api.model_create_multi

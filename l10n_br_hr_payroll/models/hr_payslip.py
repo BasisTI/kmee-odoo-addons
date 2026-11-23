@@ -224,28 +224,15 @@ class HrPayslip(models.Model):
                 rec.l10n_br_horas_noturnas_computadas = rec.l10n_br_horas_noturnas
 
     def _l10n_br_exigir_unidade_calculada(self):
-        """Recusa o holerite de contrato com unidade de salário não calculada.
+        """Recusa o holerite de contrato com unidade de salário não suportada.
 
-        Daily (2), Weekly (3), Biweekly (4) e Task (6) não têm regra na folha:
-        calculá-las como mês pagaria valor errado em silêncio. Mensal (5), Não
-        aplicável (7) e contrato sem unidade seguem como mensal; Hourly (1) é o
-        horista, que precisa do Valor da Hora.
+        Só Hourly (1), Monthly (5) e contrato sem unidade (mensal) são
+        calculados; as demais pagariam valor errado em silêncio. A mensagem
+        lista os contratos e os funcionários, para o DP achar quem corrigir
+        (um só contrato assim recusa o lote inteiro). Hourly precisa do Valor da
+        Hora.
         """
-        recusados = self.filtered(
-            lambda s: s.contract_id
-            and s.contract_id._l10n_br_codigo_unidade()
-            in s.contract_id._L10N_BR_UNIDADES_NAO_CALCULADAS
-        )
-        if recusados:
-            raise UserError(
-                _(
-                    "A folha ainda não calcula contrato com a Unidade do Salário "
-                    "diária, semanal, quinzenal ou por tarefa: calculá-lo como "
-                    "mensal pagaria valor errado. Use Monthly (mensal) ou "
-                    "Hourly (horista). Holerites: %(nomes)s.",
-                    nomes=", ".join(recusados.mapped(lambda r: r.number or r.name)),
-                )
-            )
+        self.mapped("contract_id")._l10n_br_exigir_unidade_suportada()
         sem_valor = self.filtered(
             lambda s: s.contract_id
             and s.contract_id._l10n_br_horista()
@@ -805,9 +792,15 @@ class HrPayslip(models.Model):
             if not calendario:
                 total += horas_dia
                 continue
-            inicio = datetime.combine(dia, time.min)
+            # O dia é o do fuso do calendário (a jornada dele é nesse fuso): a
+            # janela em UTC deslocaria o turno noturno para o dia errado.
+            fuso = pytz.timezone(calendario.tz or "UTC")
+            inicio = fuso.localize(datetime.combine(dia, time.min))
+            fim = fuso.localize(datetime.combine(dia + timedelta(days=1), time.min))
             total += calendario.get_work_hours_count(
-                inicio, inicio + timedelta(days=1), compute_leaves=True
+                inicio.astimezone(pytz.utc).replace(tzinfo=None),
+                fim.astimezone(pytz.utc).replace(tzinfo=None),
+                compute_leaves=True,
             )
         return total
 
