@@ -222,6 +222,22 @@ class TestDsrHorista(BaseDsrReflexo):
         )
         self.assertFalse(self._get_line_total(com, "FALTAS"))
 
+    def test_falta_em_feriado_ou_domingo_nao_abate_horas(self):
+        cal = self._calendario()
+        self._feriado(cal)  # 12/10/2026, segunda-feira
+        sem = self._horista(cal)
+        feriado = self._horista(cal, faltas=[date(2026, 10, 12)])
+        domingo = self._horista(cal, faltas=[date(2026, 10, 4)])
+        base = self._get_line_total(sem, "SALARIO_BASE")
+        self.assertAlmostEqualMoney(self._get_line_total(feriado, "SALARIO_BASE"), base)
+        self.assertAlmostEqualMoney(self._get_line_total(domingo, "SALARIO_BASE"), base)
+        # dia útil comum abate a jornada do dia
+        util = self._horista(cal, faltas=[date(2026, 10, 13)])
+        self.assertAlmostEqualMoney(
+            base - self._get_line_total(util, "SALARIO_BASE"),
+            round((cal.hours_per_day or 8.0) * VALOR_HORA, 2),
+        )
+
     def test_feriado_no_domingo_nao_conta_em_dobro(self):
         cal = self._calendario()
         self._feriado(cal, dia=date(2026, 10, 4))
@@ -234,6 +250,8 @@ class TestDsrHorista(BaseDsrReflexo):
 
 @tagged("post_install", "-at_install")
 class TestMigracaoHorista(BaseDsrReflexo):
+    _horista = TestDsrHorista._horista
+
     def _migrar(self):
         caminho = file_path(
             "l10n_br_hr_payroll/migrations/18.0.1.15.0/post-migration.py"
@@ -245,18 +263,49 @@ class TestMigracaoHorista(BaseDsrReflexo):
             modulo.migrate(self.env.cr, "18.0.1.14.0")
 
     def _estado_1_14(self):
+        """Fórmulas como o XML da 18.0.1.14.0 (9de402dd) as grava, com comentários."""
         ref = self.env.ref
-        ref("l10n_br_hr_payroll.hr_rule_he_50").amount_python_compute = (
-            "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()\n"
-            "result = tools.br.round_money(salario_hora * 1.5 * payslip.l10n_br_horas_extras_50)"  # noqa: B950
+        ref("l10n_br_hr_payroll.hr_rule_salario_base").amount_python_compute = (
+            "\n# Proporcional aos dias de salário do mês (admissão, desligamento, "
+            "afastamento\n"
+            "# previdenciário), em mês comercial de 30 dias. Os dias de "
+            "licença-maternidade\n"
+            "# saem daqui e vão para SALARIO_MATERNIDADE (mesmo conjunto de dias).\n"
+            "dias = tools.br.dias_salario(contract) - "
+            "tools.br.dias_maternidade(contract)\n"
+            "result = tools.br.round_money(contract.wage * dias / 30)\n        "
         )
         ref(
             "l10n_br_hr_payroll.hr_rule_faltas"
-        ).condition_python = "result = payslip.l10n_br_faltas_injustificadas > 0"
-        ref("l10n_br_hr_payroll.hr_rule_salario_base").amount_python_compute = (
-            "dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)\n"
-            "result = tools.br.round_money(contract.wage * dias / 30)"
+        ).condition_python = (
+            "\nresult = payslip.l10n_br_faltas_injustificadas > 0\n        "
         )
+        ref("l10n_br_hr_payroll.hr_rule_desc_dsr").amount_python_compute = (
+            "\nresult = tools.br.round_money((contract.wage / 30) * "
+            "tools.br.semanas_com_falta(contract))\n        "
+        )
+        for xmlid, resto in (
+            (
+                "hr_rule_he_50",
+                "result = tools.br.round_money(salario_hora * 1.5 * "
+                "payslip.l10n_br_horas_extras_50)",
+            ),
+            (
+                "hr_rule_he_100",
+                "result = tools.br.round_money(salario_hora * 2.0 * "
+                "payslip.l10n_br_horas_extras_100)",
+            ),
+            (
+                "hr_rule_adicional_noturno",
+                "result = tools.br.round_money(salario_hora * "
+                "contract.l10n_br_adicional_noturno_perc / 100.0 * "
+                "payslip.l10n_br_horas_noturnas_computadas)",
+            ),
+        ):
+            ref(f"l10n_br_hr_payroll.{xmlid}").amount_python_compute = (
+                "\nsalario_hora = contract.wage / "
+                "contract._l10n_br_divisor_horas_mensais()\n" + resto + "\n        "
+            )
         ref("l10n_br_hr_payroll.structure_clt").rule_ids = [
             (3, ref("l10n_br_hr_payroll.hr_rule_dsr_horista").id)
         ]
@@ -277,9 +326,29 @@ class TestMigracaoHorista(BaseDsrReflexo):
         self.assertIn("_l10n_br_salario_hora() * tools.br.horas_horista()", base)
         self.assertIn("contract.wage * dias / 30", base)
         self.assertIn(
+            "_l10n_br_horista()",
+            ref("l10n_br_hr_payroll.hr_rule_desc_dsr").amount_python_compute,
+        )
+        for xmlid in ("hr_rule_he_100", "hr_rule_adicional_noturno"):
+            self.assertIn(
+                "_l10n_br_salario_hora()",
+                ref(f"l10n_br_hr_payroll.{xmlid}").amount_python_compute,
+            )
+        # o resultado vale no holerite: horista de R$ 20/h, 176 h, 40 h semanais
+        slip = self._horista(self._calendario(), l10n_br_horas_pagas=176.0)
+        self.assertAlmostEqualMoney(self._get_line_total(slip, "SALARIO_BASE"), 3520.0)
+        self.assertIn(
             ref("l10n_br_hr_payroll.hr_rule_dsr_horista"),
             ref("l10n_br_hr_payroll.structure_clt").rule_ids,
         )
+
+    def test_salario_base_personalizado_nao_e_trocado(self):
+        self._estado_1_14()
+        regra = self.env.ref("l10n_br_hr_payroll.hr_rule_salario_base")
+        personalizada = regra.amount_python_compute.replace("dias / 30", "dias / 31")
+        regra.amount_python_compute = personalizada
+        self._migrar()
+        self.assertEqual(regra.amount_python_compute, personalizada)
 
     def test_personalizada_fica_como_esta_e_idempotente(self):
         self._estado_1_14()

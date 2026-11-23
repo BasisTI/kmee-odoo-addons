@@ -3,7 +3,7 @@
 
 import logging
 import types
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytz
 from dateutil.relativedelta import relativedelta
@@ -746,14 +746,32 @@ class HrPayslip(models.Model):
                 "number_of_hours"
             )
         )
-        # As horas do calendário não trazem a falta: abate a jornada diária de
-        # cada falta injustificada (com horas pagas informadas, a falta já saiu).
+        return max(horas - self._l10n_br_horas_das_faltas(), 0.0)
+
+    def _l10n_br_horas_das_faltas(self):
+        """Horas de calendário que as faltas injustificadas tiram do horista.
+
+        Cada falta com data vale as horas que o calendário do contrato dá
+        naquele dia: falta em feriado ou em dia sem jornada não abate nada. A
+        falta sem data (só a contagem) vale a jornada diária do calendário.
+        """
+        self.ensure_one()
         faltas = self.l10n_br_faltas_injustificadas
-        if faltas:
-            horas -= faltas * (
-                self.contract_id.resource_calendar_id.hours_per_day or 8.0
+        if not faltas:
+            return 0.0
+        calendario = self.contract_id.resource_calendar_id
+        horas_dia = (calendario.hours_per_day if calendario else 0.0) or 8.0
+        datas = self.l10n_br_falta_ids.mapped("date")
+        total = max(faltas - len(datas), 0) * horas_dia
+        for dia in datas:
+            if not calendario:
+                total += horas_dia
+                continue
+            inicio = datetime.combine(dia, time.min)
+            total += calendario.get_work_hours_count(
+                inicio, inicio + timedelta(days=1), compute_leaves=True
             )
-        return max(horas, 0.0)
+        return total
 
     def _l10n_br_dsr_horista(self):
         """Repouso do horista: horas ÷ dias úteis × repouso × valor-hora."""

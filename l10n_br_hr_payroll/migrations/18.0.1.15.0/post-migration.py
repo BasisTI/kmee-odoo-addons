@@ -31,11 +31,17 @@ LINHA_ANTIGA = (
 LINHA_NOVA = "salario_hora = contract._l10n_br_salario_hora()"
 REGRAS_DE_HORA = ("hr_rule_he_50", "hr_rule_he_100", "hr_rule_adicional_noturno")
 
+# Texto EXATO das fórmulas no XML da 18.0.1.14.0 (``git show 9de402dd``), com os
+# comentários: é o que o banco tem depois dos ``noupdate``. A comparação ignora só
+# espaços nas pontas das linhas e linhas em branco, nada mais.
 ANTIGAS = {
     (
         "hr_rule_salario_base",
         "amount_python_compute",
     ): """
+# Proporcional aos dias de salário do mês (admissão, desligamento, afastamento
+# previdenciário), em mês comercial de 30 dias. Os dias de licença-maternidade
+# saem daqui e vão para SALARIO_MATERNIDADE (mesmo conjunto de dias).
 dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
 result = tools.br.round_money(contract.wage * dias / 30)
 """,
