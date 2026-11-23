@@ -319,19 +319,28 @@ pensão da folha e não entra no cálculo da rescisão. O S-2299 declara ``pensA
 
 **Horista (repouso semanal remunerado)**
 
-No contrato, a *Unidade do Salário* ``Hora`` faz do Salário o **valor da hora**
-(no eSocial, ``undSalFixo`` 1; ``Mês`` é 5). No holerite, as *Horas Pagas
-(Horista)* são as horas normais trabalhadas no mês (vazio: as horas
-trabalhadas do período, tipo WORK100); as horas extras continuam em campo
+No contrato, a *Unidade do Salário* ``Hora`` faz do **Valor da Hora** o dado
+do horista (no eSocial, ``undSalFixo`` 1 com ``vrSalFx`` igual ao valor da
+hora; ``Mês`` é 5). O *Salário* do contrato continua mensal: no horista é o
+**mensal de referência** (valor da hora × horas do mês da jornada do contrato,
+por exemplo 220), calculado e só leitura. Vale-transporte, periculosidade,
+VA/VR e as demais regras que leem o Salário usam esse mensal de referência
+(não as horas pagas do mês).
+
+No holerite, as *Horas Pagas (Horista)* são as horas normais trabalhadas no
+mês (vazio: as horas trabalhadas do período, tipo WORK100, menos a jornada
+diária de cada falta injustificada); as horas extras continuam em campo
 próprio. O salário é horas × valor da hora e a regra ``DSR_HORISTA`` paga o
 repouso: horas ÷ dias úteis × (domingos e feriados) × valor da hora (Lei
-605/49, art. 7º, b), com os mesmos feriados do ``DSR_HE``. O reflexo de hora
-extra e de adicional noturno segue em ``DSR_HE`` e ``DSR_NOTURNO``. A falta
-com data perde o repouso de um dia por semana (``DESC_DSR``); o horista não
-tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º e
+605/49, art. 7º, b), com os mesmos feriados do ``DSR_HE`` e o mês inteiro como
+período (admissão no meio do mês também, como no ``DSR_HE``). O reflexo de
+hora extra e de adicional noturno segue em ``DSR_HE`` e ``DSR_NOTURNO``. A
+falta com data perde o repouso de um dia por semana (``DESC_DSR``); o horista
+não tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º e
 rescisão do contrato por hora ainda não são calculados: o sistema recusa o
-cálculo com mensagem clara. Banco já instalado: a migração 18.0.1.15.0 ajusta
-as regras que não foram personalizadas.
+cálculo com mensagem clara (a recusa olha o código da estrutura). Banco já
+instalado: a migração 18.0.1.15.0 ajusta as regras que não foram
+personalizadas.
 
 Bug Tracker
 ===========

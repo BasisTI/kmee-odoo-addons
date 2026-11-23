@@ -37,9 +37,10 @@
 # Proporcional aos dias de salário do mês (admissão, desligamento, afastamento
 # previdenciário), em mês comercial de 30 dias. Os dias de licença-maternidade
 # saem daqui e vão para SALARIO_MATERNIDADE (mesmo conjunto de dias).
-# Horista (TG-166): o salário é o valor da hora e paga as horas trabalhadas.
+# Horista (TG-166): paga as horas trabalhadas pelo valor da hora (o Salário do
+# contrato é só o mensal de referência).
 if contract._l10n_br_horista():
-    result = tools.br.round_money(contract.wage * tools.br.horas_horista())
+    result = tools.br.round_money(contract._l10n_br_salario_hora() * tools.br.horas_horista())
 else:
     dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
     result = tools.br.round_money(contract.wage * dias / 30)

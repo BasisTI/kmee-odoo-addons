@@ -51,12 +51,28 @@ class HrContract(models.Model):
         default="mes",
         required=True,
         help="Unidade em que o salário do contrato é ajustado. Mês: o Salário "
-        "é mensal (padrão). Hora (horista): o Salário é o VALOR DA HORA e o "
-        "holerite paga as horas trabalhadas no mês; o repouso semanal "
-        "remunerado é calculado pela regra DSR_HORISTA (Lei 605/49, art. 7º, "
-        "b). No eSocial é a unidade do salário fixo (undSalFixo: 1 = hora, "
+        "é mensal (padrão). Hora (horista): o ajuste é o Valor da Hora e o "
+        "Salário passa a ser o mensal de referência (valor da hora × horas do "
+        "mês do contrato), só leitura; o holerite paga as horas trabalhadas e "
+        "o repouso semanal remunerado pela regra DSR_HORISTA (Lei 605/49, "
+        "art. 7º, b). Vale-transporte, periculosidade, VA/VR e as demais "
+        "regras que leem o Salário usam o mensal de referência. No eSocial é a "
+        "unidade do salário fixo (undSalFixo: 1 = hora, com o valor da hora; "
         "5 = mês). Férias, 13º e rescisão do horista ainda não são calculados "
         "e o sistema recusa o cálculo.",
+    )
+    l10n_br_valor_hora = fields.Monetary(
+        string="Valor da Hora",
+        currency_field="currency_id",
+        help="Valor da hora do horista (unidade do salário Hora). Fonte do "
+        "salário, das horas extras, do adicional noturno e do repouso do "
+        "horista, e do vrSalFx do eSocial. Vazio para o mensalista.",
+    )
+    wage = fields.Monetary(
+        compute="_compute_wage_horista",
+        store=True,
+        readonly=False,
+        precompute=True,
     )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
@@ -88,8 +104,15 @@ class HrContract(models.Model):
         """Salário-hora: o próprio salário do horista; senão salário ÷ divisor."""
         self.ensure_one()
         if self._l10n_br_horista():
-            return self.wage
+            return self.l10n_br_valor_hora
         return self.wage / self._l10n_br_divisor_horas_mensais()
+
+    def _l10n_br_vr_sal_fixo(self):
+        """``vrSalFx`` do eSocial: valor da hora (horista) ou salário mensal."""
+        self.ensure_one()
+        if self._l10n_br_horista():
+            return self.l10n_br_valor_hora
+        return self.wage
 
     # Divisor mensal padrão CLT (44h semanais × 5): usado como fallback
     # quando o contrato não tem calendário de trabalho configurado.
@@ -133,6 +156,64 @@ class HrContract(models.Model):
             return self._L10N_BR_DIVISOR_PADRAO
         return horas_semanais * 5.0
 
+    @api.depends(
+        "l10n_br_unidade_salario",
+        "l10n_br_valor_hora",
+        "resource_calendar_id",
+        "resource_calendar_id.attendance_ids",
+        "resource_calendar_id.attendance_ids.hour_from",
+        "resource_calendar_id.attendance_ids.hour_to",
+        "resource_calendar_id.two_weeks_calendar",
+    )
+    def _compute_wage_horista(self):
+        """Horista: o Salário é o mensal de referência (valor-hora × divisor).
+
+        Para o mensalista o valor digitado fica como está.
+        """
+        for rec in self:
+            if rec.l10n_br_unidade_salario == "hora":
+                rec.wage = round(
+                    rec.l10n_br_valor_hora * rec._l10n_br_divisor_horas_mensais(), 2
+                )
+            else:
+                rec.wage = rec.wage
+
+    @api.model_create_multi
+    def create(self, vals_list):
+        # O mensal do horista é calculado: ignora o ``wage`` informado.
+        for vals in vals_list:
+            if vals.get("l10n_br_unidade_salario") == "hora":
+                vals.pop("wage", None)
+        return super().create(vals_list)
+
+    def _l10n_br_vals_sem_wage_do_horista(self, vals):
+        """``vals`` sem o ``wage`` quando o contrato é (ou vira) horista.
+
+        O mensal do horista é calculado: o ``wage`` gravado à mão é ignorado.
+        Em lote misto, o ``wage`` dos demais contratos é gravado aqui.
+        """
+        if "wage" not in vals:
+            return vals
+        unidade = vals.get("l10n_br_unidade_salario")
+        if unidade:
+            horistas = self if unidade == "hora" else self.browse()
+        else:
+            horistas = self.filtered(lambda c: c.l10n_br_unidade_salario == "hora")
+        if not horistas:
+            return vals
+        resto = self - horistas
+        if resto:
+            resto.write({"wage": vals["wage"]})
+        return {k: v for k, v in vals.items() if k != "wage"}
+
+    @api.constrains("l10n_br_unidade_salario", "l10n_br_valor_hora")
+    def _check_valor_hora_horista(self):
+        for rec in self:
+            if rec.l10n_br_unidade_salario == "hora" and rec.l10n_br_valor_hora <= 0:
+                raise ValidationError(
+                    _("Informe o Valor da Hora (maior que zero) do contrato horista.")
+                )
+
     @api.constrains("l10n_br_periculosidade", "l10n_br_insalubridade")
     def _check_periculosidade_insalubridade(self):
         """Periculosidade e insalubridade não acumulam (Súmula 364 TST)."""
@@ -159,7 +240,7 @@ class HrContract(models.Model):
                 )
 
     def write(self, vals):
-        res = super().write(vals)
+        res = super().write(self._l10n_br_vals_sem_wage_do_horista(vals))
         if "l10n_br_hora_noturna_reduzida" in vals:
             # Só holerite em rascunho acompanha: o confirmado guarda o que valeu.
             # ``sudo``: o gerente de contratos pode não ter acesso à folha, e a

@@ -5,6 +5,7 @@
 import importlib.util
 from datetime import date
 
+from odoo.exceptions import ValidationError
 from odoo.tests import tagged
 from odoo.tools import file_path, mute_logger
 
@@ -30,8 +31,10 @@ class TestCalcDsrHorista(BaseDsrReflexo):
 class TestDsrHorista(BaseDsrReflexo):
     def _horista(self, calendario=None, periodo=None, **campos):
         emp = self._create_employee()
-        contract = self._create_contract(emp, wage=VALOR_HORA)
-        contract.l10n_br_unidade_salario = "hora"
+        contract = self._create_contract(emp, wage=3500.0)
+        contract.write(
+            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+        )
         if calendario:
             contract.resource_calendar_id = calendario
         slip = self._create_payslip(emp, contract, **(periodo or OUT_2026))
@@ -133,16 +136,82 @@ class TestDsrHorista(BaseDsrReflexo):
         self.assertNotEqual(self._get_line_total(slip, "DSR_HORISTA"), antes)
         slip.action_payslip_done()
         confirmado = self._get_line_total(slip, "DSR_HORISTA")
-        slip.contract_id.wage = 30.0
+        slip.contract_id.l10n_br_valor_hora = 30.0
         self.assertEqual(self._get_line_total(slip, "DSR_HORISTA"), confirmado)
 
-    def test_und_sal_fixo(self):
+    def test_und_sal_fixo_e_vr_sal_fixo(self):
         emp = self._create_employee()
-        contract = self._create_contract(emp, wage=VALOR_HORA)
+        contract = self._create_contract(emp, wage=3500.0)
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 5)
-        contract.l10n_br_unidade_salario = "hora"
+        self.assertEqual(contract._l10n_br_vr_sal_fixo(), 3500.0)
+        contract.write(
+            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+        )
         self.assertEqual(contract._l10n_br_und_sal_fixo(), 1)
+        self.assertEqual(contract._l10n_br_vr_sal_fixo(), VALOR_HORA)
         self.assertEqual(contract._l10n_br_salario_hora(), VALOR_HORA)
+
+    def test_wage_do_horista_e_o_mensal_de_referencia(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=1.0)
+        contract.write(
+            {"l10n_br_unidade_salario": "hora", "l10n_br_valor_hora": VALOR_HORA}
+        )
+        divisor = contract._l10n_br_divisor_horas_mensais()
+        self.assertAlmostEqualMoney(contract.wage, VALOR_HORA * divisor)
+        # o mensal não é editável à mão: volta ao de referência
+        contract.wage = 99.0
+        self.assertAlmostEqualMoney(contract.wage, VALOR_HORA * divisor)
+        # mudou o valor da hora: o mensal acompanha
+        contract.l10n_br_valor_hora = 30.0
+        self.assertAlmostEqualMoney(contract.wage, 30.0 * divisor)
+        # o mensalista fica como está
+        contract.l10n_br_unidade_salario = "mes"
+        contract.wage = 3500.0
+        self.assertEqual(contract.wage, 3500.0)
+
+    def test_horista_sem_valor_hora_e_recusado(self):
+        emp = self._create_employee()
+        contract = self._create_contract(emp, wage=3500.0)
+        with self.assertRaises(ValidationError):
+            contract.l10n_br_unidade_salario = "hora"
+
+    def test_periculosidade_do_horista_sobre_o_mensal_de_referencia(self):
+        cal = self._calendario()
+        slip = self._horista(cal, l10n_br_horas_pagas=176.0)
+        contract = slip.contract_id
+        contract.l10n_br_periculosidade = True
+        slip.compute_sheet()
+        mensal = contract.wage
+        self.assertGreaterEqual(mensal, 20.0 * 176)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "ADICIONAL_PERICULOSIDADE"),
+            round(mensal * 0.30, 2),
+        )
+        self.assertGreaterEqual(
+            self._get_line_total(slip, "ADICIONAL_PERICULOSIDADE"), 1056.0
+        )
+
+    def test_falta_sem_horas_pagas_desconta_as_horas(self):
+        cal = self._calendario()
+        sem = self._horista(cal)
+        com = self._horista(cal, faltas=[date(2026, 10, 6), date(2026, 10, 7)])
+        horas_dia = cal.hours_per_day or 8.0
+        self.assertAlmostEqualMoney(
+            self._get_line_total(sem, "SALARIO_BASE")
+            - self._get_line_total(com, "SALARIO_BASE"),
+            round(2 * horas_dia * VALOR_HORA, 2),
+        )
+        self.assertFalse(self._get_line_total(com, "FALTAS"))
+
+    def test_feriado_no_domingo_nao_conta_em_dobro(self):
+        cal = self._calendario()
+        self._feriado(cal, dia=date(2026, 10, 4))
+        slip = self._horista(cal, l10n_br_horas_pagas=176.0)
+        self.assertAlmostEqualMoney(
+            self._get_line_total(slip, "DSR_HORISTA"),
+            round(176.0 / 27 * 4 * VALOR_HORA, 2),
+        )
 
 
 @tagged("post_install", "-at_install")
@@ -166,6 +235,10 @@ class TestMigracaoHorista(BaseDsrReflexo):
         ref(
             "l10n_br_hr_payroll.hr_rule_faltas"
         ).condition_python = "result = payslip.l10n_br_faltas_injustificadas > 0"
+        ref("l10n_br_hr_payroll.hr_rule_salario_base").amount_python_compute = (
+            "dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)\n"
+            "result = tools.br.round_money(contract.wage * dias / 30)"
+        )
         ref("l10n_br_hr_payroll.structure_clt").rule_ids = [
             (3, ref("l10n_br_hr_payroll.hr_rule_dsr_horista").id)
         ]
@@ -182,6 +255,9 @@ class TestMigracaoHorista(BaseDsrReflexo):
             "_l10n_br_horista()",
             ref("l10n_br_hr_payroll.hr_rule_faltas").condition_python,
         )
+        base = ref("l10n_br_hr_payroll.hr_rule_salario_base").amount_python_compute
+        self.assertIn("_l10n_br_salario_hora() * tools.br.horas_horista()", base)
+        self.assertIn("contract.wage * dias / 30", base)
         self.assertIn(
             ref("l10n_br_hr_payroll.hr_rule_dsr_horista"),
             ref("l10n_br_hr_payroll.structure_clt").rule_ids,

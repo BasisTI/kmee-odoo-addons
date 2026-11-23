@@ -31,7 +31,8 @@ class HrPayslip(models.Model):
         string="Horas Pagas (Horista)",
         help="Horas normais trabalhadas no mês pelo horista (sem as horas "
         "extras, que têm campo próprio). Vazio: soma das horas trabalhadas do "
-        "período (tipo WORK100). Só vale para contrato com unidade de salário "
+        "período (tipo WORK100) menos a jornada diária de cada falta "
+        "injustificada. Só vale para contrato com unidade de salário "
         "Hora.",
     )
     l10n_br_horas_noturnas = fields.Float(
@@ -740,11 +741,19 @@ class HrPayslip(models.Model):
             return 0.0
         if self.l10n_br_horas_pagas:
             return self.l10n_br_horas_pagas
-        return sum(
+        horas = sum(
             self.worked_days_line_ids.filtered(lambda w: w.code == "WORK100").mapped(
                 "number_of_hours"
             )
         )
+        # As horas do calendário não trazem a falta: abate a jornada diária de
+        # cada falta injustificada (com horas pagas informadas, a falta já saiu).
+        faltas = self.l10n_br_faltas_injustificadas
+        if faltas:
+            horas -= faltas * (
+                self.contract_id.resource_calendar_id.hours_per_day or 8.0
+            )
+        return max(horas, 0.0)
 
     def _l10n_br_dsr_horista(self):
         """Repouso do horista: horas ÷ dias úteis × repouso × valor-hora."""

@@ -5,6 +5,17 @@
         <field name="model">hr.contract</field>
         <field name="inherit_id" ref="hr_contract.hr_contract_view_form" />
         <field name="arch" type="xml">
+            <xpath expr="//field[@name='wage']" position="before">
+                <field name="l10n_br_unidade_salario" />
+                <field
+                    name="l10n_br_valor_hora"
+                    invisible="l10n_br_unidade_salario != 'hora'"
+                    required="l10n_br_unidade_salario == 'hora'"
+                />
+            </xpath>
+            <field name="wage" position="attributes">
+                <attribute name="readonly">l10n_br_unidade_salario == 'hora'</attribute>
+            </field>
             <xpath expr="//group[@name='salary']" position="after">
                 <group string="Adicionais de Risco" name="risk_additionals">
                     <field name="l10n_br_periculosidade" />
@@ -16,7 +27,6 @@
                     />
                 </group>
                 <group string="Jornada Noturna" name="l10n_br_hr_noturno">
-                    <field name="l10n_br_unidade_salario" />
                     <field name="l10n_br_hora_noturna_reduzida" />
                     <field name="l10n_br_adicional_noturno_perc" />
                 </group>
