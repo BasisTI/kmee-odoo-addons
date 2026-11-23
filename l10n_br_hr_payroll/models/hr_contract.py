@@ -194,7 +194,8 @@ class HrContract(models.Model):
             self.l10n_br_valor_hora * self._l10n_br_divisor_horas_mensais(), 2
         )
         if self.wage != mensal:
-            super(HrContract, self).write({"wage": mensal})
+            return super(HrContract, self).write({"wage": mensal})
+        return True
 
     def _l10n_br_vals_sem_wage_do_horista(self, vals):
         """``vals`` sem o ``wage`` quando o contrato é (ou vira) horista.
