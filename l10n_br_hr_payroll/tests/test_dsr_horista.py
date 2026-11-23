@@ -170,6 +170,24 @@ class TestDsrHorista(BaseDsrReflexo):
         contract.wage = 3500.0
         self.assertEqual(contract.wage, 3500.0)
 
+    def test_contrato_criado_ja_como_horista(self):
+        emp = self._create_employee()
+        contract = self.env["hr.contract"].create(
+            {
+                "name": "Horista",
+                "employee_id": emp.id,
+                "wage": 1.0,
+                "l10n_br_unidade_salario": "hora",
+                "l10n_br_valor_hora": VALOR_HORA,
+                "date_start": "2024-01-01",
+                "state": "open",
+                "struct_id": self.structure_clt.id,
+            }
+        )
+        self.assertAlmostEqualMoney(
+            contract.wage, VALOR_HORA * contract._l10n_br_divisor_horas_mensais()
+        )
+
     def test_horista_sem_valor_hora_e_recusado(self):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3500.0)

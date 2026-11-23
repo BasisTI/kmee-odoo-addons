@@ -72,7 +72,6 @@ class HrContract(models.Model):
         compute="_compute_wage_horista",
         store=True,
         readonly=False,
-        precompute=True,
     )
     l10n_br_periculosidade = fields.Boolean(
         string="Periculosidade",
@@ -180,11 +179,22 @@ class HrContract(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        # O mensal do horista é calculado: ignora o ``wage`` informado.
+        # O mensal do horista é calculado: o ``wage`` informado é ignorado.
         for vals in vals_list:
             if vals.get("l10n_br_unidade_salario") == "hora":
-                vals.pop("wage", None)
-        return super().create(vals_list)
+                vals["wage"] = 0.0
+        records = super().create(vals_list)
+        for rec in records.filtered(lambda c: c.l10n_br_unidade_salario == "hora"):
+            rec._l10n_br_atualiza_wage_horista()
+        return records
+
+    def _l10n_br_atualiza_wage_horista(self):
+        self.ensure_one()
+        mensal = round(
+            self.l10n_br_valor_hora * self._l10n_br_divisor_horas_mensais(), 2
+        )
+        if self.wage != mensal:
+            super(HrContract, self).write({"wage": mensal})
 
     def _l10n_br_vals_sem_wage_do_horista(self, vals):
         """``vals`` sem o ``wage`` quando o contrato é (ou vira) horista.
