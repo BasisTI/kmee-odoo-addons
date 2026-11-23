@@ -211,3 +211,48 @@ valor fixo (um, outro ou ambos) e a origem (vara e processo). É outra base que 
 pensão da folha e não entra no cálculo da rescisão. O S-2299 declara ``pensAlim``
 0 (sem dado), 1 (percentual), 2 (valor) ou 3 (ambos) com ``percAliment`` e
 ``vrAlim``, e o TRCT mostra o campo 29.
+
+**Horista (repouso semanal remunerado)**
+
+A unidade do salário vem de um campo só, a *Unidade do Salário* (``salary_unit``)
+do ``l10n_br_hr_contract``, e o código dela é o ``undSalFixo`` do eSocial.
+*Hourly* (código 1) faz do contrato um horista: o **Valor da Hora** é o dado do
+horista (no eSocial, ``undSalFixo`` 1 com ``vrSalFx`` igual ao valor da hora).
+O *Salário* do contrato continua mensal: no horista é o **mensal de
+referência** (valor da hora × horas do mês da jornada do contrato, por exemplo
+220), calculado e só leitura. Vale-transporte, periculosidade, VA/VR e as
+demais regras que leem o Salário usam esse mensal de referência (não as horas
+pagas do mês).
+
+Só *Hourly* (1), *Monthly* (5) e o contrato sem unidade (bancos antigos,
+calculado como mensal) são suportados. *Daily* (2), *Weekly* (3), *Biweekly*
+(4), *Task* (6) e *Não aplicável* (7) são recusados com uma mensagem, no
+holerite e na geração do S-2200, do S-2206 e dos eventos de trabalhador sem vínculo (``undSalFixo``): o
+mês seria pago em silêncio, e o eSocial exigiria ``dscSalVar`` (6 e 7) e
+``vrSalFx`` zero (7). A mensagem lista os contratos e os funcionários a
+corrigir. Como a recusa está no cálculo do holerite, **um contrato assim
+recusa o lote inteiro** e também as operações em cascata que recalculam
+holerites abertos (mudar a convenção coletiva ou um benefício, por exemplo,
+quando há holerite aberto de um contrato com unidade não suportada). No
+contrato horista, o Valor da Hora é obrigatório; o contrato Hourly de um banco
+antigo, sem valor da hora, mantém o Salário gravado (a migração avisa no log
+quais são) e o holerite dele é recusado até informar o valor.
+
+Limite: o parâmetro ``payroll.prevent_compute_on_confirm`` não reavalia a
+unidade na confirmação; um holerite calculado antes da troca da unidade para
+uma não suportada é confirmado sem recusa (só o recálculo recusa).
+
+No holerite, as *Horas Pagas (Horista)* são as horas normais trabalhadas no
+mês (vazio: as horas trabalhadas do período, tipo WORK100, menos a jornada
+diária de cada falta injustificada); as horas extras continuam em campo
+próprio. O salário é horas × valor da hora e a regra ``DSR_HORISTA`` paga o
+repouso: horas ÷ dias úteis × (domingos e feriados) × valor da hora (Lei
+605/49, art. 7º, b), com os mesmos feriados do ``DSR_HE`` e o mês inteiro como
+período (admissão no meio do mês também, como no ``DSR_HE``). O reflexo de
+hora extra e de adicional noturno segue em ``DSR_HE`` e ``DSR_NOTURNO``. A
+falta com data perde o repouso de um dia por semana (``DESC_DSR``); o horista
+não tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º e
+rescisão do contrato por hora ainda não são calculados: o sistema recusa o
+cálculo com mensagem clara (a recusa olha o código da estrutura). Banco já
+instalado: a migração 18.0.1.15.0 ajusta as regras que não foram
+personalizadas.

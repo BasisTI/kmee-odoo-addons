@@ -53,6 +53,10 @@ class PayrollCommon(TransactionCase):
             }
         )
 
+    def _unidade_salario(self, codigo):
+        """``hr.contract.salary.unit`` pelo código (1 = Hourly, 5 = Monthly)."""
+        return self.env["hr.contract.salary.unit"].search([("code", "=", codigo)])
+
     def _create_contract(self, employee, wage=5000.0, structure=None, date_start=None):
         """Helper: cria contrato de trabalho com estrutura salarial."""
         return self.env["hr.contract"].create(

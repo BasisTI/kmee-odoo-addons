@@ -70,7 +70,12 @@ def atualizar_formula(env):
     if atual not in FORMULAS_ANTIGAS:
         _logger.info("TG-128: %s já atual ou personalizada, mantida", XMLID)
         return False
-    nova = _formula_nova()
+    # A fórmula do XML é a de hoje (TG-166: salário-hora pelo contrato); esta
+    # migração entrega a da 1.10.0, e a 1.15.0 a converte depois.
+    nova = _formula_nova().replace(
+        "salario_hora = contract._l10n_br_salario_hora()",
+        f"salario_hora = contract.wage / {DIVISOR_JORNADA}",
+    )
     if "contract.wage / 220" in atual:
         nova = nova.replace(DIVISOR_JORNADA, "220")
     regra.amount_python_compute = nova

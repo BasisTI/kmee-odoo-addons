@@ -153,7 +153,10 @@ class ESocialTSVMixin(models.AbstractModel):
 
     def _get_remuneracao(self, contract, categoria):
         if contract.wage:
-            return {"vr_sal_fx": "%.2f" % contract.wage, "und_sal_fixo": 5}
+            return {
+                "vr_sal_fx": "%.2f" % contract._l10n_br_vr_sal_fixo(),
+                "und_sal_fixo": contract._l10n_br_und_sal_fixo(),
+            }
         if categoria.codigo in CATEGORIAS_REMUNERACAO:
             self._erro_cadastro(
                 _(

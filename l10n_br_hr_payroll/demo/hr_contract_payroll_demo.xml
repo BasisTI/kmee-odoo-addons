@@ -8,16 +8,21 @@
         contratos que declaram 220 horas mensais, para que o divisor do
         salário-hora derivado do calendário (RF-26) coincida com o contrato.
         O contrato do aprendiz (30h/150h) fica no calendário padrão da empresa.
+
+        Os contratos de demo da OCA vêm com ``salary_unit_5``, que é Hourly
+        (código 1): aqui todos passam a ``salary_unit_1``, Monthly (código 5).
     -->
 
     <!-- João — Estrutura CLT -->
     <record id="l10n_br_hr_contract.demo_contract_joao" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_clt" />
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
     </record>
 
     <!-- Maria — Estrutura CLT + periculosidade -->
     <record id="l10n_br_hr_contract.demo_contract_maria" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_clt" />
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
         <field name="l10n_br_periculosidade" eval="True" />
@@ -25,6 +30,7 @@
 
     <!-- Pedro — Estrutura CLT + insalubridade grau máximo -->
     <record id="l10n_br_hr_contract.demo_contract_pedro" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_clt" />
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
         <field name="l10n_br_insalubridade" eval="True" />
@@ -33,17 +39,20 @@
 
     <!-- Ana — Estrutura Estatutário -->
     <record id="l10n_br_hr_contract.demo_contract_ana" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_estatuto" />
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
     </record>
 
     <!-- Lucas — Estrutura CLT (aprendiz usa mesma estrutura) -->
     <record id="l10n_br_hr_contract.demo_contract_lucas" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_clt" />
     </record>
 
     <!-- Carla — Estrutura CLT -->
     <record id="l10n_br_hr_contract.demo_contract_carla" model="hr.contract">
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="struct_id" ref="structure_clt" />
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
     </record>
@@ -65,7 +74,7 @@
         <field name="labor_bond_type_id" ref="l10n_br_hr_contract.labor_bond_type_10" />
         <field name="admission_type_id" ref="l10n_br_hr_contract.admission_type_1" />
         <field name="welfare_policy">rgps</field>
-        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_5" />
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="weekly_hours">44</field>
         <field name="monthly_hours">220</field>
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />
@@ -85,7 +94,7 @@
         <field name="labor_bond_type_id" ref="l10n_br_hr_contract.labor_bond_type_10" />
         <field name="admission_type_id" ref="l10n_br_hr_contract.admission_type_1" />
         <field name="welfare_policy">rgps</field>
-        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_5" />
+        <field name="salary_unit" ref="l10n_br_hr_contract.salary_unit_1" />
         <field name="weekly_hours">44</field>
         <field name="monthly_hours">220</field>
         <field name="resource_calendar_id" ref="demo_calendar_clt_44h" />

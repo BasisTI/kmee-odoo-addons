@@ -3,7 +3,7 @@
 
 import logging
 import types
-from datetime import timedelta
+from datetime import datetime, time, timedelta
 
 import pytz
 from dateutil.relativedelta import relativedelta
@@ -26,6 +26,14 @@ class HrPayslip(models.Model):
     l10n_br_horas_extras_100 = fields.Float(
         string="Horas Extras 100%",
         help="Horas extras em domingos/feriados",
+    )
+    l10n_br_horas_pagas = fields.Float(
+        string="Horas Pagas (Horista)",
+        help="Horas normais trabalhadas no mês pelo horista (sem as horas "
+        "extras, que têm campo próprio). Vazio: soma das horas trabalhadas do "
+        "período (tipo WORK100) menos a jornada diária de cada falta "
+        "injustificada. Só vale para contrato com unidade de salário "
+        "Hora.",
     )
     l10n_br_horas_noturnas = fields.Float(
         string="Horas Noturnas",
@@ -215,6 +223,30 @@ class HrPayslip(models.Model):
             else:
                 rec.l10n_br_horas_noturnas_computadas = rec.l10n_br_horas_noturnas
 
+    def _l10n_br_exigir_unidade_calculada(self):
+        """Recusa o holerite de contrato com unidade de salário não suportada.
+
+        Só Hourly (1), Monthly (5) e contrato sem unidade (mensal) são
+        calculados; as demais pagariam valor errado em silêncio. A mensagem
+        lista os contratos e os funcionários, para o DP achar quem corrigir
+        (um só contrato assim recusa o lote inteiro). Hourly precisa do Valor da
+        Hora.
+        """
+        self.mapped("contract_id")._l10n_br_exigir_unidade_suportada()
+        sem_valor = self.filtered(
+            lambda s: s.contract_id
+            and s.contract_id._l10n_br_horista()
+            and s.contract_id.l10n_br_valor_hora <= 0
+        )
+        if sem_valor:
+            raise UserError(
+                _(
+                    "O contrato tem a Unidade do Salário Hourly (horista), mas "
+                    "não tem o Valor da Hora. Holerites: %(nomes)s.",
+                    nomes=", ".join(sem_valor.mapped(lambda r: r.number or r.name)),
+                )
+            )
+
     def compute_sheet(self):
         """Ensure worked_days_line_ids are populated before computing rules.
 
@@ -224,6 +256,7 @@ class HrPayslip(models.Model):
         created programmatically (tests, demo, API), worked_days are empty.
         This override fills them in if missing.
         """
+        self._l10n_br_exigir_unidade_calculada()
         for payslip in self:
             if not payslip.worked_days_line_ids:
                 contracts = payslip._get_employee_contracts()
@@ -726,6 +759,62 @@ class HrPayslip(models.Model):
             competencia.year, competencia.month, self._l10n_br_feriados_competencia()
         )
 
+    def _l10n_br_horas_do_horista(self):
+        """Horas normais pagas ao horista no mês (0 para quem não é horista)."""
+        self.ensure_one()
+        if not self.contract_id or not self.contract_id._l10n_br_horista():
+            return 0.0
+        if self.l10n_br_horas_pagas:
+            return self.l10n_br_horas_pagas
+        horas = sum(
+            self.worked_days_line_ids.filtered(lambda w: w.code == "WORK100").mapped(
+                "number_of_hours"
+            )
+        )
+        return max(horas - self._l10n_br_horas_das_faltas(), 0.0)
+
+    def _l10n_br_horas_das_faltas(self):
+        """Horas de calendário que as faltas injustificadas tiram do horista.
+
+        Cada falta com data vale as horas que o calendário do contrato dá
+        naquele dia: falta em feriado ou em dia sem jornada não abate nada. A
+        falta sem data (só a contagem) vale a jornada diária do calendário.
+        """
+        self.ensure_one()
+        faltas = self.l10n_br_faltas_injustificadas
+        if not faltas:
+            return 0.0
+        calendario = self.contract_id.resource_calendar_id
+        horas_dia = (calendario.hours_per_day if calendario else 0.0) or 8.0
+        datas = self.l10n_br_falta_ids.mapped("date")
+        total = max(faltas - len(datas), 0) * horas_dia
+        for dia in datas:
+            if not calendario:
+                total += horas_dia
+                continue
+            # O dia é o do fuso do calendário (a jornada dele é nesse fuso): a
+            # janela em UTC deslocaria o turno noturno para o dia errado.
+            fuso = pytz.timezone(calendario.tz or "UTC")
+            inicio = fuso.localize(datetime.combine(dia, time.min))
+            fim = fuso.localize(datetime.combine(dia + timedelta(days=1), time.min))
+            total += calendario.get_work_hours_count(
+                inicio.astimezone(pytz.utc).replace(tzinfo=None),
+                fim.astimezone(pytz.utc).replace(tzinfo=None),
+                compute_leaves=True,
+            )
+        return total
+
+    def _l10n_br_dsr_horista(self):
+        """Repouso do horista: horas ÷ dias úteis × repouso × valor-hora."""
+        self.ensure_one()
+        uteis, repouso = self._l10n_br_dias_dsr_competencia()
+        return salary_rules_br.calc_dsr_horista(
+            self._l10n_br_horas_do_horista(),
+            self.contract_id._l10n_br_salario_hora(),
+            uteis,
+            repouso,
+        )
+
     def _l10n_br_adicionais_fixos_vigentes(self, contract, dias=30):
         """Periculosidade e insalubridade VIGENTES no contrato, por ``dias``.
 
@@ -1157,6 +1246,9 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Horista (TG-166): horas pagas e repouso semanal remunerado.
+            horas_horista=self._l10n_br_horas_do_horista,
+            dsr_horista=self._l10n_br_dsr_horista,
             # Reflexo no DSR de horas extras e adicional noturno (TG-86).
             dsr_reflexo=dsr_reflexo,
             # Repousos perdidos por falta: um por semana com falta (TG-84).

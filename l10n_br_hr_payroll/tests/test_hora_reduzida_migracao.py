@@ -126,4 +126,10 @@ class TestMigracaoHoraReduzida(TransactionCase):
         primeira = self.regra.amount_python_compute
         self._migrar()
         self.assertEqual(self.regra.amount_python_compute, primeira)
-        self.assertEqual(primeira.strip(), self.atual.strip())
+        # A 1.10.0 entrega a fórmula da época; a 1.15.0 (TG-166) troca o
+        # salário-hora pelo do contrato, que é o que o XML tem hoje.
+        esperada = self.atual.replace(
+            "salario_hora = contract._l10n_br_salario_hora()",
+            "salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()",
+        )
+        self.assertEqual(primeira.strip(), esperada.strip())

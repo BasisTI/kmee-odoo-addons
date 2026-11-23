@@ -1,10 +1,27 @@
 <?xml version="1.0" encoding="utf-8" ?>
 <odoo>
+    <!-- A view da OCA (l10n_br_hr_contract) substitui a div "wage" inteira e põe
+         ali a Unidade do Salário. Esta view herda dela, para valer depois, e põe
+         o Valor da Hora fora da div. -->
     <record id="view_contract_form_payroll_br" model="ir.ui.view">
         <field name="name">hr.contract.form.payroll.br</field>
         <field name="model">hr.contract</field>
-        <field name="inherit_id" ref="hr_contract.hr_contract_view_form" />
+        <field
+            name="inherit_id"
+            ref="l10n_br_hr_contract.l10n_br_hr_contract_view_form"
+        />
         <field name="arch" type="xml">
+            <xpath expr="//div[@name='wage']" position="after">
+                <field name="l10n_br_is_horista" invisible="1" />
+                <field
+                    name="l10n_br_valor_hora"
+                    invisible="not l10n_br_is_horista"
+                    required="l10n_br_is_horista"
+                />
+            </xpath>
+            <xpath expr="//div[@name='wage']/field[@name='wage']" position="attributes">
+                <attribute name="readonly">l10n_br_is_horista</attribute>
+            </xpath>
             <xpath expr="//group[@name='salary']" position="after">
                 <group string="Adicionais de Risco" name="risk_additionals">
                     <field name="l10n_br_periculosidade" />

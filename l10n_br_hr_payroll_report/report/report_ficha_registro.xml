@@ -178,6 +178,13 @@
                                             t-esc="contract.wage"
                                             t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
                                         />
+                                        <t t-if="contract.l10n_br_is_horista">
+                                            (horista, valor da hora
+                                            <span
+                                            t-esc="contract.l10n_br_valor_hora"
+                                            t-options='{"widget": "monetary", "display_currency": o.company_id.currency_id}'
+                                        />)
+                                        </t>
                                     </td>
                                     <td>
                                         <strong>Depto:</strong>

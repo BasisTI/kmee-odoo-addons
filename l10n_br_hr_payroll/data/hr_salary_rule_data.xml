@@ -37,8 +37,13 @@
 # Proporcional aos dias de salário do mês (admissão, desligamento, afastamento
 # previdenciário), em mês comercial de 30 dias. Os dias de licença-maternidade
 # saem daqui e vão para SALARIO_MATERNIDADE (mesmo conjunto de dias).
-dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
-result = tools.br.round_money(contract.wage * dias / 30)
+# Horista (TG-166): paga as horas trabalhadas pelo valor da hora (o Salário do
+# contrato é só o mensal de referência).
+if contract._l10n_br_horista():
+    result = tools.br.round_money(contract._l10n_br_salario_hora() * tools.br.horas_horista())
+else:
+    dias = tools.br.dias_salario(contract) - tools.br.dias_maternidade(contract)
+    result = tools.br.round_money(contract.wage * dias / 30)
         </field>
     </record>
 
@@ -66,6 +71,25 @@ result = tools.br.round_money(contract.wage * tools.br.dias_maternidade(contract
         >Salário-maternidade pago pelo empregador (Lei 8.213/91, art. 72): remuneração dos dias de licença-maternidade, em rubrica própria (natureza 4050 no eSocial). A empresa compensa o valor na guia (ver COMP_SALARIO_MATERNIDADE).</field>
     </record>
 
+    <!-- 3. Repouso semanal remunerado do horista (TG-166) -->
+    <record id="hr_rule_dsr_horista" model="hr.salary.rule">
+        <field name="name">DSR do Horista</field>
+        <field name="sequence" eval="3" />
+        <field name="code">DSR_HORISTA</field>
+        <field name="category_id" ref="hr_salary_rule_category_alw" />
+        <field name="condition_select">python</field>
+        <field name="condition_python">
+result = contract._l10n_br_horista() and tools.br.horas_horista() > 0
+        </field>
+        <field name="amount_select">code</field>
+        <field name="amount_python_compute">
+result = tools.br.dsr_horista()
+        </field>
+        <field
+            name="note"
+        >Repouso semanal remunerado do horista (Lei 605/49, art. 7º, b): horas trabalhadas do mês ÷ dias úteis × (domingos + feriados) × valor da hora. Os feriados vêm das ausências globais do calendário do contrato, como no DSR_HE. O reflexo de horas extras e adicional noturno continua em DSR_HE e DSR_NOTURNO.</field>
+    </record>
+
     <!-- 5. Hora Extra 50% -->
     <record id="hr_rule_he_50" model="hr.salary.rule">
         <field name="name">Hora Extra 50%</field>
@@ -78,7 +102,7 @@ result = payslip.l10n_br_horas_extras_50 > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()
+salario_hora = contract._l10n_br_salario_hora()
 result = tools.br.round_money(salario_hora * 1.5 * payslip.l10n_br_horas_extras_50)
         </field>
     </record>
@@ -95,7 +119,7 @@ result = payslip.l10n_br_horas_extras_100 > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()
+salario_hora = contract._l10n_br_salario_hora()
 result = tools.br.round_money(salario_hora * 2.0 * payslip.l10n_br_horas_extras_100)
         </field>
     </record>
@@ -131,7 +155,7 @@ result = payslip.l10n_br_horas_noturnas > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-salario_hora = contract.wage / contract._l10n_br_divisor_horas_mensais()
+salario_hora = contract._l10n_br_salario_hora()
 result = tools.br.round_money(salario_hora * contract.l10n_br_adicional_noturno_perc / 100.0 * payslip.l10n_br_horas_noturnas_computadas)
         </field>
     </record>
@@ -205,7 +229,7 @@ result = tools.br.round_money(
         <field name="category_id" ref="hr_salary_rule_category_ded" />
         <field name="condition_select">python</field>
         <field name="condition_python">
-result = payslip.l10n_br_faltas_injustificadas > 0
+result = payslip.l10n_br_faltas_injustificadas > 0 and not contract._l10n_br_horista()
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
@@ -225,7 +249,16 @@ result = tools.br.semanas_com_falta(contract) > 0
         </field>
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
-result = tools.br.round_money((contract.wage / 30) * tools.br.semanas_com_falta(contract))
+semanas = tools.br.semanas_com_falta(contract)
+if contract._l10n_br_horista():
+    # Horista: perde um dia de repouso por semana com falta (TG-166), no máximo o DSR do mês.
+    _uteis, repouso = tools.br.dias_dsr()
+    result = min(
+        tools.br.round_money(DSR_HORISTA / repouso * semanas) if repouso else 0.0,
+        DSR_HORISTA,
+    )
+else:
+    result = tools.br.round_money((contract.wage / 30) * semanas)
         </field>
     </record>
 
