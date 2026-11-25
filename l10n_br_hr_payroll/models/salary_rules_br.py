@@ -877,6 +877,42 @@ def dias_trabalhados_mes(date_from, date_to, data_admissao=None, data_demissao=N
 DIAS_AFASTAMENTO_EMPRESA = 15
 
 
+# Modos de contagem dos dias de salário do mês parcial (TG-171), por empresa.
+CONTAGEM_CORRIDOS = "corridos"
+CONTAGEM_COMERCIAL = "comercial"
+
+
+def _dias_comerciais_do_dia(data):
+    """Dias do mês comercial que um dia civil cobre.
+
+    O último dia do mês cobre também os dias que faltam até 30 (em fevereiro, o
+    28 vale 28, 29 e 30); o dia 31 vale o 30. Os demais valem o próprio número.
+    """
+    if (data + timedelta(days=1)).day == 1:
+        return range(min(data.day, 30), 31)
+    return (min(data.day, 30),)
+
+
+def _dias_comerciais_distintos(dias):
+    """Quantidade de dias comerciais distintos de um conjunto de dias civis."""
+    return len({n for d in dias for n in _dias_comerciais_do_dia(d)})
+
+
+def _comercial_parcial(modo, date_from, date_to, mes_inteiro):
+    """True se o mês parcial é contado em mês comercial (mesmo mês civil)."""
+    return (
+        modo == CONTAGEM_COMERCIAL
+        and not mes_inteiro
+        and date_from.month == date_to.month
+        and date_from.year == date_to.year
+    )
+
+
+def _vigencia_menos_fora(inicio, fim, fora):
+    """Dias civis da vigência ``inicio..fim`` que sobram depois de ``fora``."""
+    return {inicio + timedelta(days=n) for n in range((fim - inicio).days + 1)} - fora
+
+
 def _janela_dias(date_from, date_to, data_admissao, data_demissao):
     """``(inicio, fim, mes_inteiro, dias_base)`` do período do holerite.
 
@@ -945,11 +981,16 @@ def dias_salario_mes(
     data_demissao=None,
     afastamentos_inss=(),
     ferias_gozadas=(),
+    modo=CONTAGEM_CORRIDOS,
 ):
     """Dias de salário devidos no período do holerite (mês comercial de 30 dias).
 
     - Mês inteiro de vigência do contrato: 30 dias (inclusive fevereiro).
-    - Admissão ou desligamento no mês: dias corridos de vigência (teto de 30).
+    - Admissão ou desligamento no mês: dias corridos de vigência (teto de 30)
+      no modo ``corridos`` (padrão); no modo ``comercial`` (TG-171) o mês tem 30
+      dias: admissão no dia ``d`` paga ``30 - d + 1`` e desligamento no dia
+      ``d`` paga ``d`` (o último dia do mês vale 30). Vale só para período
+      dentro de um mês civil.
     - Afastamento previdenciário: a empresa paga os 15 primeiros dias; os dias
       seguintes, dentro do período, saem do salário (são do INSS).
     - Férias gozadas: os dias de gozo dentro do período já foram pagos no
@@ -971,6 +1012,7 @@ def dias_salario_mes(
             afastamento, ainda que anterior ao período.
         ferias_gozadas: Pares ``(inicio, fim)`` dos períodos de gozo de férias
             (já pagos no recibo de férias), com todos os dias descontados.
+        modo: ``corridos`` (padrão) ou ``comercial`` (ver acima).
 
     Returns:
         Dias de salário (int, 0..30).
@@ -980,6 +1022,8 @@ def dias_salario_mes(
         return 0
     inicio, fim, mes_inteiro, dias = janela
     fora = _dias_fora_do_salario(afastamentos_inss, ferias_gozadas, inicio, fim)
+    if _comercial_parcial(modo, date_from, date_to, mes_inteiro):
+        return _dias_comerciais_distintos(_vigencia_menos_fora(inicio, fim, fora))
     return max(dias - _dias_comerciais(fora, fim, mes_inteiro, date_to), 0)
 
 
@@ -991,6 +1035,7 @@ def dias_maternidade_mes(
     afastamentos_inss=(),
     ferias_gozadas=(),
     maternidade=(),
+    modo=CONTAGEM_CORRIDOS,
 ):
     """Dias do período pagos como salário-maternidade (mês comercial de 30 dias).
 
@@ -1020,6 +1065,9 @@ def dias_maternidade_mes(
     licenca = _dias_dos_pares(maternidade, inicio, fim) - fora
     if not licenca:
         return 0
+    if _comercial_parcial(modo, date_from, date_to, mes_inteiro):
+        pagos = _dias_comerciais_distintos(_vigencia_menos_fora(inicio, fim, fora))
+        return min(_dias_comerciais_distintos(licenca), pagos)
     pagos = max(dias - _dias_comerciais(fora, fim, mes_inteiro, date_to), 0)
     span = (fim - inicio).days + 1
     if span > 30 and not mes_inteiro:

@@ -362,6 +362,22 @@ cálculo com mensagem clara (a recusa olha o código da estrutura). Banco já
 instalado: a migração 18.0.1.15.0 ajusta as regras que não foram
 personalizadas.
 
+**Contagem dos dias de salário (admissão e desligamento).** Na empresa, aba
+*Encargos da Folha*, o campo *Contagem dos dias de salário* escolhe como contar
+os dias do mês em que o contrato não cobre o mês inteiro. *Dias corridos*
+(padrão, o comportamento anterior): os dias do calendário de vigência, com teto
+de 30. *Mês comercial*: todo mês tem 30 dias; admitido no dia 14, 30 − 14 + 1 =
+17 dias (corridos: 18 num mês de 31 dias); no desligamento, o dia do
+desligamento (o último dia do mês vale 30); admissão no dia 31 paga 1 dia. O mês
+inteiro paga 30 nos dois modos. O modo vale para o salário, a periculosidade, a
+insalubridade, o salário-maternidade, o afastamento previdenciário e as férias
+gozadas no mês, e só para período dentro de um mês civil (13º e anual seguem
+como antes). O holerite aberto recalcula com o modo atual; o confirmado não
+muda. Defina o modo antes de confirmar a folha e não o troque depois: a média de
+verbas da rescisão relê os dias dos holerites mensais pelo modo vigente. A regra
+do mês comercial para desligamento, afastamento e fevereiro está a confirmar com
+o DP.
+
 Bug Tracker
 ===========
 

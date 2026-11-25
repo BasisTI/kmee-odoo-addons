@@ -1373,6 +1373,7 @@ class HrPayslip(models.Model):
                 contract.date_end,
                 mensal._l10n_br_afastamentos_inss(contract),
                 mensal._l10n_br_ferias_gozadas(contract),
+                mensal.company_id.l10n_br_contagem_dias_salario,
             )
             if dias <= 0:
                 continue
