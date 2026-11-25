@@ -50,6 +50,24 @@ SIMPLES_ANEXO = [
 class ResCompany(models.Model):
     _inherit = "res.company"
 
+    l10n_br_contagem_dias_salario = fields.Selection(
+        [
+            (salary_rules_br.CONTAGEM_CORRIDOS, "Dias corridos"),
+            (salary_rules_br.CONTAGEM_COMERCIAL, "Mês comercial (30 dias)"),
+        ],
+        string="Contagem dos dias de salário",
+        required=True,
+        default=salary_rules_br.CONTAGEM_CORRIDOS,
+        help="Como contar os dias de salário no mês em que a vigência do contrato "
+        "não cobre o mês inteiro (admissão ou desligamento). Dias corridos "
+        "(padrão): os dias do calendário, com teto de 30. Mês comercial: todo "
+        "mês tem 30 dias; na admissão, 30 - dia + 1; no desligamento, o dia do "
+        "desligamento (o último dia do mês vale 30). O mês inteiro paga 30 nos "
+        "dois modos. Vale para salário, periculosidade, insalubridade, "
+        "salário-maternidade, afastamento previdenciário e férias gozadas no "
+        "mês. Defina antes de confirmar a folha: o holerite aberto recalcula "
+        "com o modo atual, o confirmado não muda.",
+    )
     l10n_br_hr_patronal_sobre_salario_maternidade = fields.Boolean(
         string="CPP e RAT sobre o salário-maternidade",
         default=False,

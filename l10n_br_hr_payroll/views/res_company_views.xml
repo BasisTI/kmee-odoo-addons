@@ -48,6 +48,9 @@
                                 name="l10n_br_hr_patronal_sobre_salario_maternidade"
                             />
                         </group>
+                        <group string="Salário proporcional (admissão e desligamento)">
+                            <field name="l10n_br_contagem_dias_salario" />
+                        </group>
                         <group string="Provisões">
                             <field name="l10n_br_hr_prov_ferias_perc_indenizado" />
                         </group>

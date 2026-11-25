@@ -956,6 +956,7 @@ class HrPayslip(models.Model):
             self._l10n_br_afastamentos_inss(contract),
             self._l10n_br_ferias_gozadas(contract),
             self._l10n_br_maternidade(contract),
+            self.company_id.l10n_br_contagem_dias_salario,
         )
 
     def _l10n_br_dias_maternidade_na_estrutura(self, contract):
@@ -1152,6 +1153,7 @@ class HrPayslip(models.Model):
                 contrato.date_end,
                 self._l10n_br_afastamentos_inss(contrato),
                 self._l10n_br_ferias_gozadas(contrato),
+                self.company_id.l10n_br_contagem_dias_salario,
             )
 
         def inss_ferias_competencia(contrato):

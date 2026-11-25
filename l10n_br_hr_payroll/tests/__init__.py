@@ -27,3 +27,4 @@ from . import test_hora_reduzida_migracao
 from . import test_hora_reduzida_contrato
 from . import test_migracao_inss_aprendiz
 from . import test_competencias_ferias
+from . import test_dias_salario_comercial
