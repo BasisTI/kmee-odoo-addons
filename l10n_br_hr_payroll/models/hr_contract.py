@@ -66,8 +66,10 @@ class HrContract(models.Model):
         "eSocial (undSalFixo 1). Vazio para o mensalista.\n\n"
         "Unidades Monthly (5), Não aplicável (7) ou sem unidade: salário "
         "mensal. Daily, Weekly, Biweekly e Task ainda não são calculadas: o "
-        "holerite é recusado. Férias, 13º e rescisão do horista também não "
-        "são calculados e o sistema recusa o cálculo.",
+        "holerite é recusado.\n\n"
+        "Férias, 13º e rescisão do horista usam a média das horas pagas no "
+        "período (mais o repouso) pelo valor da hora vigente, não o mensal de "
+        "referência.",
     )
     wage = fields.Monetary(
         compute="_compute_wage_horista",
@@ -253,8 +255,10 @@ class HrContract(models.Model):
     def _l10n_br_vals_sem_wage_do_horista(self, vals):
         """``vals`` sem o ``wage`` quando o contrato é (ou vira) horista.
 
-        O mensal do horista é calculado: o ``wage`` gravado à mão é ignorado.
-        Em lote misto, o ``wage`` dos demais contratos é gravado aqui.
+        O mensal do horista é calculado do Valor da Hora: o ``wage`` gravado à
+        mão é ignorado. Horista ainda sem Valor da Hora (banco antigo, TG-168)
+        não tem de onde calcular: o ``wage`` digitado é gravado, como o do
+        mensalista. Em lote misto, o ``wage`` dos demais contratos é gravado aqui.
         """
         if "wage" not in vals:
             return vals
@@ -263,6 +267,11 @@ class HrContract(models.Model):
             horistas = self.filtered(lambda c: c._l10n_br_horista())
         else:
             horistas = self if vira_hora else self.browse()
+        if "l10n_br_valor_hora" in vals:
+            com_valor = vals["l10n_br_valor_hora"] > 0
+            horistas = horistas if com_valor else self.browse()
+        else:
+            horistas = horistas.filtered(lambda c: c.l10n_br_valor_hora > 0)
         if not horistas:
             return vals
         resto = self - horistas
@@ -304,6 +313,12 @@ class HrContract(models.Model):
                 )
 
     def write(self, vals):
+        if self._l10n_br_unidade_do_vals(vals) is False and (
+            "l10n_br_valor_hora" not in vals
+        ):
+            # Saiu de Hourly: o valor da hora velho não pode voltar a valer
+            # quando o contrato retornar a Hourly (TG-168).
+            vals = dict(vals, l10n_br_valor_hora=0.0)
         res = super().write(self._l10n_br_vals_sem_wage_do_horista(vals))
         if "l10n_br_hora_noturna_reduzida" in vals:
             # Só holerite em rascunho acompanha: o confirmado guarda o que valeu.

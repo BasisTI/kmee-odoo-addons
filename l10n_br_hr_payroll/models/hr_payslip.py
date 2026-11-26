@@ -862,7 +862,9 @@ class HrPayslip(models.Model):
         media = self._l10n_br_media_habitual(self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS)
         return max(vigente, media)
 
-    def _l10n_br_salario_pago_mensal(self, contract, com_adicionais=False):
+    def _l10n_br_salario_pago_mensal(
+        self, contract, com_adicionais=False, com_dsr_horista=False
+    ):
         """Salário já pago nos holerites MENSAIS do mesmo período (sem cancelados).
 
         Usado pela rescisão para não pagar de novo, no saldo de salário, os
@@ -886,11 +888,22 @@ class HrPayslip(models.Model):
         codigos = self._L10N_BR_CODIGOS_SALARIO_MENSAL
         if com_adicionais:
             codigos += self._L10N_BR_CODIGOS_ADICIONAIS_FIXOS
+        if com_dsr_horista:
+            # Repouso do horista (TG-168): o saldo da rescisão o compensa também.
+            codigos += ("DSR_HORISTA",)
         return sum(
             mensais.mapped("line_ids")
             .filtered(lambda ln: ln.code in codigos)
             .mapped("total")
         )
+
+    def _l10n_br_salario_referencia(self, contract, verba=None, periodo=None):
+        """Salário mensal que serve de base a férias, 13º e rescisão.
+
+        O mensal do contrato. O módulo de férias o sobrescreve para o horista,
+        cuja base é a média das horas (CLT art. 142, § 1º).
+        """
+        return contract.wage
 
     def _l10n_br_afastamentos_inss(self, contract):
         """Afastamentos aprovados do empregado cujos dias após o 15º são do INSS.
@@ -1160,9 +1173,11 @@ class HrPayslip(models.Model):
             """``(base, retido)`` de INSS nos recibos de férias da competência."""
             return self._l10n_br_inss_ferias_competencia(contrato)
 
-        def salario_pago_mensal(contrato, com_adicionais=False):
+        def salario_pago_mensal(contrato, com_adicionais=False, com_dsr_horista=False):
             """Salário já pago em holerite mensal que se sobrepõe a este período."""
-            return self._l10n_br_salario_pago_mensal(contrato, com_adicionais)
+            return self._l10n_br_salario_pago_mensal(
+                contrato, com_adicionais, com_dsr_horista
+            )
 
         def semanas_com_falta(contrato):
             """Semanas com falta injustificada: repousos a descontar (DSR)."""
@@ -1248,6 +1263,9 @@ class HrPayslip(models.Model):
             calc_pensao_alimenticia=salary_rules_br.calc_pensao_alimenticia,
             # Dias úteis/DSR da competência (RF-26).
             dias_dsr=dias_dsr,
+            # Salário-base de férias, 13º e rescisão (TG-168): o mensal do
+            # contrato; o horista tem a média das horas (l10n_br_hr_vacation).
+            salario_referencia=self._l10n_br_salario_referencia,
             # Horista (TG-166): horas pagas e repouso semanal remunerado.
             horas_horista=self._l10n_br_horas_do_horista,
             dsr_horista=self._l10n_br_dsr_horista,

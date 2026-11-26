@@ -20,6 +20,7 @@ from . import test_avos_13_aviso_projetado
 from . import test_fgts_13_primeira_parcela_rescisao
 from . import test_fgts_rescisao_lacunas
 from . import test_migracao_fgts_138
+from . import test_migracao_horista_168
 from . import test_abono_medias
 from . import test_ferias_periodo_vencido
 from . import test_tipos_rescisao
@@ -36,4 +37,4 @@ from . import test_ferias_readmissao_art133
 from . import test_ferias_vinculo_art133_r2
 from . import test_migracao_aprendiz_149
 from . import test_migracao_descontos_151
-from . import test_horista_recusa
+from . import test_horista_ferias_13_rescisao

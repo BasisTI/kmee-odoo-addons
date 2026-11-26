@@ -103,7 +103,7 @@
 # 45 TST / CLT art. 142), não só o salário contratual seco.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 dias_gozados = payslip.l10n_br_dias_ferias_gozadas
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) * dias_gozados / 30)
+result = tools.br.round_money((tools.br.salario_referencia(contract, 'ferias') + media + tools.br.adicionais_fixos(contract, 'ferias')) * dias_gozados / 30)
         </field>
     </record>
 
@@ -144,7 +144,7 @@ result = payslip.l10n_br_abono_pecuniario or payslip.l10n_br_dias_abono > 0
 # verbas variáveis habituais (RF-18) + adicionais fixos, por dia vendido.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 dias_vendidos = payslip.l10n_br_dias_ferias_vendidas
-result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * dias_vendidos)
+result = tools.br.round_money(((tools.br.salario_referencia(contract, 'ferias') + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * dias_vendidos)
         </field>
     </record>
 
@@ -190,7 +190,7 @@ result = payslip.l10n_br_dias_ferias_dobro &gt; 0
 # Mesma remuneração das férias (salário + média + adicionais fixos, TG-133),
 # por dia, sobre os dias depois do concessivo.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) * payslip.l10n_br_dias_ferias_dobro / 30)
+result = tools.br.round_money((tools.br.salario_referencia(contract, 'ferias') + media + tools.br.adicionais_fixos(contract, 'ferias')) * payslip.l10n_br_dias_ferias_dobro / 30)
         </field>
     </record>
 
@@ -233,7 +233,7 @@ result = payslip.l10n_br_dias_abono_dobro &gt; 0
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-result = tools.br.round_money(((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * payslip.l10n_br_dias_abono_dobro)
+result = tools.br.round_money(((tools.br.salario_referencia(contract, 'ferias') + media + tools.br.adicionais_fixos(contract, 'ferias')) / 30) * payslip.l10n_br_dias_abono_dobro)
         </field>
     </record>
 

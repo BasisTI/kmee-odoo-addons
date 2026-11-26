@@ -356,11 +356,33 @@ repouso: horas ÷ dias úteis × (domingos e feriados) × valor da hora (Lei
 período (admissão no meio do mês também, como no ``DSR_HE``). O reflexo de
 hora extra e de adicional noturno segue em ``DSR_HE`` e ``DSR_NOTURNO``. A
 falta com data perde o repouso de um dia por semana (``DESC_DSR``); o horista
-não tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º e
-rescisão do contrato por hora ainda não são calculados: o sistema recusa o
-cálculo com mensagem clara (a recusa olha o código da estrutura). Banco já
-instalado: a migração 18.0.1.15.0 ajusta as regras que não foram
-personalizadas.
+não tem ``FALTAS``, porque a falta já tirou as horas pagas. Férias, 13º (1ª parcela, 2ª parcela e integral) e rescisão do horista são
+calculados sobre o **salário de referência do horista**, não sobre o mensal de
+referência: a média mensal das horas pagas nos holerites mensais confirmados da
+janela (período aquisitivo nas férias, ano civil no 13º, 12 meses no aviso
+prévio e nos arts. 479 e 480) mais o repouso (``DSR_HORISTA``), pelo **valor da
+hora vigente** (CLT, art. 142, § 1º; Lei 4.090/62 e Decreto 57.155/65, art.
+2º). Cada mês entra pelas horas pagas e é atualizado do valor da hora daquele
+mês para o vigente, de modo que o reajuste no período vale para todos. Mês sem
+dia de salário (férias ou afastamento o mês todo) fica de fora; mês com dia e
+sem hora entra com zero. Sem holerite mensal confirmado na janela, valem as horas
+do próprio holerite em cálculo (por exemplo, a rescisão do primeiro mês), pelo
+valor da hora vigente mais o repouso; só sem hora nenhuma vale o mensal de
+referência. Isso evita pagar a mais, com o divisor da jornada (como 220), quem
+tem jornada menor e é desligado nos primeiros meses. A média das horas extras e
+do adicional noturno (``media_habitual``) segue como antes. No saldo de salário
+da rescisão, o horista recebe as horas do holerite de rescisão × valor da hora
+mais o repouso, menos o salário e o repouso que o mensal do período já pagou. A
+rubrica do S-2299 é a mesma das demais verbas. Mensalista: nada muda. Holerite
+aberto recalcula com o valor da hora vigente; confirmado não muda. Banco já
+instalado: a migração 18.0.1.20.0 do ``l10n_br_hr_vacation`` troca as fórmulas
+não personalizadas. Fórmula personalizada continua com o mensal de referência
+(WARNING no log): use ``tools.br.salario_referencia(contract, verba)`` no lugar
+de ``contract.wage``. O contrato que sai de Hourly zera o Valor da Hora, para
+que ele não volte a valer quando o contrato retornar a Hourly (informe o valor
+de novo); o Salário digitado em contrato Hourly sem Valor da Hora é gravado, não
+descartado. A migração 18.0.1.15.0 (e a 18.0.1.17.0) avisa os contratos com
+unidade 2, 3, 4, 6 e 7.
 
 **Contagem dos dias de salário (admissão e desligamento).** Na empresa, aba
 *Encargos da Folha*, o campo *Contagem dos dias de salário* escolhe como contar
@@ -373,8 +395,10 @@ inteiro paga 30 nos dois modos. O modo vale para o salário, a periculosidade, a
 insalubridade, o salário-maternidade, o afastamento previdenciário e as férias
 gozadas no mês, e só para período dentro de um mês civil (13º e anual seguem
 como antes). O holerite aberto recalcula com o modo atual; o confirmado não
-muda. Defina o modo antes de confirmar a folha e não o troque depois: a média de
-verbas da rescisão relê os dias dos holerites mensais pelo modo vigente. A regra
+muda. Defina o modo antes de confirmar a folha e não o troque depois: a média dos
+adicionais fixos da rescisão (``_l10n_br_media_adicionais_art142``) relê os dias
+dos holerites mensais pelo modo vigente, e o saldo de salário compensa o mensal
+já pago (zera pelo ``max(…, 0)`` se o modo trocar depois de confirmar o mensal). A regra
 do mês comercial para desligamento, afastamento e fevereiro está a confirmar com
 o DP.
 

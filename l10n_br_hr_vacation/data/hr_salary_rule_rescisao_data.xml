@@ -136,11 +136,16 @@ dias = tools.br.dias_salario(contract)
 # Cada parcela é arredondada como a rubrica do mensal (salário, maternidade e
 # cada adicional): arredondar só a soma deixava R$ 0,01 de resíduo (TG-130).
 maternidade = tools.br.dias_maternidade(contract)
-salario = (
-    tools.br.round_money(contract.wage * (dias - maternidade) / 30)
-    + tools.br.round_money(contract.wage * maternidade / 30)
-)
-saldo = salario + tools.br.adicionais_fixos_dias(contract, dias) - tools.br.salario_pago_mensal(contract, True)
+if contract._l10n_br_horista():
+    # Horista (TG-168): as horas do holerite x valor-hora e o repouso; compensa
+    # o salário e o repouso que o mensal do período já pagou.
+    salario = tools.br.round_money(contract._l10n_br_salario_hora() * tools.br.horas_horista()) + tools.br.dsr_horista()
+else:
+    salario = (
+        tools.br.round_money(contract.wage * (dias - maternidade) / 30)
+        + tools.br.round_money(contract.wage * maternidade / 30)
+    )
+saldo = salario + tools.br.adicionais_fixos_dias(contract, dias) - tools.br.salario_pago_mensal(contract, True, True)
 result = tools.br.round_money(max(saldo, 0))
         </field>
     </record>
@@ -165,7 +170,7 @@ result = (
 avos = payslip.l10n_br_avos_ferias
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('ferias')
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias_proporcionais')) * avos / 12 * fator)
+result = tools.br.round_money((tools.br.salario_referencia(contract, 'ferias_proporcionais') + media + tools.br.adicionais_fixos(contract, 'ferias_proporcionais')) * avos / 12 * fator)
         </field>
     </record>
 
@@ -209,7 +214,7 @@ result = bool(payslip._l10n_br_ferias_vencidas_dados())
 # aquisitivo (CLT art. 142, § 6º).
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 result = tools.br.round_money(sum(
-    (contract.wage + media + tools.br.adicionais_fixos(contract, 'ferias', (periodo["inicio"], periodo["fim"]))) / 30
+    (tools.br.salario_referencia(contract, 'ferias', (periodo["inicio"], periodo["fim"])) + media + tools.br.adicionais_fixos(contract, 'ferias', (periodo["inicio"], periodo["fim"]))) / 30
     * periodo["dias"] * (2 if periodo["dobro"] else 1)
     for periodo in payslip._l10n_br_ferias_vencidas_dados()
 ))
@@ -254,7 +259,7 @@ result = payslip._l10n_br_aviso_indenizado_devido()
 dias = payslip._l10n_br_dias_aviso_previo()
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
 fator = payslip._l10n_br_fator_rescisao('aviso')
-result = tools.br.round_money((contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')) / 30 * dias * fator)
+result = tools.br.round_money((tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')) / 30 * dias * fator)
         </field>
     </record>
 
@@ -276,7 +281,7 @@ result = (
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')
+remuneracao = tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')
 result = tools.br.round_money(payslip._l10n_br_indenizacao_art_479(remuneracao))
         </field>
     </record>
@@ -302,7 +307,7 @@ result = (
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')
+remuneracao = tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')
 devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
 # Não pode deixar o líquido negativo: só o que sobra dos créditos depois dos
 # descontos obrigatórios e do aviso não cumprido. Teto de um mês de remuneração
@@ -399,7 +404,7 @@ result = (
         <field name="amount_python_compute">
 # Súmula 94 TST: a base soma a média das verbas habituais.
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')
+remuneracao = tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')
 devido = tools.br.round_money(remuneracao)
 # Não pode deixar o líquido negativo nem passar de um mês de remuneração (art.
 # 477, §5º): desconta só o que sobra dos créditos depois dos descontos
@@ -435,7 +440,7 @@ result = (
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-devido = tools.br.round_money(contract.wage + media + tools.br.adicionais_fixos(contract, 'momento'))
+devido = tools.br.round_money(tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento'))
 result = max(devido - DESCONTO_AVISO_PREVIO, 0.0)
         </field>
     </record>
@@ -459,7 +464,7 @@ result = (
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')
+remuneracao = tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')
 devido = tools.br.round_money(payslip._l10n_br_desconto_art_480(remuneracao))
 result = max(devido - DESCONTO_ART_480, 0.0)
         </field>
@@ -501,7 +506,7 @@ result = payslip._l10n_br_decimo_pago_ano(contract)['quitado'] &gt; DECIMO_DEVID
         <field name="amount_select">code</field>
         <field name="amount_python_compute">
 media = tools.br.media_habitual(payslip._l10n_br_codes_media_habitual())
-remuneracao = contract.wage + media + tools.br.adicionais_fixos(contract, 'momento')
+remuneracao = tools.br.salario_referencia(contract, 'momento') + media + tools.br.adicionais_fixos(contract, 'momento')
 compensado = ADIANTAMENTO_13 + DESCONTO_AVISO_PREVIO + DESCONTO_ART_480
 disponivel = (
     SALDO_SALARIO + DECIMO_RESCISAO + DECIMO_AVISO_INDENIZADO + FERIAS_INDENIZADAS
