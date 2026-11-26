@@ -27,11 +27,12 @@ class TestVatEmpregado(TransactionCase):
 
     def test_l10n_br_hr_antigo_falha_com_mensagem_clara(self):
         """Sem ``vat`` no hr.employee, a mensagem diz o que atualizar."""
-        employee_antigo = mock.MagicMock()
-        employee_antigo._fields = {"cnpj_cpf": object(), "cpf": object()}
-        env_antigo = {"hr.employee": employee_antigo}
-        with self.assertRaises(UserError) as erro:
-            verifica_campo_vat_do_empregado(env_antigo)
+        campos = type(self.env["hr.employee"])._fields
+        with mock.patch.dict(campos):
+            del campos["vat"]
+            with self.assertRaises(UserError) as erro:
+                verifica_campo_vat_do_empregado(self.env)
         mensagem = str(erro.exception)
         self.assertIn("l10n_br_hr", mensagem)
         self.assertIn(L10N_BR_HR_VERSAO_MINIMA, mensagem)
+        self.assertIn("vat", self.env["hr.employee"]._fields)

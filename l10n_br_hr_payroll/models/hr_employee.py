@@ -17,7 +17,7 @@ def verifica_campo_vat_do_empregado(env):
     """
     if "vat" not in env["hr.employee"]._fields:
         raise UserError(
-            _(
+            env._(
                 "O l10n_br_hr_payroll lê o CPF do empregado em hr.employee.vat, que "
                 "o módulo l10n_br_hr tem a partir da versão %(versao)s. Atualize o "
                 "l10n_br_hr (OCA/l10n-brazil, branch 18.0) e inicie de novo.",
