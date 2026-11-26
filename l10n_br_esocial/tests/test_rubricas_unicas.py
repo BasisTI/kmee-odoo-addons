@@ -12,6 +12,8 @@ from odoo.tools import mute_logger
 class TestRubricasUnicas(TransactionCase):
     """TG-105: código único por rubrica, natureza correta e aviso no S-1200."""
 
+    _seq_cpf = 0
+
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
@@ -154,11 +156,20 @@ class TestRubricasUnicas(TransactionCase):
 
     # --- aviso no S-1200 -------------------------------------------------
 
+    def _proximo_cpf(self):
+        """CPF válido e distinto a cada chamada: o parceiro não repete CPF."""
+        TestRubricasUnicas._seq_cpf += 1
+        base = "7%08d" % TestRubricasUnicas._seq_cpf
+        for _ in range(2):
+            soma = sum(int(d) * (len(base) + 1 - i) for i, d in enumerate(base))
+            base += str(0 if soma * 10 % 11 == 10 else soma * 10 % 11)
+        return base
+
     def _s1200_com_linhas(self, regras_valores, estrutura=None):
         employee = self.env["hr.employee"].create(
             {
                 "name": "Trabalhador T105",
-                "vat": "076.166.929-41",
+                "vat": self._proximo_cpf(),
                 "l10n_br_esocial_matricula": "MAT105",
                 "l10n_br_esocial_categoria_id": self.env.ref(
                     "l10n_br_esocial.cat_trab_101"

@@ -60,7 +60,7 @@ class TestESocialIntermediarioBase(TransactionCase):
         cls.employee = cls.env["hr.employee"].create(
             {
                 "name": "Test eSocial Worker",
-                "vat": "076.166.929-41",
+                "vat": "314.159.265-90",
                 "l10n_br_esocial_matricula": "MAT001",
                 "l10n_br_esocial_categoria_id": cls.cat_101.id,
                 "gender": "male",
@@ -235,7 +235,7 @@ class TestS2200(TestESocialIntermediarioBase):
             }
         )
         data = s2200._to_esociallib_dict()
-        self.assertEqual(data["cpf_trab"], "07616692941")
+        self.assertEqual(data["cpf_trab"], "31415926590")
         self.assertEqual(data["nm_trab"], "Test eSocial Worker")
         self.assertEqual(data["sexo"], "M")
         self.assertEqual(data["matricula"], "MAT001")
@@ -267,7 +267,7 @@ class TestS2200(TestESocialIntermediarioBase):
         emp = self.env["hr.employee"].create(
             {
                 "name": "No Matricula",
-                "vat": "857.642.960-52",
+                "vat": "161.803.398-05",
                 "l10n_br_esocial_categoria_id": self.cat_101.id,
             }
         )
@@ -295,7 +295,7 @@ class TestS2200(TestESocialIntermediarioBase):
         xml = s2200._gerar_xml()
         self.assertIn("eSocial", xml)
         self.assertIn("evtAdmissao", xml)
-        self.assertIn("07616692941", xml)
+        self.assertIn("31415926590", xml)
 
 
 class TestS2206(TestESocialIntermediarioBase):
@@ -313,7 +313,7 @@ class TestS2206(TestESocialIntermediarioBase):
             }
         )
         data = s2206._to_esociallib_dict()
-        self.assertEqual(data["cpf_trab"], "07616692941")
+        self.assertEqual(data["cpf_trab"], "31415926590")
         self.assertEqual(data["matricula"], "MAT001")
         self.assertEqual(data["dt_alteracao"], "2024-06-01")
         self.assertEqual(data["dsc_alt"], "Aumento salarial")
@@ -350,7 +350,7 @@ class TestS2230(TestESocialIntermediarioBase):
             }
         )
         data = s2230._to_esociallib_dict()
-        self.assertEqual(data["cpf_trab"], "07616692941")
+        self.assertEqual(data["cpf_trab"], "31415926590")
         self.assertEqual(data["dt_ini_afast"], "2024-03-01")
         self.assertEqual(data["cod_mot_afast"], "01")
 
@@ -799,7 +799,7 @@ class TestS2299(TestESocialIntermediarioBase):
             }
         )
         data = s2299._to_esociallib_dict()
-        self.assertEqual(data["cpf_trab"], "07616692941")
+        self.assertEqual(data["cpf_trab"], "31415926590")
         self.assertEqual(data["matricula"], "MAT001")
         self.assertEqual(data["dt_deslig"], "2024-12-31")
         self.assertEqual(data["mtv_deslig"], "02")
@@ -1481,7 +1481,7 @@ class TestS2299(TestESocialIntermediarioBase):
             {
                 "evento_origem_id": evento.id,
                 "company_id": self.company.id,
-                "cpf_trab": "07616692941",
+                "cpf_trab": "31415926590",
             }
         )
         with self.assertRaisesRegex(UserError, "tem S-1210 que aponta"):
@@ -1534,7 +1534,7 @@ class TestS2299(TestESocialIntermediarioBase):
             {
                 "evento_origem_id": evento.id,
                 "company_id": self.company.id,
-                "cpf_trab": "07616692941",
+                "cpf_trab": "31415926590",
             }
         )
         return s2299, evento, s1210, s3000

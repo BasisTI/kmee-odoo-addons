@@ -303,7 +303,7 @@ class TestApuracao(TransactionCase):
                     "rep_id": self.rep.id,
                     "company_id": self.company.id,
                     "datetime_marcacao": datetime(2026, 3, 2, 11, 0),
-                    "cpf": "11122233396",
+                    "cpf": "27182818205",
                     "origem": "rep_c",
                 }
             ]

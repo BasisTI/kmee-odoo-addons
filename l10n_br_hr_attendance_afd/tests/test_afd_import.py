@@ -101,7 +101,7 @@ class TestAfdImport(TransactionCase):
         self.assertEqual(segunda.qtd_duplicadas, 4)
 
     def test_marcacao_sem_funcionario_fica_pendente(self):
-        conteudo = fixtures.afd_671(marcacoes=fixtures.marcacoes_671(cpf="11122233396"))
+        conteudo = fixtures.afd_671(marcacoes=fixtures.marcacoes_671(cpf="27182818205"))
         importacao = self._criar_import(conteudo)
         importacao.action_importar()
         self.assertEqual(importacao.qtd_pendentes, 4)
@@ -109,13 +109,13 @@ class TestAfdImport(TransactionCase):
         self.assertFalse(importacao.marcacao_ids.mapped("employee_id"))
 
     def test_reconciliacao_apos_cadastrar_documento(self):
-        conteudo = fixtures.afd_671(marcacoes=fixtures.marcacoes_671(cpf="11122233396"))
+        conteudo = fixtures.afd_671(marcacoes=fixtures.marcacoes_671(cpf="27182818205"))
         importacao = self._criar_import(conteudo)
         importacao.action_importar()
         # Cadastro sem endereço particular: o CPF vem do campo do próprio
         # funcionário, e a conciliação precisa enxergar essa fonte também.
         novo = self.env["hr.employee"].create(
-            {"name": "João Recém-cadastrado", "vat": "111.222.333-96"}
+            {"name": "João Recém-cadastrado", "vat": "271.828.182-05"}
         )
         conciliadas = importacao.action_reconciliar_pendentes()
         self.assertEqual(conciliadas, 4)

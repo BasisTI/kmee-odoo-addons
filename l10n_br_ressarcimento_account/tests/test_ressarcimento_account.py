@@ -97,7 +97,7 @@ class TestRessarcimentoAccount(PayrollCommon):
                 "name": name,
                 "l10n_br_tipo_contrato": tipo_contrato,
                 "company_id": self.env.company.id,
-                "vat": "529.982.247-25",
+                "vat": "141.421.356-51",
             }
         )
 

@@ -49,7 +49,7 @@ class TestSstBase(SstCommon):
     def test_responsavel_resp_reg(self):
         """O responsável exporta o grupo respReg com CPF só de dígitos."""
         resp = self.responsavel._to_resp_reg()
-        self.assertEqual(resp["cpf_resp"], "07616692941")
+        self.assertEqual(resp["cpf_resp"], "31415926590")
         self.assertEqual(resp["ide_oc"], 4)
         self.assertEqual(resp["uf_oc"], "MG")
 
@@ -64,7 +64,7 @@ class TestSstBase(SstCommon):
             self.env["l10n_br.sst.responsavel"].create(
                 {
                     "name": "Outro Conselho",
-                    "cpf": "076.166.929-41",
+                    "cpf": "314.159.265-90",
                     "ide_oc": "9",
                 }
             )
