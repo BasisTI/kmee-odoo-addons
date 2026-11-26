@@ -74,7 +74,17 @@ Simples anexo IV (2%)    1.200,00     120,00       0,00     480,00
 Requisito do l10n_br_hr
 -----------------------
 
-O CPF do empregado é lido de ``hr.employee.vat``, campo do ``l10n_br_hr`` a partir
-da 18.0.1.8.0 (guarda só os dígitos; ``vat_formatted_cnpj`` mostra com pontuação).
-Com um ``l10n_br_hr`` mais antigo o módulo recusa o carregamento e informa a versão
-necessária.
+O CPF do empregado é lido de ``hr.employee.vat`` e mostrado por ``vat_formatted_cnpj``,
+campos do ``l10n_br_hr`` a partir da wheel 18.0.1.8.0.2 (commit 05571fdb4 do
+OCA/l10n-brazil). O ``vat`` guarda só os dígitos. Com um ``l10n_br_hr`` mais antigo o
+módulo recusa o carregamento e informa a versão necessária.
+
+Banco que vem do ``l10n_br_hr`` 18.0.1.6.0 (CPF em ``hr_employee.cnpj_cpf``): rode
+``-u l10n_br_hr`` junto com os módulos de folha, com a biblioteca ``openupgradelib``
+instalada (o ``pre-migrate`` 18.0.1.7.0 do ``l10n_br_hr`` a importa e não a declara). A
+migração copia o CPF para o ``vat`` do contato de trabalho e remove a coluna, mas pula CPF
+inválido, repetido ou de contato que já tem ``vat`` (registra em INFO). Se a coluna ainda
+tiver CPF quando o servidor subir, o módulo recusa o carregamento e diz o que fazer.
+
+Limites: o CPF fica no ``res.partner`` do contato de trabalho, sem restrição de grupo, e é
+único por parceiro.

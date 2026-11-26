@@ -36,3 +36,37 @@ class TestVatEmpregado(TransactionCase):
         self.assertIn("l10n_br_hr", mensagem)
         self.assertIn(L10N_BR_HR_VERSAO_MINIMA, mensagem)
         self.assertIn("vat", self.env["hr.employee"]._fields)
+
+    def _coluna_legada(self, valor):
+        """Cria ``hr_employee.cnpj_cpf`` por SQL (o rollback do teste a desfaz)."""
+        cr = self.env.cr
+        cr.execute("ALTER TABLE hr_employee ADD COLUMN IF NOT EXISTS cnpj_cpf varchar")
+        employee = self.env["hr.employee"].create({"name": "Empregado legado"})
+        cr.execute(
+            "UPDATE hr_employee SET cnpj_cpf = %s WHERE id = %s", (valor, employee.id)
+        )
+
+    def test_banco_sem_a_coluna_legada_passa(self):
+        self.env.cr.execute("ALTER TABLE hr_employee DROP COLUMN IF EXISTS cnpj_cpf")
+        verifica_campo_vat_do_empregado(self.env)
+
+    def test_coluna_legada_vazia_passa(self):
+        self._coluna_legada("")
+        verifica_campo_vat_do_empregado(self.env)
+
+    def test_coluna_legada_com_cpf_recusa_e_manda_migrar(self):
+        self._coluna_legada("111.444.777-35")
+        with self.assertRaises(UserError) as erro:
+            verifica_campo_vat_do_empregado(self.env)
+        mensagem = str(erro.exception)
+        self.assertIn("-u l10n_br_hr", mensagem)
+        self.assertIn("openupgradelib", mensagem)
+        self.assertNotIn("111.444.777-35", mensagem)
+
+    def test_sem_vat_formatted_cnpj_falha_com_a_versao_minima(self):
+        campos = type(self.env["hr.employee"])._fields
+        with mock.patch.dict(campos):
+            del campos["vat_formatted_cnpj"]
+            with self.assertRaises(UserError) as erro:
+                verifica_campo_vat_do_empregado(self.env)
+        self.assertIn("18.0.1.8.0.2", str(erro.exception))

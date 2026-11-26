@@ -15,11 +15,35 @@ Requisitos do l10n-brazil
 -------------------------
 
 Os módulos de folha deste fork leem o CPF do empregado em `hr.employee.vat` (campo do
-`l10n_br_hr` da OCA/l10n-brazil, que guarda só os dígitos). Isso exige
-**`l10n_br_hr` >= 18.0.1.8.0** (testado com 18.0.1.8.0.2 e 18.0.1.8.1). Com um `l10n_br_hr` mais
-antigo (`cnpj_cpf`/`cpf` no empregado) o `l10n_br_hr_payroll` recusa o carregamento com uma
-mensagem que diz qual versão instalar. A OCA migra os dados sozinha: o `pre-migrate` da
-18.0.1.7.0 do `l10n_br_hr` copia o `cnpj_cpf` legado para o `vat` do contato de trabalho.
+`l10n_br_hr` da OCA/l10n-brazil, que guarda só os dígitos) e o mostram por `vat_formatted_cnpj`.
+Isso exige **`l10n_br_hr` >= 18.0.1.8.0.2** (wheel; no git, o commit `05571fdb4` do
+OCA/l10n-brazil, quando o manifest ainda dizia 1.8.0). Testado com 18.0.1.8.0.2 e 18.0.1.8.1.
+Com um `l10n_br_hr` mais antigo (`cnpj_cpf`/`cpf` no empregado) o `l10n_br_hr_payroll` recusa o
+carregamento com uma mensagem que diz qual versão instalar.
+
+### Atualizar um banco que está no `l10n_br_hr` 18.0.1.6.0 (CPF em `cnpj_cpf`)
+
+A OCA tem a migração, mas ela não roda sozinha:
+
+1. O `-u` precisa **incluir o `l10n_br_hr`** (`-u l10n_br_hr,l10n_br_hr_payroll,...`). Só com os
+   módulos de folha o servidor não sobe (`Field "cpf" does not exist in model "hr.employee"`).
+2. O `pre-migrate` 18.0.1.7.0 do `l10n_br_hr` importa `openupgradelib`, que nem a wheel nem o
+   manifest dele declaram: instale `openupgradelib` na imagem (`ModuleNotFoundError` sem ele).
+3. A migração copia o `cnpj_cpf` para o `vat` do contato de trabalho e remove a coluna, mas **pula**
+   CPF inválido, repetido (já usado por outro parceiro) e de contato que já tem `vat`. Esses
+   empregados ficam sem CPF (log só em INFO). Confira antes quantos são.
+4. Se o servidor subir com a coluna `hr_employee.cnpj_cpf` ainda com CPF, o `l10n_br_hr_payroll`
+   recusa o carregamento e manda rodar o item 1.
+
+Limites do `l10n_br_hr` novo, sem tratamento neste fork:
+
+- o CPF fica no `res.partner` do contato de trabalho (`vat`), que não tem `groups`: qualquer usuário
+  interno o lê pelo parceiro, ao contrário do `cnpj_cpf` antigo, restrito ao grupo de RH;
+- o CPF é único por parceiro: a mesma pessoa não pode ter duas fichas de empregado com contatos
+  distintos e o mesmo CPF;
+- `vat_formatted_cnpj` depende da nacionalidade (`country_id`): estrangeiro com CPF sai sem
+  pontuação; um `vat` importado com espaço nas pontas fica gravado com o espaço (o CAGED e a DIRF já
+  eram assim).
 
 Available addons
 ----------------
