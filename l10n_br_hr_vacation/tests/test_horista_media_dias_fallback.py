@@ -33,13 +33,13 @@ class TestHoristaMediaDiasFallback(VacationCommon):
         )
         return emp, contract
 
-    def _mensal(self, emp, contract, ano, mes, horas, confirmar=True):
+    def _mensal(self, emp, contract, ano, mes, horas, confirmar=True, estrutura=None):
         slip = self.env["hr.payslip"].create(
             {
                 "name": f"Mensal {mes}/{ano}",
                 "employee_id": emp.id,
                 "contract_id": contract.id,
-                "struct_id": self.structure_clt.id,
+                "struct_id": (estrutura or self.structure_clt).id,
                 "date_from": date(ano, mes, 1),
                 "date_to": date(ano, mes, 1) + relativedelta(day=31),
                 "l10n_br_horas_pagas": horas,
@@ -261,3 +261,19 @@ class TestHoristaMediaDiasFallback(VacationCommon):
         )
         self.assertLess(referencia, contract.wage)
         self.assertGreater(referencia, 0)
+
+    def test_fallback_prefere_o_mensal_confirmado_ao_rascunho_mais_novo(self):
+        emp, contract = self._horista("Dois mensais")
+        confirmado = self._mensal(emp, contract, 2025, 11, 152.0)
+        # Outra estrutura mensal (a sobreposição só é barrada na mesma estrutura).
+        outra = self.structure_clt.copy({"name": "CLT 168 r3", "code": "CLT168R3"})
+        self._mensal(emp, contract, 2025, 11, 80.0, confirmar=False, estrutura=outra)
+        primeira = self._slip(
+            emp,
+            contract,
+            self.structure_13_primeira,
+            date(2025, 11, 1),
+            date(2025, 11, 30),
+        )
+        esperado = round_money(152.0 * VH + confirmado._l10n_br_dsr_horista())
+        self.assertEqual(primeira._l10n_br_salario_referencia(contract, "13"), esperado)

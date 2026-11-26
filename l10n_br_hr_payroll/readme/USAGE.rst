@@ -262,10 +262,11 @@ mês para o vigente (o reajuste no período vale para todos) e pesa **dias de
 salário ÷ 30**, como a média dos adicionais fixos: a média é a soma ÷ a soma dos
 pesos, então férias, admissão ou afastamento no meio do mês não puxam a média.
 Mês sem dia de salário (férias ou afastamento o mês todo) fica de fora; mês com
-dia e sem hora entra com zero. Janela sem mensal confirmado (por exemplo,
-rescisão pouco depois do aniversário do aquisitivo) usa os 12 meses anteriores ao
-recibo. Sem nenhum mensal confirmado, valem as horas do **mensal do mesmo contrato
-e da mesma competência** do recibo, levadas a 30 dias (horas × 30 ÷ dias de
+dia e sem hora entra com zero. Janela sem mensal confirmado, mas com histórico fora dela (por exemplo,
+rescisão pouco depois do aniversário do aquisitivo), usa os 12 meses anteriores ao
+recibo: é leitura da janela, não caso sem histórico (sem ela, a rescisão cairia no
+mensal de referência, cerca de 7% a mais). Sem nenhum mensal confirmado, valem as horas do **mensal do mesmo contrato
+e da mesma competência** do recibo (o confirmado; sem ele, o mais recente), levadas a 30 dias (horas × 30 ÷ dias de
 salário do mensal), pelo valor da hora vigente, mais o repouso; sem esse mensal,
 o mensal de referência. O recibo de férias, de 13º ou de rescisão nunca é a fonte
 das horas. Limite: na competência da admissão o mensal tem menos dias, e é a

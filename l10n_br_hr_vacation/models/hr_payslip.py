@@ -1454,17 +1454,17 @@ class HrPayslip(models.Model):
     def _l10n_br_salario_horista_do_mensal_da_competencia(self, contract):
         """Horas do mensal da competência levadas a um mês, ou ``None``.
 
-        Mensal do mesmo contrato e do mesmo mês deste recibo (o mais recente,
-        sem cancelado nem fora de vigor), com dias de salário. Admitido no meio
-        do mês, o mensal tem menos dias: levar as horas a 30 dias evita
-        subestimar a base.
+        Mensal do mesmo contrato e do mesmo mês deste recibo (o confirmado; sem
+        ele, o mais recente; sem cancelado nem fora de vigor), com dias de
+        salário. Admitido no meio do mês, o mensal tem menos dias: levar as
+        horas a 30 dias evita subestimar a base.
         """
         self.ensure_one()
         referencia = self.date_from or self.date_to
         if not referencia:
             return None
         inicio_mes = referencia.replace(day=1)
-        mensal = self.env["hr.payslip"].search(
+        mensais = self.env["hr.payslip"].search(
             [
                 ("contract_id", "=", contract.id),
                 ("id", "!=", self.id),
@@ -1475,8 +1475,9 @@ class HrPayslip(models.Model):
                 ("date_from", "<=", inicio_mes + relativedelta(months=1, days=-1)),
             ],
             order="date_from desc, id desc",
-            limit=1,
         )
+        # O confirmado manda; sem ele, o rascunho mais recente (ordem estável).
+        mensal = (mensais.filtered(lambda m: m.state == "done") or mensais)[:1]
         if not mensal:
             return None
         dias = self._l10n_br_dias_salario_do_mensal(mensal, contract)
