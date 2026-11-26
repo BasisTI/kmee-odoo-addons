@@ -47,5 +47,6 @@ class TestMigracaoHorista168(VacationCommon):
                 )
         # Idempotente: rodar de novo não muda nada.
         antes = {x: r.amount_python_compute for x, r in regras.items()}
-        modulo.migrate(self.env.cr, "18.0.1.19.0")
+        with self.assertLogs("mig_168", "WARNING"):
+            modulo.migrate(self.env.cr, "18.0.1.19.0")
         self.assertEqual(antes, {x: r.amount_python_compute for x, r in regras.items()})
