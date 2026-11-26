@@ -297,7 +297,7 @@ class ReportTermoRescisao(models.AbstractModel):
             if prazo_determinado
             else "Prazo indeterminado",
             "causa": causa,
-            "remuneracao": contrato.wage,
+            "remuneracao": slip._l10n_br_salario_referencia(contrato, "momento"),
             "admissao": contrato.date_start,
             "aviso": self._data_aviso(slip),
             "afastamento": slip.date_to,

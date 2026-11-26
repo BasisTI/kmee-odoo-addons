@@ -731,13 +731,22 @@ referência: a média mensal das horas pagas nos holerites mensais confirmados d
 janela (período aquisitivo nas férias, ano civil no 13º, 12 meses no aviso
 prévio e nos arts. 479 e 480) mais o repouso (<tt class="docutils literal">DSR_HORISTA</tt>), pelo <strong>valor da
 hora vigente</strong> (CLT, art. 142, § 1º; Lei 4.090/62 e Decreto 57.155/65, art.
-2º). Cada mês entra pelas horas pagas e é atualizado do valor da hora daquele
-mês para o vigente, de modo que o reajuste no período vale para todos. Mês sem
-dia de salário (férias ou afastamento o mês todo) fica de fora; mês com dia e
-sem hora entra com zero. Sem holerite mensal confirmado na janela, valem as horas
-do próprio holerite em cálculo (por exemplo, a rescisão do primeiro mês), pelo
-valor da hora vigente mais o repouso; só sem hora nenhuma vale o mensal de
-referência. Isso evita pagar a mais, com o divisor da jornada (como 220), quem
+2º). Cada mês entra pelas horas pagas, é atualizado do valor da hora daquele
+mês para o vigente (o reajuste no período vale para todos) e pesa <strong>dias de
+salário ÷ 30</strong>, como a média dos adicionais fixos: a média é a soma ÷ a soma dos
+pesos, então férias, admissão ou afastamento no meio do mês não puxam a média.
+Mês sem dia de salário (férias ou afastamento o mês todo) fica de fora; mês com
+dia e sem hora entra com zero. Janela sem mensal confirmado (por exemplo,
+rescisão pouco depois do aniversário do aquisitivo) usa os 12 meses anteriores ao
+recibo. Sem nenhum mensal confirmado, valem as horas do <strong>mensal do mesmo contrato
+e da mesma competência</strong> do recibo, levadas a 30 dias (horas × 30 ÷ dias de
+salário do mensal), pelo valor da hora vigente, mais o repouso; sem esse mensal,
+o mensal de referência. O recibo de férias, de 13º ou de rescisão nunca é a fonte
+das horas. Limite: na competência da admissão o mensal tem menos dias, e é a
+normalização a 30 dias que evita subestimar a base. Limite: contrato que passou
+de Monthly a Hourly no meio da janela tem os mensais da fase mensalista lidos
+pelas horas do calendário e sem repouso. O TRCT imprime a referência usada nas
+verbas. Isso evita pagar a mais, com o divisor da jornada (como 220), quem
 tem jornada menor e é desligado nos primeiros meses. A média das horas extras e
 do adicional noturno (<tt class="docutils literal">media_habitual</tt>) segue como antes. No saldo de salário
 da rescisão, o horista recebe as horas do holerite de rescisão × valor da hora

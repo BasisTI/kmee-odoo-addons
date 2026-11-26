@@ -71,3 +71,25 @@ class TestHoristaMenores168(PayrollCommon):
             self.assertTrue(
                 any(str(contract.id) in linha and "3" in linha for linha in log.output)
             )
+
+    def test_importacao_monthly_com_valor_hora_antigo_zera_o_valor(self):
+        """Planilha que traz Monthly junto com o valor da hora antigo."""
+        emp = self._create_employee("Importado 168")
+        contrato = self.env["hr.contract"].create(
+            {
+                "name": "Importado",
+                "employee_id": emp.id,
+                "wage": 3000.0,
+                "date_start": "2024-01-01",
+                "state": "open",
+                "struct_id": self.structure_clt.id,
+                "company_id": self.env.company.id,
+                "salary_unit": self._unidade_salario("5").id,
+                "l10n_br_valor_hora": 20.0,
+            }
+        )
+        self.assertEqual(contrato.l10n_br_valor_hora, 0.0)
+        contrato.write(
+            {"salary_unit": self._unidade_salario("5").id, "l10n_br_valor_hora": 25.0}
+        )
+        self.assertEqual(contrato.l10n_br_valor_hora, 0.0)

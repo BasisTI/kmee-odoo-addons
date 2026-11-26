@@ -1409,24 +1409,84 @@ class HrPayslip(models.Model):
         """Salário-base de férias, 13º e rescisão (TG-168).
 
         Mensalista: o salário do contrato. Horista (CLT art. 142, § 1º, e
-        Decreto 57.155/65, art. 2º): média mensal das horas dos mensais
-        confirmados da janela, mais o repouso (``DSR_HORISTA``), pelo
-        valor-hora vigente. Sem mensal confirmado na janela: as horas do próprio
-        holerite, se ele as tem; sem hora nenhuma, o mensal de referência.
+        Decreto 57.155/65, art. 2º), em uma regra só:
+
+        1. média das remunerações dos mensais confirmados da janela (sem
+           nenhum, dos 12 meses anteriores ao recibo), cada um com peso dias de
+           salário ÷ 30 (como a média dos adicionais, TG-133): soma ÷ soma dos
+           pesos;
+        2. sem nenhum, as horas do **mensal do mesmo contrato e da mesma
+           competência** levadas a 30 dias (horas × 30 ÷ dias de salário do
+           mensal), pelo valor-hora vigente, mais o repouso. O recibo de férias,
+           de 13º ou de rescisão nunca é fonte das horas;
+        3. sem esse mensal, o mensal de referência (``contract.wage``).
         """
         self.ensure_one()
         if not contract or not contract._l10n_br_horista():
             return contract.wage
         inicio, fim = self._l10n_br_janela_salario_horista(contract, verba, periodo)
         media = self._l10n_br_media_salario_horista(contract, inicio, fim)
+        if media is None:
+            # Janela sem mensal confirmado (por exemplo, rescisão pouco depois do
+            # aniversário do aquisitivo): os 12 meses anteriores ao recibo.
+            media = self._l10n_br_media_salario_horista(
+                contract,
+                *self._l10n_br_janela_salario_horista(contract, "momento"),
+            )
         if media is not None:
             return media
-        horas = self._l10n_br_horas_do_horista()
-        if horas:
-            return salary_rules_br.round_money(
-                horas * contract.l10n_br_valor_hora + self._l10n_br_dsr_horista()
-            )
+        normalizado = self._l10n_br_salario_horista_do_mensal_da_competencia(contract)
+        if normalizado is not None:
+            return normalizado
         return contract.wage
+
+    def _l10n_br_dias_salario_do_mensal(self, mensal, contract):
+        return salary_rules_br.dias_salario_mes(
+            mensal.date_from,
+            mensal.date_to,
+            contract.date_start,
+            contract.date_end,
+            mensal._l10n_br_afastamentos_inss(contract),
+            mensal._l10n_br_ferias_gozadas(contract),
+            mensal.company_id.l10n_br_contagem_dias_salario,
+        )
+
+    def _l10n_br_salario_horista_do_mensal_da_competencia(self, contract):
+        """Horas do mensal da competência levadas a um mês, ou ``None``.
+
+        Mensal do mesmo contrato e do mesmo mês deste recibo (o mais recente,
+        sem cancelado nem fora de vigor), com dias de salário. Admitido no meio
+        do mês, o mensal tem menos dias: levar as horas a 30 dias evita
+        subestimar a base.
+        """
+        self.ensure_one()
+        referencia = self.date_from or self.date_to
+        if not referencia:
+            return None
+        inicio_mes = referencia.replace(day=1)
+        mensal = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
+                ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("date_from", ">=", inicio_mes),
+                ("date_from", "<=", inicio_mes + relativedelta(months=1, days=-1)),
+            ],
+            order="date_from desc, id desc",
+            limit=1,
+        )
+        if not mensal:
+            return None
+        dias = self._l10n_br_dias_salario_do_mensal(mensal, contract)
+        if dias <= 0:
+            return None
+        horas = mensal._l10n_br_horas_do_horista()
+        remuneracao = horas * contract.l10n_br_valor_hora + (
+            mensal._l10n_br_dsr_horista() if horas else 0.0
+        )
+        return salary_rules_br.round_money(remuneracao * 30 / dias)
 
     def _l10n_br_media_salario_horista(self, contract, inicio, fim):
         """Média mensal da remuneração do horista, ou ``None`` sem histórico.
@@ -1434,8 +1494,11 @@ class HrPayslip(models.Model):
         Cada mensal confirmado de ``inicio`` a ``fim``, anterior a este
         holerite, com dias de salário, vale ``(SALARIO_BASE + DSR_HORISTA)``
         atualizado do valor-hora do mês (``SALARIO_BASE`` ÷ horas) para o
-        vigente. Mês sem dia de salário (férias o mês todo, afastamento) fica
-        de fora; mês com dia e sem hora entra com zero.
+        vigente e pesa dias de salário ÷ 30; a média é a soma ÷ soma dos
+        pesos. Mês sem dia de salário (férias o mês todo, afastamento) fica de
+        fora; mês com dia e sem hora entra com zero. Limite: o mensal da fase
+        mensalista de quem virou horista no meio da janela entra pelas horas do
+        calendário e sem repouso.
         """
         self.ensure_one()
         referencia = self.date_from or self.date_to
@@ -1454,20 +1517,12 @@ class HrPayslip(models.Model):
             order="date_from",
         )
         atual = contract.l10n_br_valor_hora
-        total, meses = 0.0, 0
+        total, peso = 0.0, 0.0
         for mensal in mensais:
-            dias = salary_rules_br.dias_salario_mes(
-                mensal.date_from,
-                mensal.date_to,
-                contract.date_start,
-                contract.date_end,
-                mensal._l10n_br_afastamentos_inss(contract),
-                mensal._l10n_br_ferias_gozadas(contract),
-                mensal.company_id.l10n_br_contagem_dias_salario,
-            )
+            dias = self._l10n_br_dias_salario_do_mensal(mensal, contract)
             if dias <= 0:
                 continue
-            meses += 1
+            peso += dias / 30
             totais = {}
             for linha in mensal.line_ids:
                 totais[linha.code] = totais.get(linha.code, 0.0) + linha.total
@@ -1481,9 +1536,9 @@ class HrPayslip(models.Model):
             if abs(valor_mes - atual) > 0.005 / horas + 1e-9:
                 remuneracao = remuneracao * atual / valor_mes
             total += remuneracao
-        if not meses:
+        if not peso:
             return None
-        return salary_rules_br.round_money(total / meses)
+        return salary_rules_br.round_money(total / peso)
 
     @staticmethod
     def _l10n_br_codes_media_habitual():

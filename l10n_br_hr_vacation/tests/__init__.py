@@ -38,3 +38,4 @@ from . import test_ferias_vinculo_art133_r2
 from . import test_migracao_aprendiz_149
 from . import test_migracao_descontos_151
 from . import test_horista_ferias_13_rescisao
+from . import test_horista_media_dias_fallback

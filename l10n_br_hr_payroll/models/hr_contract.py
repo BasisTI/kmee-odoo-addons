@@ -68,7 +68,9 @@ class HrContract(models.Model):
         "mensal. Daily, Weekly, Biweekly e Task ainda não são calculadas: o "
         "holerite é recusado.\n\n"
         "Férias, 13º e rescisão do horista usam a média das horas pagas no "
-        "período (mais o repouso) pelo valor da hora vigente, não o mensal de "
+        "período (mais o repouso, cada mês pesado por dias de salário ÷ 30) pelo "
+        "valor da hora vigente; sem histórico, as horas do mensal da mesma "
+        "competência levadas a 30 dias; sem esse mensal, o mensal de "
         "referência.",
     )
     wage = fields.Monetary(
@@ -238,6 +240,8 @@ class HrContract(models.Model):
         for vals in vals_list:
             if self._l10n_br_unidade_do_vals(vals):
                 vals["wage"] = 0.0
+            elif self._l10n_br_unidade_do_vals(vals) is False:
+                vals["l10n_br_valor_hora"] = 0.0
         records = super().create(vals_list)
         for rec in records.filtered(lambda c: c._l10n_br_horista()):
             rec._l10n_br_atualiza_wage_horista()
@@ -313,11 +317,10 @@ class HrContract(models.Model):
                 )
 
     def write(self, vals):
-        if self._l10n_br_unidade_do_vals(vals) is False and (
-            "l10n_br_valor_hora" not in vals
-        ):
-            # Saiu de Hourly: o valor da hora velho não pode voltar a valer
-            # quando o contrato retornar a Hourly (TG-168).
+        if self._l10n_br_unidade_do_vals(vals) is False:
+            # Saiu de Hourly (ou foi importado Monthly com o valor da hora
+            # antigo): o valor da hora não pode voltar a valer quando o contrato
+            # retornar a Hourly (TG-168).
             vals = dict(vals, l10n_br_valor_hora=0.0)
         res = super().write(self._l10n_br_vals_sem_wage_do_horista(vals))
         if "l10n_br_hora_noturna_reduzida" in vals:

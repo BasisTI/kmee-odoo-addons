@@ -256,6 +256,7 @@ class TestHoristaFerias13Rescisao(VacationCommon):
             date_start=date(2024, 9, 1), calendario=calendario
         )
         self.assertEqual(contract._l10n_br_divisor_horas_mensais(), 100.0)
+        mensal = self._mensal(emp, contract, 2024, 9, 60.0)
         rescisao = self._slip(
             emp,
             contract,
@@ -264,7 +265,7 @@ class TestHoristaFerias13Rescisao(VacationCommon):
             date(2024, 9, 30),
             l10n_br_horas_pagas=60.0,
         )
-        referencia = round_money(60 * VALOR_HORA + rescisao._l10n_br_dsr_horista())
+        referencia = round_money(60 * VALOR_HORA + mensal._l10n_br_dsr_horista())
         self.assertEqual(
             rescisao._l10n_br_salario_referencia(contract, "ferias_proporcionais"),
             referencia,
