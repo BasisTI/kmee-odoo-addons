@@ -57,9 +57,7 @@
                                         <strong>CPF</strong>
                                     </td>
                                     <td>
-                                        <span
-                                            t-out="employee.sudo().cpf or employee.sudo().cnpj_cpf or ''"
-                                        />
+                                        <span t-out="employee.sudo().vat or ''" />
                                     </td>
                                 </tr>
                                 <tr>

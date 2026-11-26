@@ -252,7 +252,7 @@ class ReportTermoRescisao(models.AbstractModel):
             "cep": emp.private_zip or "",
             "ctps": emp.ctps or "",
             "ctps_serie": emp.ctps_series or "",
-            "cpf": emp.cnpj_cpf or "",
+            "cpf": emp.vat_formatted_cnpj or "",
             "nascimento": emp.birthday,
             "mae": emp.mother_name or "",
         }

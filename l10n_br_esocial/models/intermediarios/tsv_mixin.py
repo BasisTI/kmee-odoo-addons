@@ -247,7 +247,7 @@ class ESocialTSVMixin(models.AbstractModel):
         supervisor = False
         sup = contract.l10n_br_esocial_supervisor_id
         if sup and categoria.codigo == "901":
-            supervisor = self._so_digitos(sup.cnpj_cpf)
+            supervisor = self._so_digitos(sup.vat)
             if len(supervisor) != 11 or (cnpj_cpf and not cnpj_cpf.validar(supervisor)):
                 erros.append(_("o Supervisor do Estágio precisa ter CPF válido"))
         if erros:

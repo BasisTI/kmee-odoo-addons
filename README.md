@@ -11,6 +11,16 @@
 
 Welcome to our repository, dedicated to incubating OCA modules developed by KMEE. Our goal is to foster innovation and enhance the functionality of Odoo with cutting-edge solutions tailored to meet the diverse needs of businesses. By leveraging our expertise and commitment to quality, we aim to contribute robust and efficient modules that seamlessly integrate into the OCA ecosystem, driving productivity and growth for users worldwide.
 
+Requisitos do l10n-brazil
+-------------------------
+
+Os módulos de folha deste fork leem o CPF do empregado em `hr.employee.vat` (campo do
+`l10n_br_hr` da OCA/l10n-brazil, que guarda só os dígitos). Isso exige
+**`l10n_br_hr` >= 18.0.1.8.0** (testado com 18.0.1.8.0.2 e 18.0.1.8.1). Com um `l10n_br_hr` mais
+antigo (`cnpj_cpf`/`cpf` no empregado) o `l10n_br_hr_payroll` recusa o carregamento com uma
+mensagem que diz qual versão instalar. A OCA migra os dados sozinha: o `pre-migrate` da
+18.0.1.7.0 do `l10n_br_hr` copia o `cnpj_cpf` legado para o `vat` do contato de trabalho.
+
 Available addons
 ----------------
 Addon | Description

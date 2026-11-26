@@ -105,7 +105,7 @@ class ESocialBaseIntermediario(models.AbstractModel):
         )
 
     def _get_cpf_limpo(self, employee):
-        cpf = employee.cnpj_cpf
+        cpf = employee.vat
         if not cpf:
             raise UserError(
                 _("Empregado '%(name)s' não possui CPF configurado.")

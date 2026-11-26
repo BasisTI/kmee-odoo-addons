@@ -37,12 +37,12 @@ class TestTSVE(TestESocialIntermediarioBase):
             {"name": "Agente de Integração Fictício", "vat": "55.000.001/0001-28"}
         )
         cls.supervisor = cls.env["hr.employee"].create(
-            {"name": "Supervisora de Teste", "cnpj_cpf": "529.982.247-25"}
+            {"name": "Supervisora de Teste", "vat": "529.982.247-25"}
         )
         cls.estagiario = cls.env["hr.employee"].create(
             {
                 "name": "Estagiário de Teste",
-                "cnpj_cpf": "076.166.929-41",
+                "vat": "076.166.929-41",
                 "l10n_br_esocial_matricula": "EST001",
                 "l10n_br_esocial_categoria_id": cls.cat_901.id,
                 "gender": "female",

@@ -18,7 +18,7 @@ class TestS2299Horista(ESocialCicloCommon):
         if not HAS_ESOCIALLIB:
             self.skipTest("esociallib não instalada")
         # CPF válido: o l10n_br_hr_validacao_folha recusa o fictício do common.
-        self.employee.cnpj_cpf = "111.444.777-35"
+        self.employee.vat = "111.444.777-35"
         unidade = self.env["hr.contract.salary.unit"].search([("code", "=", "1")])
         self.contract.write(
             {

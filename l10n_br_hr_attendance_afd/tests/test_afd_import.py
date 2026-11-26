@@ -115,7 +115,7 @@ class TestAfdImport(TransactionCase):
         # Cadastro sem endereço particular: o CPF vem do campo do próprio
         # funcionário, e a conciliação precisa enxergar essa fonte também.
         novo = self.env["hr.employee"].create(
-            {"name": "João Recém-cadastrado", "cnpj_cpf": "111.222.333-96"}
+            {"name": "João Recém-cadastrado", "vat": "111.222.333-96"}
         )
         conciliadas = importacao.action_reconciliar_pendentes()
         self.assertEqual(conciliadas, 4)

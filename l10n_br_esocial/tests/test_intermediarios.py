@@ -60,7 +60,7 @@ class TestESocialIntermediarioBase(TransactionCase):
         cls.employee = cls.env["hr.employee"].create(
             {
                 "name": "Test eSocial Worker",
-                "cnpj_cpf": "076.166.929-41",
+                "vat": "076.166.929-41",
                 "l10n_br_esocial_matricula": "MAT001",
                 "l10n_br_esocial_categoria_id": cls.cat_101.id,
                 "gender": "male",
@@ -267,7 +267,7 @@ class TestS2200(TestESocialIntermediarioBase):
         emp = self.env["hr.employee"].create(
             {
                 "name": "No Matricula",
-                "cnpj_cpf": "857.642.960-52",
+                "vat": "857.642.960-52",
                 "l10n_br_esocial_categoria_id": self.cat_101.id,
             }
         )

@@ -19,7 +19,7 @@ class TestS1200FeriasSegundaCompetencia(ESocialCicloCommon):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.employee.write({"cnpj_cpf": "111.444.777-35"})
+        cls.employee.write({"vat": "111.444.777-35"})
         cls.estrutura = cls.env["hr.payroll.structure"].search(
             [("code", "=", "FERIAS")], limit=1
         ) or cls.env["hr.payroll.structure"].create(

@@ -2,11 +2,36 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
+
+# O CPF do empregado é lido de ``hr.employee.vat``, que o l10n_br_hr da OCA só
+# tem a partir da 18.0.1.8.0 (as versões antigas tinham ``cnpj_cpf``/``cpf``).
+L10N_BR_HR_VERSAO_MINIMA = "18.0.1.8.0"
+
+
+def verifica_campo_vat_do_empregado(env):
+    """Recusa, com mensagem clara, um l10n_br_hr sem ``hr.employee.vat``.
+
+    Sem isso o erro apareceria só no primeiro uso do CPF, como ``AttributeError``
+    ou ``Invalid field 'vat'`` no meio da folha ou do eSocial.
+    """
+    if "vat" not in env["hr.employee"]._fields:
+        raise UserError(
+            _(
+                "O l10n_br_hr_payroll lê o CPF do empregado em hr.employee.vat, que "
+                "o módulo l10n_br_hr tem a partir da versão %(versao)s. Atualize o "
+                "l10n_br_hr (OCA/l10n-brazil, branch 18.0) e inicie de novo.",
+                versao=L10N_BR_HR_VERSAO_MINIMA,
+            )
+        )
 
 
 class HrEmployee(models.Model):
     _inherit = "hr.employee"
+
+    def _register_hook(self):
+        verifica_campo_vat_do_empregado(self.env)
+        return super()._register_hook()
 
     l10n_br_tipo_contrato = fields.Selection(
         selection=[

@@ -387,7 +387,7 @@ class TestDsrPorSemana(PayrollCommon):
         emp = self._create_employee()
         contract = self._create_contract(emp, wage=3000.00)
         gerente = self.env["hr.employee"].create(
-            {"name": "Chefe", "cnpj_cpf": self._proximo_cpf()}
+            {"name": "Chefe", "vat": self._proximo_cpf()}
         )
         depto = self.env["hr.department"].create(
             {"name": "Depto alheio", "manager_id": gerente.id}

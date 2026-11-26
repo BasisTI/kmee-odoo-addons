@@ -158,7 +158,7 @@ class TestRubricasUnicas(TransactionCase):
         employee = self.env["hr.employee"].create(
             {
                 "name": "Trabalhador T105",
-                "cnpj_cpf": "076.166.929-41",
+                "vat": "076.166.929-41",
                 "l10n_br_esocial_matricula": "MAT105",
                 "l10n_br_esocial_categoria_id": self.env.ref(
                     "l10n_br_esocial.cat_trab_101"

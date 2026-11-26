@@ -95,6 +95,14 @@ Simples anexo III            0,00       0,00       0,00     480,00
 Simples anexo IV (2%)    1.200,00     120,00       0,00     480,00
 ======================  =========  =========  =========  =========
 
+Requisito do l10n_br_hr
+-----------------------
+
+O CPF do empregado é lido de ``hr.employee.vat``, campo do ``l10n_br_hr`` a partir
+da 18.0.1.8.0 (guarda só os dígitos; ``vat_formatted_cnpj`` mostra com pontuação).
+Com um ``l10n_br_hr`` mais antigo o módulo recusa o carregamento e informa a versão
+necessária.
+
 **Table of contents**
 
 .. contents::
