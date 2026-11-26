@@ -851,39 +851,7 @@ class HrPayslip(models.Model):
         if recusas:
             raise UserError("\n".join(recusas))
 
-    _L10N_BR_ESTRUTURAS_SEM_HORISTA = (
-        "FERIAS",
-        "13_1PARCELA",
-        "13_2PARCELA",
-        "13_SALARIO",
-        "RESCISAO",
-    )
-
-    def _l10n_br_exigir_sem_horista(self):
-        """Férias, 13º e rescisão do horista não são calculados (TG-166).
-
-        Essas regras leem o salário do contrato como mensal; com a unidade
-        Hora ele é o valor da hora e o holerite sairia com valor errado, sem
-        aviso. Recusa até a regra do horista existir.
-        """
-        horistas = self.filtered(
-            lambda s: s.struct_id.code in self._L10N_BR_ESTRUTURAS_SEM_HORISTA
-            and s.contract_id
-            and s.contract_id._l10n_br_horista()
-        )
-        if horistas:
-            raise UserError(
-                _(
-                    "Férias, 13º salário e rescisão de contrato com salário por "
-                    "hora (horista) ainda não são calculados: o salário do "
-                    "contrato é o valor da hora e o holerite sairia com valor "
-                    "errado. Holerites: %(nomes)s.",
-                    nomes=", ".join(horistas.mapped(lambda r: r.number or r.name)),
-                )
-            )
-
     def compute_sheet(self):
-        self._l10n_br_exigir_sem_horista()
         confirmados = self.filtered(lambda slip: slip.state == "done")
         if confirmados:
             raise UserError(
@@ -919,7 +887,9 @@ class HrPayslip(models.Model):
             contrato = slip.contract_id
             slip.with_context(l10n_br_em_compute=True).write(
                 {
-                    "l10n_br_ferias_salario": contrato.wage,
+                    "l10n_br_ferias_salario": slip._l10n_br_salario_referencia(
+                        contrato, "ferias"
+                    ),
                     "l10n_br_ferias_media": slip._l10n_br_media_habitual(
                         slip._l10n_br_codes_media_habitual()
                     ),
@@ -1384,6 +1354,20 @@ class HrPayslip(models.Model):
                 totais.get(c, 0.0) for c in self._L10N_BR_CODIGOS_SALARIO_MENSAL
             )
             salario_mes = round(salario_pago * 30 / dias, 2)
+            if contract._l10n_br_horista():
+                # Horista: o salário do mês é o valor-hora que o mensal pagou
+                # vezes o divisor; os dias de salário não o proporcionam.
+                horas = mensal._l10n_br_horas_do_horista()
+                salario_mes = (
+                    round(
+                        totais.get("SALARIO_BASE", 0.0)
+                        / horas
+                        * contract._l10n_br_divisor_horas_mensais(),
+                        2,
+                    )
+                    if horas
+                    else 0.0
+                )
             # Tolerância do arredondamento do salário proporcional do mês.
             if (
                 not salario_mes
@@ -1404,6 +1388,156 @@ class HrPayslip(models.Model):
             if abs(atualizado * 30 / dias - vigente) > 0.01 + 0.005 * 30 / dias:
                 uniforme = False
         if not peso or uniforme:
+            return None
+        return salary_rules_br.round_money(total / peso)
+
+    def _l10n_br_janela_salario_horista(self, contract, verba, periodo=None):
+        """``(inicio, fim)`` da média das horas do horista.
+
+        Como a dos adicionais (``_l10n_br_janela_adicionais``); o ``momento``
+        (aviso prévio, arts. 479 e 480) olha os 12 meses anteriores ao holerite.
+        """
+        self.ensure_one()
+        if periodo:
+            return periodo
+        if verba == "momento" or not verba:
+            referencia = self.date_from or self.date_to
+            return referencia - relativedelta(months=12), referencia - timedelta(days=1)
+        return self._l10n_br_janela_adicionais(contract, verba)
+
+    def _l10n_br_salario_referencia(self, contract, verba=None, periodo=None):
+        """Salário-base de férias, 13º e rescisão (TG-168).
+
+        Mensalista: o salário do contrato. Horista (CLT art. 142, § 1º, e
+        Decreto 57.155/65, art. 2º), em uma regra só:
+
+        1. média das remunerações dos mensais confirmados da janela (sem
+           nenhum, dos 12 meses anteriores ao recibo), cada um com peso dias de
+           salário ÷ 30 (como a média dos adicionais, TG-133): soma ÷ soma dos
+           pesos;
+        2. sem nenhum, as horas do **mensal do mesmo contrato e da mesma
+           competência** levadas a 30 dias (horas × 30 ÷ dias de salário do
+           mensal), pelo valor-hora vigente, mais o repouso. O recibo de férias,
+           de 13º ou de rescisão nunca é fonte das horas;
+        3. sem esse mensal, o mensal de referência (``contract.wage``).
+        """
+        self.ensure_one()
+        if not contract or not contract._l10n_br_horista():
+            return contract.wage
+        inicio, fim = self._l10n_br_janela_salario_horista(contract, verba, periodo)
+        media = self._l10n_br_media_salario_horista(contract, inicio, fim)
+        if media is None:
+            # Janela sem mensal confirmado (por exemplo, rescisão pouco depois do
+            # aniversário do aquisitivo): os 12 meses anteriores ao recibo.
+            media = self._l10n_br_media_salario_horista(
+                contract,
+                *self._l10n_br_janela_salario_horista(contract, "momento"),
+            )
+        if media is not None:
+            return media
+        normalizado = self._l10n_br_salario_horista_do_mensal_da_competencia(contract)
+        if normalizado is not None:
+            return normalizado
+        return contract.wage
+
+    def _l10n_br_dias_salario_do_mensal(self, mensal, contract):
+        return salary_rules_br.dias_salario_mes(
+            mensal.date_from,
+            mensal.date_to,
+            contract.date_start,
+            contract.date_end,
+            mensal._l10n_br_afastamentos_inss(contract),
+            mensal._l10n_br_ferias_gozadas(contract),
+            mensal.company_id.l10n_br_contagem_dias_salario,
+        )
+
+    def _l10n_br_salario_horista_do_mensal_da_competencia(self, contract):
+        """Horas do mensal da competência levadas a um mês, ou ``None``.
+
+        Mensal do mesmo contrato e do mesmo mês deste recibo (o confirmado; sem
+        ele, o mais recente; sem cancelado nem fora de vigor), com dias de
+        salário. Admitido no meio do mês, o mensal tem menos dias: levar as
+        horas a 30 dias evita subestimar a base.
+        """
+        self.ensure_one()
+        referencia = self.date_from or self.date_to
+        if not referencia:
+            return None
+        inicio_mes = referencia.replace(day=1)
+        mensais = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("id", "!=", self.id),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
+                ("state", "!=", "cancel"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("date_from", ">=", inicio_mes),
+                ("date_from", "<=", inicio_mes + relativedelta(months=1, days=-1)),
+            ],
+            order="date_from desc, id desc",
+        )
+        # O confirmado manda; sem ele, o rascunho mais recente (ordem estável).
+        mensal = (mensais.filtered(lambda m: m.state == "done") or mensais)[:1]
+        if not mensal:
+            return None
+        dias = self._l10n_br_dias_salario_do_mensal(mensal, contract)
+        if dias <= 0:
+            return None
+        horas = mensal._l10n_br_horas_do_horista()
+        remuneracao = horas * contract.l10n_br_valor_hora + (
+            mensal._l10n_br_dsr_horista() if horas else 0.0
+        )
+        return salary_rules_br.round_money(remuneracao * 30 / dias)
+
+    def _l10n_br_media_salario_horista(self, contract, inicio, fim):
+        """Média mensal da remuneração do horista, ou ``None`` sem histórico.
+
+        Cada mensal confirmado de ``inicio`` a ``fim``, anterior a este
+        holerite, com dias de salário, vale ``(SALARIO_BASE + DSR_HORISTA)``
+        atualizado do valor-hora do mês (``SALARIO_BASE`` ÷ horas) para o
+        vigente e pesa dias de salário ÷ 30; a média é a soma ÷ soma dos
+        pesos. Mês sem dia de salário (férias o mês todo, afastamento) fica de
+        fora; mês com dia e sem hora entra com zero. Limite: o mensal da fase
+        mensalista de quem virou horista no meio da janela entra pelas horas do
+        calendário e sem repouso.
+        """
+        self.ensure_one()
+        referencia = self.date_from or self.date_to
+        if not referencia:
+            return None
+        mensais = self.env["hr.payslip"].search(
+            [
+                ("contract_id", "=", contract.id),
+                ("struct_id", "in", self._l10n_br_estruturas_mensais().ids),
+                ("state", "=", "done"),
+                ("l10n_br_fora_de_vigor", "=", False),
+                ("date_from", "<", referencia),
+                ("date_from", ">=", inicio),
+                ("date_from", "<=", fim),
+            ],
+            order="date_from",
+        )
+        atual = contract.l10n_br_valor_hora
+        total, peso = 0.0, 0.0
+        for mensal in mensais:
+            dias = self._l10n_br_dias_salario_do_mensal(mensal, contract)
+            if dias <= 0:
+                continue
+            peso += dias / 30
+            totais = {}
+            for linha in mensal.line_ids:
+                totais[linha.code] = totais.get(linha.code, 0.0) + linha.total
+            base = totais.get("SALARIO_BASE", 0.0)
+            horas = mensal._l10n_br_horas_do_horista()
+            if not horas or not base:
+                continue
+            remuneracao = base + totais.get("DSR_HORISTA", 0.0)
+            valor_mes = base / horas
+            # Tolerância do arredondamento do salário do mês: sem reajuste.
+            if abs(valor_mes - atual) > 0.005 / horas + 1e-9:
+                remuneracao = remuneracao * atual / valor_mes
+            total += remuneracao
+        if not peso:
             return None
         return salary_rules_br.round_money(total / peso)
 

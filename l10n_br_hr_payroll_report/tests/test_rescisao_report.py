@@ -221,6 +221,33 @@ class TestRescisaoReport(PayrollCommon):
         self.assertEqual(contrato["tipo_contrato"], "Prazo indeterminado")
         self.assertEqual(contrato["remuneracao"], 5000.0)
 
+    def test_trct_remuneracao_do_horista_e_a_referencia_das_verbas(self):
+        """TG-168: o TRCT do horista imprime o salário de referência (média das
+        horas), não o mensal de referência do contrato."""
+        payslip = self._rescisao_sem_justa_causa()
+        contrato = payslip.contract_id
+        contrato.write(
+            {
+                "salary_unit": self._unidade_salario("1").id,
+                "l10n_br_valor_hora": 20.0,
+            }
+        )
+        mensal = self.env["hr.payslip"].create(
+            {
+                "name": "Mensal horista",
+                "employee_id": contrato.employee_id.id,
+                "contract_id": contrato.id,
+                "struct_id": self.structure_clt.id,
+                "date_from": payslip.date_from,
+                "date_to": payslip.date_to,
+                "l10n_br_horas_pagas": 100.0,
+            }
+        )
+        mensal.compute_sheet()
+        referencia = payslip._l10n_br_salario_referencia(contrato, "momento")
+        self.assertNotEqual(referencia, contrato.wage)
+        self.assertEqual(self._trct(payslip)["contrato"]["remuneracao"], referencia)
+
     def test_trct_campo_25_usa_a_data_do_aviso_informada(self):
         """TG-137: a data de concessão informada na rescisão (a do ``dtAvPrv`` do
         S-2299) vai ao campo 25; sem ela, vale a fórmula."""

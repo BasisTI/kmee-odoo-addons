@@ -131,3 +131,31 @@ def migrate(cr, version):
             len(ids),
             ids,
         )
+    _avisa_unidades_nao_suportadas(cr)
+
+
+def _avisa_unidades_nao_suportadas(cr):
+    """WARNING dos contratos com unidade do salário não suportada (TG-168).
+
+    Diária (2), semanal (3), quinzenal (4), tarefa (6) e não aplicável (7) são
+    recusadas no holerite e no eSocial; o DP precisa saber quais contratos
+    corrigir antes de calcular. Só avisa, não altera dado.
+    """
+    cr.execute(
+        """
+        SELECT c.id FROM hr_contract c
+          JOIN hr_contract_salary_unit u ON u.id = c.salary_unit
+         WHERE u.code IN ('2', '3', '4', '6', '7')
+         ORDER BY c.id
+        """
+    )
+    ids = [r[0] for r in cr.fetchall()]
+    if ids:
+        _logger.warning(
+            "TG-166: %d contrato(s) com a Unidade do Salário diária, semanal, "
+            "quinzenal, por tarefa ou não aplicável (códigos 2, 3, 4, 6 e 7), "
+            "ainda não suportadas: o holerite desses contratos é recusado até "
+            "trocar a unidade para Hourly ou Monthly. Contratos: %s",
+            len(ids),
+            ids,
+        )
