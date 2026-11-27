@@ -54,7 +54,7 @@
                                 </td>
                                 <td>
                                     <strong>CPF:</strong>
-                                    <span t-field="o.employee_id.cnpj_cpf" />
+                                    <span t-field="o.employee_id.vat_formatted_cnpj" />
                                 </td>
                                 <td>
                                     <strong>CTPS:</strong>
@@ -353,7 +353,7 @@
                             t-field="o.employee_id.name"
                         /> —
                             <strong>CPF:</strong>&#160;<span
-                            t-field="o.employee_id.cnpj_cpf"
+                            t-field="o.employee_id.vat_formatted_cnpj"
                         />
                         </p>
                         <p>

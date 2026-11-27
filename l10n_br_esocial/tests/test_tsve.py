@@ -37,12 +37,12 @@ class TestTSVE(TestESocialIntermediarioBase):
             {"name": "Agente de Integração Fictício", "vat": "55.000.001/0001-28"}
         )
         cls.supervisor = cls.env["hr.employee"].create(
-            {"name": "Supervisora de Teste", "cnpj_cpf": "529.982.247-25"}
+            {"name": "Supervisora de Teste", "vat": "141.421.356-51"}
         )
         cls.estagiario = cls.env["hr.employee"].create(
             {
                 "name": "Estagiário de Teste",
-                "cnpj_cpf": "076.166.929-41",
+                "vat": "271.828.182-05",
                 "l10n_br_esocial_matricula": "EST001",
                 "l10n_br_esocial_categoria_id": cls.cat_901.id,
                 "gender": "female",
@@ -173,7 +173,7 @@ class TestTSVE(TestESocialIntermediarioBase):
     def test_s2300_vem_do_cadastro(self):
         data = self._s2300()._to_esociallib_dict()
         self.assertEqual(data["cod_categ"], "901")
-        self.assertEqual(data["cpf_trab"], "07616692941")
+        self.assertEqual(data["cpf_trab"], "27182818205")
         self.assertEqual(data["matricula"], "EST001")
         self.assertEqual(data["sexo"], "F")
         self.assertEqual(data["raca_cor"], 3)
@@ -196,7 +196,7 @@ class TestTSVE(TestESocialIntermediarioBase):
                 "dt_prev_term": str(self.fim),
                 "cnpj_inst_ensino": "45000001000174",
                 "cnpj_age_integ": "55000001000128",
-                "cpf_supervisor": "52998224725",
+                "cpf_supervisor": "14142135651",
             },
         )
 

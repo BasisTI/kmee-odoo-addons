@@ -24,7 +24,7 @@ class TestS2220(EsocialSstCommon):
         cls.medico = cls.env["l10n_br.sst.responsavel"].create(
             {
                 "name": "Dra. Coordenadora",
-                "cpf": "076.166.929-41",
+                "cpf": "314.159.265-90",
                 "ide_oc": "1",
                 "nr_oc": "654321",
                 "uf_oc": "MG",

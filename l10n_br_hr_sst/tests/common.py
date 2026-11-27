@@ -27,7 +27,7 @@ class SstCommon(TransactionCase):
         cls.responsavel = cls.env["l10n_br.sst.responsavel"].create(
             {
                 "name": "Engenheiro de Segurança",
-                "cpf": "076.166.929-41",
+                "cpf": "314.159.265-90",
                 "ide_oc": "4",
                 "nr_oc": "123456",
                 "uf_oc": "MG",
@@ -78,7 +78,7 @@ class SstCommon(TransactionCase):
         cls.employee = cls.env["hr.employee"].create(
             {
                 "name": "Trabalhador SST",
-                "cnpj_cpf": "076.166.929-41",
+                "vat": "314.159.265-90",
                 "job_id": cls.job.id,
             }
         )

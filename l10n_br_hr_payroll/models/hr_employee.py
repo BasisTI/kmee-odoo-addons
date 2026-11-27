@@ -2,11 +2,76 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from odoo import _, api, fields, models
-from odoo.exceptions import ValidationError
+from odoo.exceptions import UserError, ValidationError
+
+# O CPF do empregado é lido de ``hr.employee.vat`` e mostrado por
+# ``vat_formatted_cnpj``. Os dois vêm do l10n_br_hr da OCA a partir da wheel
+# 18.0.1.8.0.2 (commit 05571fdb4 do OCA/l10n-brazil; o manifest ainda diz 1.8.0 e não há
+# wheel 1.8.0 nem 1.8.1 anterior). As versões antigas tinham ``cnpj_cpf``/``cpf``.
+L10N_BR_HR_VERSAO_MINIMA = "18.0.1.8.0.2"
+
+
+def verifica_campo_vat_do_empregado(env):
+    """Recusa, com mensagem clara, um l10n_br_hr sem ``vat`` ou sem ``vat_formatted_cnpj``
+    e um banco com CPF que ficaria sem leitor.
+
+    Sem isso o erro apareceria só no primeiro uso do CPF, como ``AttributeError``
+    ou ``Invalid field 'vat'`` no meio da folha ou do eSocial.
+    """
+    campos = env["hr.employee"]._fields
+    if "vat" not in campos or "vat_formatted_cnpj" not in campos:
+        raise UserError(
+            env._(
+                "O l10n_br_hr_payroll lê o CPF do empregado em hr.employee.vat e o "
+                "mostra por vat_formatted_cnpj, campos que o módulo l10n_br_hr tem "
+                "a partir da versão %(versao)s. Atualize o l10n_br_hr "
+                "(OCA/l10n-brazil, branch 18.0) e inicie de novo.",
+                versao=L10N_BR_HR_VERSAO_MINIMA,
+            )
+        )
+    verifica_cpf_legado_migrado(env)
+
+
+def verifica_cpf_legado_migrado(env):
+    """Recusa banco em que ``hr_employee.cnpj_cpf`` ainda tem CPF.
+
+    O l10n_br_hr novo não lê essa coluna; quem a copia para o ``vat`` do contato de
+    trabalho e a remove é o ``pre-migrate`` 18.0.1.7.0 dele, que só roda no ``-u
+    l10n_br_hr`` e precisa da biblioteca ``openupgradelib``.
+    """
+    env.cr.execute(
+        """
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = current_schema()
+           AND table_name = 'hr_employee' AND column_name = 'cnpj_cpf'
+        """
+    )
+    if not env.cr.fetchone():
+        return
+    env.cr.execute(
+        "SELECT COUNT(*) FROM hr_employee WHERE cnpj_cpf IS NOT NULL AND cnpj_cpf != ''"
+    )
+    quantos = env.cr.fetchone()[0]
+    if quantos:
+        raise UserError(
+            env._(
+                "%(quantos)s empregado(s) têm o CPF só na coluna hr_employee.cnpj_cpf, "
+                "que o l10n_br_hr novo não lê. Rode antes a atualização do l10n_br_hr "
+                "(-u l10n_br_hr) com a biblioteca openupgradelib instalada: a migração "
+                "18.0.1.7.0 dele copia o CPF para o contato de trabalho e remove a "
+                "coluna. Ela pula CPF inválido, repetido ou de contato que já tem vat "
+                "(registra em INFO).",
+                quantos=quantos,
+            )
+        )
 
 
 class HrEmployee(models.Model):
     _inherit = "hr.employee"
+
+    def _register_hook(self):
+        verifica_campo_vat_do_empregado(self.env)
+        return super()._register_hook()
 
     l10n_br_tipo_contrato = fields.Selection(
         selection=[

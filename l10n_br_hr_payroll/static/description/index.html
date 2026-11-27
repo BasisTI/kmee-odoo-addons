@@ -478,6 +478,21 @@ CPP até 2027)</li>
 </tr>
 </tbody>
 </table>
+</div>
+<div class="section" id="requisito-do-l10n-br-hr">
+<h1>Requisito do l10n_br_hr</h1>
+<p>O CPF do empregado é lido de <tt class="docutils literal">hr.employee.vat</tt> e mostrado por <tt class="docutils literal">vat_formatted_cnpj</tt>,
+campos do <tt class="docutils literal">l10n_br_hr</tt> a partir da wheel 18.0.1.8.0.2 (commit 05571fdb4 do
+OCA/l10n-brazil). O <tt class="docutils literal">vat</tt> guarda só os dígitos. Com um <tt class="docutils literal">l10n_br_hr</tt> mais antigo o
+módulo recusa o carregamento e informa a versão necessária.</p>
+<p>Banco que vem do <tt class="docutils literal">l10n_br_hr</tt> 18.0.1.6.0 (CPF em <tt class="docutils literal">hr_employee.cnpj_cpf</tt>): rode
+<tt class="docutils literal"><span class="pre">-u</span> l10n_br_hr</tt> junto com os módulos de folha, com a biblioteca <tt class="docutils literal">openupgradelib</tt>
+instalada (o <tt class="docutils literal"><span class="pre">pre-migrate</span></tt> 18.0.1.7.0 do <tt class="docutils literal">l10n_br_hr</tt> a importa e não a declara). A
+migração copia o CPF para o <tt class="docutils literal">vat</tt> do contato de trabalho e remove a coluna, mas pula CPF
+inválido, repetido ou de contato que já tem <tt class="docutils literal">vat</tt> (registra em INFO). Se a coluna ainda
+tiver CPF quando o servidor subir, o módulo recusa o carregamento e diz o que fazer.</p>
+<p>Limites: o CPF fica no <tt class="docutils literal">res.partner</tt> do contato de trabalho, sem restrição de grupo, e é
+único por parceiro.</p>
 <p><strong>Table of contents</strong></p>
 <div class="contents local topic" id="contents">
 <ul class="simple">

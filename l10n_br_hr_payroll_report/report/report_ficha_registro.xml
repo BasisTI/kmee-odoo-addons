@@ -80,7 +80,7 @@
                             <tr>
                                 <td>
                                     <strong>CPF:</strong>
-                                    <span t-field="o.cnpj_cpf" />
+                                    <span t-field="o.vat_formatted_cnpj" />
                                 </td>
                                 <td>
                                     <strong>Documento:</strong>

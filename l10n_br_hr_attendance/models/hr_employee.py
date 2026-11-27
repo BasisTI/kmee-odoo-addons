@@ -9,11 +9,9 @@ from odoo import api, models
 class HrEmployee(models.Model):
     _inherit = "hr.employee"
 
-    # Fontes de CPF no cadastro, em ordem de precedência. No l10n_br_hr o
-    # ``cpf`` é related ao ``vat`` do contato de trabalho, e nem todo cadastro
-    # tem esse partner; o ``cnpj_cpf`` fica no próprio funcionário. Conciliar
-    # por uma fonte só deixaria marcação pendente por detalhe de cadastro.
-    _L10N_BR_CAMPOS_CPF = ("cpf", "cnpj_cpf")
+    # CPF do funcionário: ``vat`` (related ao contato de trabalho no l10n_br_hr
+    # >= 18.0.1.8.0, que guarda só dígitos).
+    _L10N_BR_CAMPOS_CPF = ("vat",)
 
     @api.model
     def _l10n_br_indice_documentos(self):

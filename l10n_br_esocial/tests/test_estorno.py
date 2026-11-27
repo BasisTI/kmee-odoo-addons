@@ -31,7 +31,7 @@ class TestEstornoEsocial(ESocialCicloCommon):
         super().setUpClass()
         # O estorno recria o holerite e valida o CPF; o do cenário comum não passa
         # nos dígitos verificadores.
-        cls.employee.write({"cnpj_cpf": "111.444.777-35"})
+        cls.employee.write({"vat": "111.444.777-35"})
 
     def _aceitar(self, evento, recibo):
         evento.write({"state": "success", "nr_recibo": recibo})

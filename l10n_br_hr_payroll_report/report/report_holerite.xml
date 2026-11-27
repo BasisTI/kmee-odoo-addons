@@ -63,7 +63,7 @@
                                 </td>
                                 <td>
                                     <strong>CPF:</strong>
-                                    <span t-field="o.employee_id.cnpj_cpf" />
+                                    <span t-field="o.employee_id.vat_formatted_cnpj" />
                                 </td>
                                 <td colspan="2">
                                     <strong>PIS/PASEP:</strong>
